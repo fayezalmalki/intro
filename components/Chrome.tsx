@@ -1,7 +1,14 @@
 import Link from "next/link";
-import type { Fit } from "@/lib/types";
+import type { Account, Fit } from "@/lib/types";
+import { isAccountManager } from "@/lib/session";
 
-export function AmBar({ on }: { on?: "queue" | "lists" }) {
+/**
+ * Both bars take the signed-in account rather than naming anyone. They used to
+ * print the two seeded demo people — "ريم" above every account manager's work,
+ * the avatar "F" above every requester's — which survived the move to real
+ * sign-ins because auth never touched the presentation layer.
+ */
+export function AmBar({ on, account }: { on?: "queue" | "lists"; account: Account }) {
   return (
     <div className="bar">
       <div className="bar-left">
@@ -12,19 +19,20 @@ export function AmBar({ on }: { on?: "queue" | "lists" }) {
           <Link href="/am" className={on === "queue" ? "on" : ""}>
             الطابور
           </Link>
-          <span>القوائم</span>
-          <span>الأشخاص</span>
         </nav>
       </div>
       <div className="row g10">
-        <span className="sm muted">ريم · مديرة حسابات</span>
-        <div className="avatar">R</div>
+        <span className="sm muted bar-who">
+          {account.displayName} · {ROLE_LABEL[account.role]}
+        </span>
+        <div className="avatar">{account.initial}</div>
+        <SignOut />
       </div>
     </div>
   );
 }
 
-export function AppBar() {
+export function AppBar({ account }: { account: Account }) {
   return (
     <div className="bar">
       <div className="bar-left">
@@ -36,13 +44,37 @@ export function AppBar() {
         </Link>
       </div>
       <div className="row g16 sm muted">
-        <span>طلباتي</span>
-        <Link href="/am" className="dim">
-          لوحة مدير الحساب ←
-        </Link>
-        <div className="avatar">F</div>
+        {/* Only account managers see the console link. Showing it to everyone
+            offered every requester a door middleware then closed on them. */}
+        {isAccountManager(account) && (
+          <Link href="/am" className="dim">
+            لوحة مدير الحساب ←
+          </Link>
+        )}
+        <div className="avatar">{account.initial}</div>
+        <SignOut />
       </div>
     </div>
+  );
+}
+
+const ROLE_LABEL: Record<Account["role"], string> = {
+  requester: "مُقدّم طلب",
+  account_manager: "مدير حسابات",
+  admin: "مشرف",
+};
+
+/**
+ * A form, not a link: a GET sign-out fires on any prefetch of the page it sits
+ * on, which would sign people out as they browsed.
+ */
+function SignOut() {
+  return (
+    <form action="/signout" method="post">
+      <button type="submit" className="btn btn-ghost btn-sm" title="تسجيل الخروج">
+        خروج
+      </button>
+    </form>
   );
 }
 

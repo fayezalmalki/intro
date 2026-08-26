@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AmBar, ar } from "@/components/Chrome";
 import { attachPipeline } from "@/lib/actions";
+import { requireAccountManager } from "@/lib/session";
 import { loadLists, loadRequestContext, merge } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,9 @@ export default async function AttachPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
 }) {
+  // Defence in depth. The actions each check the role too — that is the real
+  // boundary — but a requester who reaches this URL should be refused here.
+  const account = await requireAccountManager("open the account-manager console");
   const { id } = await params;
   const { tab = "csv" } = await searchParams;
   const db = merge(await loadRequestContext(id), await loadLists());
@@ -34,7 +38,7 @@ export default async function AttachPage({
 
   return (
     <>
-      <AmBar on="queue" />
+      <AmBar on="queue" account={account} />
       <div className="wrap">
         <div className="row g10" style={{ alignItems: "baseline" }}>
           <Link href={`/am/requests/${id}`} className="sm dim">

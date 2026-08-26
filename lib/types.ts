@@ -144,7 +144,7 @@ export interface IntroRequest {
   status: RequestStatus;
   brief?: Brief;
   confirmedAt?: string;
-  assignedAm: string;
+  assignedAm?: string;
   createdAt: string;
   dueAt: string;
 }

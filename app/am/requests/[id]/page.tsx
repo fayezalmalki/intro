@@ -3,20 +3,32 @@ import { notFound } from "next/navigation";
 import { AmBar, FitTag, LinkIcon, ar } from "@/components/Chrome";
 import { publishPipeline, setItemStatus } from "@/lib/actions";
 import { canApprove } from "@/lib/sourcing";
+import { requireAccountManager } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
+import type { Account, IntroRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
+  // Defence in depth. The actions each check the role too — that is the real
+  // boundary — but a requester who reaches this URL should be refused here.
+  const account = await requireAccountManager("open the account-manager console");
   const { id } = await params;
   const db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);
-  if (!req?.brief) notFound();
+  if (!req) notFound();
 
   const pipelines = db.pipelines.filter((p) => p.requestId === id).sort((a, b) => b.version - a.version);
   const draft = pipelines.find((p) => p.status === "draft");
   const current = draft ?? pipelines[0];
-  if (!current) notFound();
+
+  // The queue lists every request, including ones typed and never confirmed —
+  // and a pipeline only exists once the requester confirms their brief. This
+  // used to notFound(), so the account manager's first click from the queue
+  // returned a 404. Show the brief and what it is waiting on instead.
+  if (!req.brief || !current) {
+    return <AwaitingConfirmation account={account} request={req} />;
+  }
 
   const live = current.items.filter((i) => i.status !== "removed");
   const approved = live.filter((i) => i.status === "approved").length;
@@ -25,7 +37,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <>
-      <AmBar on="queue" />
+      <AmBar on="queue" account={account} />
       <div className="wrap">
         <div className="row between" style={{ alignItems: "baseline" }}>
           <div className="row g10" style={{ alignItems: "baseline" }}>
@@ -50,10 +62,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
         <div style={{ height: 18 }} />
 
-        <div className="row g20" style={{ alignItems: "flex-start" }}>
-          <aside className="stack g14" style={{ width: 330, flex: "none" }}>
+        <div className="split row g20" style={{ alignItems: "flex-start" }}>
+          <aside className="split-side stack g14" style={{ width: 330, flex: "none" }}>
             <div className="card stack g12">
-              <span className="eyebrow">REQUEST</span>
+              <span className="eyebrow">الطلب</span>
               <p>«{req.rawText}»</p>
               <div className="row g8" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 13 }}>
                 <div className="avatar sm">{req.requesterInitial}</div>
@@ -62,7 +74,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             </div>
 
             <div className="card stack g12">
-              <span className="eyebrow">CONFIRMED BRIEF</span>
+              <span className="eyebrow">الفهم المُعتمد</span>
               <p className="sm">{b.summaryAr}</p>
               <div className="stack g8" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 13 }}>
                 {b.targetRoles.length > 0 && <Row k="الأدوار" v={b.targetRoles.join("، ")} />}
@@ -82,7 +94,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             </div>
 
             <div className="card stack g12">
-              <span className="eyebrow">VERSIONS</span>
+              <span className="eyebrow">النسخ</span>
               {pipelines.map((p) => (
                 <div className="row g10" key={p.id} style={{ alignItems: "flex-start", opacity: p.status === "superseded" ? 0.55 : 1 }}>
                   <span className="dot" style={{ background: p.status === "superseded" ? "#C9C9C2" : "#4F6B4C", marginTop: 8 }} />
@@ -153,7 +165,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                       )}
                     </div>
 
-                    <div className="stack g6" style={{ width: 116, flex: "none" }}>
+                    <div className="act-col stack g6" style={{ width: 116, flex: "none" }}>
                       <form action={setItemStatus}>
                         <input type="hidden" name="pipelineId" value={current.id} />
                         <input type="hidden" name="itemId" value={item.id} />
@@ -213,5 +225,52 @@ function Row({ k, v }: { k: string; v: string }) {
       </span>
       <span className="sm">{v}</span>
     </div>
+  );
+}
+
+/**
+ * A request that reached the queue but has no pipeline yet: the requester
+ * opened it and has not confirmed the extracted brief. There is nothing for an
+ * account manager to review, but the row is still real work — someone stalled
+ * mid-request, and chasing them is exactly what a concierge service does.
+ */
+function AwaitingConfirmation({ account, request }: { account: Account; request: IntroRequest }) {
+  return (
+    <>
+      <AmBar on="queue" account={account} />
+      <div className="wrap">
+        <div className="mid stack g20" style={{ paddingTop: 20 }}>
+          <div className="row g10" style={{ alignItems: "baseline" }}>
+            <Link href="/am" className="sm dim">
+              الطابور /
+            </Link>
+            <h2>طلب لم يُأكَّد بعد</h2>
+          </div>
+
+          <div className="card stack g14">
+            <div className="stack g6">
+              <span className="eyebrow">نص الطلب</span>
+              <strong>«{request.rawText}»</strong>
+            </div>
+            {request.brief?.summaryAr && (
+              <div className="stack g6">
+                <span className="eyebrow">ما فهمناه</span>
+                <span className="sm muted">{request.brief.summaryAr}</span>
+              </div>
+            )}
+            <div className="note">
+              مقدّم الطلب ما أكّد الفهم بعد، وعشان كذا ما انبنت قائمة. القائمة تُبنى تلقائيًا أول
+              ما يأكّد — أو تواصل معه إذا وقف عند هذي الخطوة.
+            </div>
+          </div>
+
+          <div className="row">
+            <Link href={`/am/requests/${request.id}/pipeline`} className="btn btn-sm btn-ghost">
+              مسار الطلب
+            </Link>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

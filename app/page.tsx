@@ -1,4 +1,5 @@
 import { AppBar } from "@/components/Chrome";
+import { currentAccount } from "@/lib/session";
 import { createRequest } from "@/lib/actions";
 
 const EXAMPLES = [
@@ -7,10 +8,11 @@ const EXAMPLES = [
   "أبي أبيع منصة مدفوعات للبنوك — مين المسؤول عن Open Banking؟",
 ];
 
-export default function NewRequestPage() {
+export default async function NewRequestPage() {
+  const account = await currentAccount();
   return (
     <>
-      <AppBar />
+      <AppBar account={account} />
       <div className="wrap">
         <div className="narrow stack g26" style={{ paddingTop: 40 }}>
           <div className="stack g12">

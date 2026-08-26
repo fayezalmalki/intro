@@ -114,7 +114,8 @@ export const requests = pgTable("requests", {
   goalType: text("goal_type").$type<GoalType>(),
   brief: jsonb("brief"),
   confirmedAt: timestamp("confirmed_at", { mode: "string" }),
-  assignedAm: text("assigned_am").notNull(),
+  // Nullable: a request is unassigned until an account manager claims it.
+  assignedAm: text("assigned_am"),
   createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
   dueAt: timestamp("due_at", { mode: "string" }).notNull(),
 }, (t) => [index("requests_account_idx").on(t.accountId)]);

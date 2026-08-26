@@ -21,7 +21,7 @@ async function audit(
 }
 
 export async function createRequest(
-  input: { accountId: string; rawText: string; brief: Brief; slaHours: number; assignedAm: string },
+  input: { accountId: string; rawText: string; brief: Brief; slaHours: number; assignedAm?: string },
   database: Database = defaultDb,
 ): Promise<string> {
   return database.transaction(async (tx) => {

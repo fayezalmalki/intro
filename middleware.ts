@@ -10,14 +10,13 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "./auth.config";
+import { isProtected } from "./lib/routes";
 
 const { auth } = NextAuth(authConfig);
 
-const PROTECTED = ["/requests", "/am"];
-
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  if (!PROTECTED.some((p) => pathname.startsWith(p))) return NextResponse.next();
+  if (!isProtected(pathname)) return NextResponse.next();
   if (req.auth) return NextResponse.next();
 
   const url = new URL("/login", req.url);

@@ -156,10 +156,55 @@ cannot be approved, and why, is the right shape for a concierge tool. The typogr
 (one accent, restrained greys, generous whitespace) is consistent across every screen, and RTL
 composition is correct everywhere except the Next.js default 404.
 
-## Order of work
+## What was fixed in this pass
 
-1. Login page, sign-out, Arabic 404 — nobody can enter or leave
-2. Queue empty state — the account manager's first click
-3. Session-driven chrome, role-aware AM link, unassigned requests — no fictional identities
-4. Breakpoint: stacked queue rows, single-column pipeline details, wrapping bars
-5. Arabic headers, consistent numerals, remove or build the dead nav
+All twelve, plus one regression the work itself introduced.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | No `/login` | `app/login/` with Google, email OTP, and magic link; `app/api/auth/send-otp` |
+| 2 | Queue click → 404 | An awaiting-confirmation screen showing the brief and what it waits on |
+| 3 | No sign-out | `app/signout` — POST only, so a prefetch cannot sign anyone out |
+| 4 | Hardcoded demo people | Both bars take the session account |
+| 5 | AM link shown to everyone | Rendered only when `isAccountManager(account)` |
+| 6 | Fictional owner on new requests | `assigned_am` is nullable (migration `0002`); the view reads `غير مُسند` |
+| 7 | Queue table crushed at 390px | Rows become stacked cards below 720px |
+| 8 | Labels overlapping values | `.detail-grid` collapses to one column |
+| 9 | Bars wrapping into each other | The bars wrap deliberately; the role line drops, the avatar stays |
+| 10 | English headers | `الطلب`, `مقدّم الطلب`, `الهدف`, `الحالة`, `الموعد`, `الفهم المُعتمد`, `النسخ`, `سجل النسخ` |
+| 11 | Two numeral systems | `ar()` on the confirm page's confidence |
+| 12 | Dead nav | `القوائم` and `الأشخاص` removed rather than left inert |
+
+One more, found while fixing the others: a 330px fixed sidebar beside a flexible
+column pushed the whole review page off the leading edge at 390px. It survived the first
+sweep because RTL content spills **leftward**, and a "does anything sit past the right edge"
+check never fires. The probe now checks both edges.
+
+### A regression this work introduced, and caught
+
+Adding `currentAccount()` to `app/page.tsx` made the intake page resolve a session — but `/`
+was not in the middleware's protected list, so every signed-out visitor to the front door got
+a 500. Exactly the opaque server-side exception this whole round of work exists to stop.
+
+`/` cannot be added as a prefix, because `"/"` prefixes every path including `/login`, which
+would bounce the redirect back on itself forever. It needs an exact match, so the predicate
+moved to `lib/routes.ts` with four tests — one of which asserts `/login` stays open.
+
+## Verified
+
+- `npm test` — 104 passing (100 before, plus four for the route predicate)
+- `node scripts/e2e.mjs` — **33 steps, exit 0**, across two browser contexts signed in as a
+  requester and an account manager
+- Ten screens at 1440 and 390 with assertions: no horizontal scroll, nothing past either
+  edge, no 404 from the queue, and a requester cannot reach `/am`
+- `npx drizzle-kit check` — no drift; migrations apply cleanly from an empty database
+- `npm run build` — production build passes
+
+## Still open
+
+- `القوائم` and `الأشخاص` were deleted, not built. Lists exist in the data model and on the
+  attach screen, but there is no browsable list management.
+- `طلباتي` is gone from the bar for the same reason: there is still no screen showing a
+  requester their own requests. Worth building — it is the natural home for a returning user.
+- Claiming a request is not implemented. Requests now start unassigned and stay that way;
+  `assigned_am` is writable but nothing writes it.

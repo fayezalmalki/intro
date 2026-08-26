@@ -6,7 +6,7 @@ import { SendButton } from "@/components/SendButton";
 import { balanceOf } from "@/lib/credits";
 import { currentAccount } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
-import type { Db, OutreachStatus } from "@/lib/types";
+import type { Account, Db, OutreachStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -20,33 +20,41 @@ const OUTREACH_LABEL: Record<OutreachStatus, string> = {
 };
 
 export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
+  const account = await currentAccount();
   const { id } = await params;
   const db: Db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);
   if (!req) notFound();
 
   const published = db.pipelines.find((p) => p.requestId === id && p.status === "published");
-  if (!published) return <Sourcing requestText={req.rawText} summary={req.brief?.summaryAr ?? ""} am={req.assignedAm} />;
+  if (!published) return (
+      <Sourcing
+        account={account}
+        requestText={req.rawText}
+        summary={req.brief?.summaryAr ?? ""}
+        am={req.assignedAm}
+      />
+    );
 
   const prior = db.pipelines.filter((p) => p.requestId === id && p.version < published.version);
   const priorPeople = new Set(prior.flatMap((p) => p.items.map((i) => i.personId)));
   const byAm = published.source !== "ai_generated";
-  const account = await currentAccount();
   const credits = balanceOf(db, account.id);
 
   return (
     <>
-      <AppBar />
+      <AppBar account={account} />
       <div className="wrap">
         <div className="narrow stack g20" style={{ paddingTop: 30 }}>
           {published.version > 1 && (
             <div className="note row g12" style={{ alignItems: "flex-start" }}>
               <div className="avatar" style={{ background: "#fff", borderColor: "var(--accent-line)", color: "var(--accent)" }}>
-                {req.assignedAm.charAt(0)}
+                {req.assignedAm?.charAt(0) ?? "i"}
               </div>
               <div className="stack g4">
                 <strong>
-                  حدّثنا قائمتك — النسخة {ar(published.version)} من {req.assignedAm}، {byAm ? "مديرة حسابك" : "تلقائيًا"}.
+                  حدّثنا قائمتك — النسخة {ar(published.version)}
+                  {req.assignedAm ? ` من ${req.assignedAm}، مدير حسابك` : byAm ? " من فريق Intro" : " تلقائيًا"}.
                 </strong>
                 <span>اللي تواصلت معهم قبل، حالتهم محفوظة كما هي.</span>
               </div>
@@ -146,7 +154,17 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   );
 }
 
-function Sourcing({ requestText, summary, am }: { requestText: string; summary: string; am: string }) {
+function Sourcing({
+  account,
+  requestText,
+  summary,
+  am,
+}: {
+  account: Account;
+  requestText: string;
+  summary: string;
+  am?: string;
+}) {
   const steps = [
     { label: "الطلب", done: true },
     { label: "الفهم", done: true },
@@ -155,7 +173,7 @@ function Sourcing({ requestText, summary, am }: { requestText: string; summary: 
   ];
   return (
     <>
-      <AppBar />
+      <AppBar account={account} />
       <div className="wrap">
         <div className="narrow stack g26" style={{ paddingTop: 40 }}>
           <div className="steps">
@@ -178,10 +196,14 @@ function Sourcing({ requestText, summary, am }: { requestText: string; summary: 
           </div>
 
           <div className="card row g12">
-            <div className="avatar lg">{am.charAt(0)}</div>
+            <div className="avatar lg">{am ? am.charAt(0) : "؟"}</div>
             <div className="grow stack g4">
-              <strong className="sm">{am} تشتغل على طلبك</strong>
-              <span className="sm muted">مديرة حسابك</span>
+              {/* A request waits unassigned until an account manager claims it,
+                  so this says so rather than naming someone who has not. */}
+              <strong className="sm">{am ? `${am} تشتغل على طلبك` : "طلبك في الطابور"}</strong>
+              <span className="sm muted">
+                {am ? "مدير حسابك" : "بيتواصل معك مدير حسابك قريبًا"}
+              </span>
             </div>
             <span className="pill ok">قيد التجهيز</span>
           </div>

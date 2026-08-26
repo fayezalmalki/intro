@@ -60,6 +60,11 @@ jobs:
         env:
           DATABASE_DRIVER: postgres-js
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          # The flow signs in as a requester and as an account manager, so
+          # NextAuth needs a signing key. Not a secret: it signs throwaway
+          # sessions inside a disposable runner, and nothing it signs outlives
+          # the job.
+          AUTH_SECRET: ci-only-not-a-secret-0000000000000000
         run: |
           sh scripts/pg-start.sh "$RUNNER_TEMP/pg.log"
           npm run db:reset

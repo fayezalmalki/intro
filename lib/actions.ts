@@ -9,7 +9,6 @@ import { currentAccount, requireAccountManager } from "./session";
 import { assertDevTools } from "./env";
 import type { Channel, PipelineSource } from "./types";
 
-const AM_NAME = "ريم";
 const SLA_HOURS = 24;
 const DEV_GRANT = 5;
 
@@ -24,7 +23,10 @@ export async function createRequest(formData: FormData): Promise<void> {
     rawText,
     brief,
     slaHours: SLA_HOURS,
-    assignedAm: AM_NAME,
+    // Deliberately unassigned. This used to stamp every request with a seeded
+    // account manager's name, which in production means a fictional owner on
+    // work nobody has claimed. An account manager claims a request from the
+    // queue instead.
   });
 
   redirect(`/requests/${requestId}/confirm`);

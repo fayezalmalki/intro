@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { AppBar } from "@/components/Chrome";
+import { AppBar, ar } from "@/components/Chrome";
 import { confirmBrief } from "@/lib/actions";
+import { currentAccount } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ const GOAL_LABEL: Record<string, string> = {
 };
 
 export default async function ConfirmPage({ params }: { params: Promise<{ id: string }> }) {
+  const account = await currentAccount();
   const { id } = await params;
   const req = (await loadRequestContext(id)).requests.find((r) => r.id === id);
   if (!req?.brief) notFound();
@@ -21,7 +23,7 @@ export default async function ConfirmPage({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      <AppBar />
+      <AppBar account={account} />
       <div className="wrap">
         <div className="narrow stack g20" style={{ paddingTop: 36 }}>
           <div className="stack g12">
@@ -57,7 +59,7 @@ export default async function ConfirmPage({ params }: { params: Promise<{ id: st
 
             <div className="row between" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 16 }}>
               <span className="sm dim">
-                استُخرج بـ{b.extractedBy === "claude" ? "Claude" : "قواعد محلية"} · ثقة {Math.round(b.confidence * 100)}٪
+                استُخرج بـ{b.extractedBy === "claude" ? "Claude" : "قواعد محلية"} · ثقة {ar(Math.round(b.confidence * 100))}٪
               </span>
               <button type="submit" className="btn-primary">
                 تمام، كمّل
