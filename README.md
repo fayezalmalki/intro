@@ -52,6 +52,7 @@ sequence in Chromium and writes screenshots plus a step log.
 - [`docs/00-demo-review.md`](docs/00-demo-review.md) — review of the original `introsademo.html` prototype, extracted design tokens, and the gaps this MVP closes
 - [`docs/01-mvp-plan.md`](docs/01-mvp-plan.md) — the loop, request state machine, pipeline versioning, compliance, milestones
 - [`docs/02-data-model.md`](docs/02-data-model.md) — the target Postgres schema
+- [`docs/03-design-review.md`](docs/03-design-review.md) — sending architecture, access model, monetization, tools, and the build order
 - [`design/`](design/) — the Claude Design canvas source (`.dc.html` artboards + `canvas.json`)
 
 ## Shape
