@@ -227,3 +227,53 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
   .split-side { width: 100% !important; }
   .act-col { width: 100% !important; }
 }
+
+/* ---- public landing ---- */
+.landing { max-width: 1100px; margin: 0 auto; }
+.landing .bar { background: transparent; border-bottom: none; padding: 0 24px; }
+.landing .bar-nav a { color: var(--ink-2); font-size: 14px; }
+.landing .bar-nav a:hover { color: var(--ink); }
+.landing-wrap { padding: 0 24px; }
+
+.hero {
+  text-align: center;
+  padding: 72px 24px 64px;
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+}
+.hero h1 { font-size: 40px; letter-spacing: -0.02em; }
+.hero h2 { font-size: 30px; }
+.hero p { max-width: 460px; }
+
+.hero-form {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; max-width: 560px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 8px 8px 8px 8px;
+}
+.hero-form input { border: none; background: transparent; padding: 8px 10px; }
+.hero-form input:focus { outline: none; }
+.hero-form .btn-primary { flex: none; padding: 9px 14px; }
+
+.band { background: var(--surface); border-block: 1px solid var(--line); padding: 64px 0; }
+.band h2 { font-size: 26px; }
+
+.tri { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.tri-cell { border-inline-start: 1px solid var(--line); padding-inline-start: 20px; }
+.tri-cell:first-child { border-inline-start: none; padding-inline-start: 0; }
+
+.steps-3 {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 26px; padding-block: 64px;
+}
+
+@media (max-width: 720px) {
+  .hero { padding: 44px 20px 40px; }
+  .hero h1 { font-size: 29px; }
+  .hero h2 { font-size: 24px; }
+  .band { padding: 44px 0; }
+  /* Three columns of Arabic do not survive 390px any better here than they did
+     in the account-manager queue. */
+  .tri, .steps-3 { grid-template-columns: minmax(0, 1fr); }
+  .tri-cell { border-inline-start: none; padding-inline-start: 0; }
+  .steps-3 { padding-block: 40px; }
+}

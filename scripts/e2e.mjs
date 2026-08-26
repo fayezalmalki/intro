@@ -74,7 +74,7 @@ function as(who) {
 
 as("requester");
 // 1. intake
-await page.goto(BASE, { waitUntil: "networkidle" });
+await page.goto(`${BASE}/new`, { waitUntil: "networkidle" });
 step("intake page loaded", await page.locator("h1").innerText());
 await shot("01-intake");
 

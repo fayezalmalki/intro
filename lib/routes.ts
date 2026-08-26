@@ -4,15 +4,14 @@
  * Kept apart from middleware.ts so it can be tested without pulling NextAuth
  * (and, through it, the Edge runtime shims) into the test environment.
  */
-const PROTECTED_PREFIXES = ["/requests", "/am"];
+const PROTECTED_PREFIXES = ["/requests", "/am", "/new"];
 
 /**
- * The intake page is protected too, and by exact match rather than prefix: a
- * request belongs to an account from the moment it is created, so the page
- * resolves the session. Left unprotected it threw for signed-out visitors — a
- * 500 on the product's front door. A prefix match cannot express this, since
- * "/" prefixes every path, /login included.
+ * "/" is the public landing and stays open — it is the entire pitch, and a
+ * visitor who has not signed up yet is exactly who it is for. Intake lives at
+ * /new and is protected, because a request belongs to an account from the
+ * moment it is created.
  */
 export function isProtected(pathname: string): boolean {
-  return pathname === "/" || PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
+  return PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
 }

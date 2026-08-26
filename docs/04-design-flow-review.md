@@ -200,6 +200,36 @@ moved to `lib/routes.ts` with four tests — one of which asserts `/login` stays
 - `npx drizzle-kit check` — no drift; migrations apply cleanly from an empty database
 - `npm run build` — production build passes
 
+## The landing page — found by comparing against the demo, not the app
+
+Everything above came from reviewing the running app. That misses whatever was never built,
+and one thing never was: **the public landing.**
+
+Rendering `introsademo.html` shows a full marketing page — nav with `تسجيل الدخول`, the hero
+`مين ودك توصل له؟`, a `مو قائمة أسماء.` section translating «أبي أبيع للبنوك» into
+Head of Open Banking / VP Digital Partnerships / Head of Fintech, three numbered steps, a
+worked example with real person cards, and a closing `من ودك تعرف؟`.
+
+None of it reached the app, and none of it reached `design/` or `docs/00-demo-review.md`
+either — that first review started at the intake screen and never looked at what came before
+it. `/` was the bare intake form, so the entire case for the product had nowhere to live.
+
+Protecting `/` had made this worse: a first-time visitor to `intro.sa` was redirected to a
+sign-in wall before seeing anything at all. The demo puts `تسجيل الدخول` in the nav, which is
+the opposite arrangement — the landing is public and sign-in is one path off it.
+
+So the routing changed:
+
+| Path | Before | Now |
+|---|---|---|
+| `/` | intake form, protected | public landing |
+| `/new` | — | intake form, protected |
+
+The hero is a GET form, so the sentence a visitor types becomes `?q=`, survives the redirect
+through sign-in, and comes back prefilled. That needed middleware to carry `pathname + search`
+into `next` rather than the path alone — otherwise someone types what they want, signs in, and
+lands on an empty box.
+
 ## Still open
 
 - `القوائم` and `الأشخاص` were deleted, not built. Lists exist in the data model and on the
