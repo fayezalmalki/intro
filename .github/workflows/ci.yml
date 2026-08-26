@@ -50,13 +50,19 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Run the flow end to end
-        # Deliberately `npm run dev`, not `npm start`. The flow exercises two
-        # development-only affordances: the JSON store, which lib/env.ts refuses
-        # to run under NODE_ENV=production, and the account shortcut, which is
-        # hidden outside development. `npm start` fails here by design — the
-        # production build is verified by the `check` job's build step instead.
-        # This job goes back to a production server once auth and Postgres land.
+        # Against a real Postgres: scripts/db-local.mjs serves PGlite over the
+        # Postgres wire protocol, so this exercises the same driver path as
+        # Neon rather than a stand-in. Nothing to provision.
+        #
+        # Deliberately `npm run dev`, not `npm start`: the flow uses the
+        # account shortcut, which is disabled outside development. The
+        # production build is verified by the `check` job instead.
+        env:
+          DATABASE_DRIVER: postgres-js
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
         run: |
+          sh scripts/pg-start.sh "$RUNNER_TEMP/pg.log"
+          npm run db:reset
           npm run dev &
           npx wait-on http://localhost:3000 --timeout 120000
           node scripts/e2e.mjs "$RUNNER_TEMP/shots"

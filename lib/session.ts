@@ -1,13 +1,28 @@
-import type { Account, Db } from "./types";
+import { eq } from "drizzle-orm";
+import type { Database } from "./db";
+import { db as defaultDb } from "./db";
+import { accounts } from "./db/schema";
+import type { Account } from "./types";
 
 /**
- * Stand-in for auth. Milestone 1 replaces this with the Supabase session; every
- * caller already goes through it, so the swap is contained to this file.
+ * Stand-in for auth. NextAuth replaces this in the next milestone; every
+ * caller already goes through it, so the swap stays contained to this file.
  */
 export const DEV_ACCOUNT_ID = "acc-faisal";
 
-export function currentAccount(db: Db): Account {
-  const account = db.accounts.find((a) => a.id === DEV_ACCOUNT_ID);
-  if (!account) throw new Error("no current account — the store was not seeded");
-  return account;
+export async function currentAccount(database: Database = defaultDb): Promise<Account> {
+  const [row] = await database
+    .select().from(accounts).where(eq(accounts.id, DEV_ACCOUNT_ID)).limit(1);
+  if (!row) {
+    throw new Error(
+      "No account found — run `npm run db:seed` against this database first.",
+    );
+  }
+  return {
+    ...row,
+    verifiedAt: row.verifiedAt ?? undefined,
+    frozenAt: row.frozenAt ?? undefined,
+    frozenReason: row.frozenReason ?? undefined,
+    assignedAm: row.assignedAm ?? undefined,
+  };
 }

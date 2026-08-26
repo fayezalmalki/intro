@@ -31,7 +31,10 @@ neonConfig.webSocketConstructor = globalThis.WebSocket ?? ws;
  */
 function createDb(): Database {
   if (process.env.DATABASE_DRIVER === "postgres-js" && process.env.DATABASE_URL) {
-    const client = postgres(process.env.DATABASE_URL);
+    // PGlite (scripts/db-local.mjs) is one embedded engine behind the wire
+    // protocol; a multi-connection pool fights over it. One connection is also
+    // fine against a real Postgres in development.
+    const client = postgres(process.env.DATABASE_URL, { max: 1 });
     // The query-builder API is identical across drivers; the cast keeps one
     // exported type for the app while allowing the local driver.
     return drizzlePostgresJs(client, { schema }) as unknown as Database;
@@ -43,5 +46,21 @@ function createDb(): Database {
   return drizzleNeon(pool, { schema });
 }
 
-export const db = createDb();
+/**
+ * Lazy, and deliberately so. ES module imports are hoisted, so a script that
+ * loads .env.local before using the database would still have evaluated this
+ * module first — and picked its driver from an environment that was not set up
+ * yet. Creating the client on first use makes the order irrelevant, and keeps
+ * `next build` from opening a connection it never uses.
+ */
+let instance: Database | undefined;
+
+export const db: Database = new Proxy({} as Database, {
+  get(_target, property) {
+    instance ??= createDb();
+    const value = Reflect.get(instance as object, property);
+    return typeof value === "function" ? value.bind(instance) : value;
+  },
+});
+
 export { schema };

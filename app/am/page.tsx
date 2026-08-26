@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AmBar, ar } from "@/components/Chrome";
-import { getDb } from "@/lib/store";
+import { loadQueue } from "@/lib/db/loaders";
 import type { IntroRequest, RequestStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ const GOAL: Record<string, string> = {
 };
 
 export default async function QueuePage() {
-  const db = getDb();
+  const db = await loadQueue();
   const rows = db.requests;
   const waiting = rows.filter((r) => r.status === "in_sourcing").length;
   const late = rows.filter((r) => isLate(r)).length;

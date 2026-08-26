@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AmBar, ar } from "@/components/Chrome";
 import { buildPipelineView, type Stage, type StageState } from "@/lib/pipeline";
-import { getDb } from "@/lib/store";
+import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ const STATE_LABEL: Record<StageState, string> = {
 
 export default async function PipelinePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const view = buildPipelineView(getDb(), id);
+  const view = buildPipelineView(await loadRequestContext(id), id);
   if (!view) notFound();
 
   return (

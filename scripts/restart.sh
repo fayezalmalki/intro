@@ -25,7 +25,9 @@ if [ -n "$pid" ]; then
   [ -n "$(find_pid)" ] && kill -9 "$(find_pid)" 2>/dev/null
 fi
 
-rm -rf .data
+# The app's own tables are reset and re-seeded; the database server itself
+# keeps running (scripts/pg-start.sh owns that).
+npm run db:reset >/dev/null 2>&1 || echo "warning: db:reset failed — is the database up?"
 setsid nohup npm run "$MODE" > "$LOG" 2>&1 < /dev/null &
 for i in $(seq 1 90); do
   sleep 1

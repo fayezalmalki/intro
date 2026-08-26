@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AmBar, ar } from "@/components/Chrome";
 import { attachPipeline } from "@/lib/actions";
-import { getDb } from "@/lib/store";
+import { loadLists, loadRequestContext, merge } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,7 @@ export default async function AttachPage({
 }) {
   const { id } = await params;
   const { tab = "csv" } = await searchParams;
-  const db = getDb();
+  const db = merge(await loadRequestContext(id), await loadLists());
   const req = db.requests.find((r) => r.id === id);
   if (!req) notFound();
 

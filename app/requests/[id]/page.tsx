@@ -5,7 +5,7 @@ import { devToolsEnabled } from "@/lib/env";
 import { SendButton } from "@/components/SendButton";
 import { balanceOf } from "@/lib/credits";
 import { currentAccount } from "@/lib/session";
-import { getDb } from "@/lib/store";
+import { loadRequestContext } from "@/lib/db/loaders";
 import type { Db, OutreachStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ const OUTREACH_LABEL: Record<OutreachStatus, string> = {
 
 export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db: Db = getDb();
+  const db: Db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);
   if (!req) notFound();
 
@@ -31,7 +31,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   const prior = db.pipelines.filter((p) => p.requestId === id && p.version < published.version);
   const priorPeople = new Set(prior.flatMap((p) => p.items.map((i) => i.personId)));
   const byAm = published.source !== "ai_generated";
-  const account = currentAccount(db);
+  const account = await currentAccount();
   const credits = balanceOf(db, account.id);
 
   return (

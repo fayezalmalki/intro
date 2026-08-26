@@ -8,11 +8,16 @@ Arabic-first (RTL), Saudi market.
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000
+cp .env.example .env.local     # already points at the local database
+sh scripts/pg-start.sh         # Postgres, nothing to install
+npm run db:reset               # apply the schema and seed
+npm run dev                    # http://localhost:3000
 ```
 
-No API keys or external services required. State lives in a JSON file at `.data/db.json`,
-created and seeded on first request; delete it to reset.
+No API keys, no database to provision. `scripts/db-local.mjs` serves PGlite — Postgres
+compiled to WASM — over the real Postgres wire protocol, so local development runs the
+same driver path as Neon rather than a stand-in. `npm run db:reset` returns it to a
+known state.
 
 Set `ANTHROPIC_API_KEY` to have Claude extract the intent brief. Without one the app
 falls back to a deterministic keyword extractor, so every screen still works — the

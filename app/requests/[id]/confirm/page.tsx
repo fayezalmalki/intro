@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { AppBar } from "@/components/Chrome";
 import { confirmBrief } from "@/lib/actions";
-import { getDb } from "@/lib/store";
+import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ const GOAL_LABEL: Record<string, string> = {
 
 export default async function ConfirmPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const req = getDb().requests.find((r) => r.id === id);
+  const req = (await loadRequestContext(id)).requests.find((r) => r.id === id);
   if (!req?.brief) notFound();
   const b = req.brief;
 

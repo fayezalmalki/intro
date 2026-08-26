@@ -34,12 +34,18 @@ for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort())
   }
 }
 
-const server = new PGLiteSocketServer({ db, port: PORT, host: "127.0.0.1" });
+const server = new PGLiteSocketServer({ db, port: PORT, host: "127.0.0.1", maxConnections: 20 });
 await server.start();
+
+// A pidfile, so stopping this server never means pattern-matching process
+// command lines — a match that also hits the shell doing the matching.
+const pidFile = path.join(process.cwd(), ".data", "pg.pid");
+fs.writeFileSync(pidFile, String(process.pid));
 console.log(`local postgres on 127.0.0.1:${PORT} (pglite, data in .data/pg)`);
 
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, async () => {
+    try { fs.unlinkSync(pidFile); } catch {}
     await server.stop();
     await db.close();
     process.exit(0);

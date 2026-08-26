@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AmBar, Check, ar } from "@/components/Chrome";
-import { getDb } from "@/lib/store";
+import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ const SOURCE: Record<string, string> = {
 
 export default async function PublishedPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDb();
+  const db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);
   if (!req) notFound();
 
