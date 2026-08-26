@@ -5,7 +5,8 @@ import {
 import type { AdapterAccountType } from "next-auth/adapters";
 import type {
   AccountState, Channel, Evidence, Fit, GateFailure, GoalType, ItemStatus,
-  LedgerReason, OutreachStatus, PipelineSource, PipelineStatus, RequestStatus, SendPool,
+  LedgerReason, OutreachStatus, PipelineSource, PipelineStatus, RequestStatus,
+  Role, SendPool,
 } from "../types";
 
 // ── NextAuth tables — copied from about-sa so the DrizzleAdapter works ──
@@ -59,6 +60,7 @@ export const accounts = pgTable("accounts", {
   displayName: text("display_name").notNull(),
   initial: text("initial").notNull(),
   email: text("email").notNull(),
+  role: text("role").$type<Role>().notNull().default("requester"),
   state: text("state").$type<AccountState>().notNull().default("observer"),
   verifiedAt: timestamp("verified_at", { mode: "string" }),
   dailyCap: integer("daily_cap").notNull().default(10),
@@ -112,7 +114,8 @@ export const requests = pgTable("requests", {
   goalType: text("goal_type").$type<GoalType>(),
   brief: jsonb("brief"),
   confirmedAt: timestamp("confirmed_at", { mode: "string" }),
-  assignedAm: text("assigned_am").notNull(),
+  // Nullable: a request is unassigned until an account manager claims it.
+  assignedAm: text("assigned_am"),
   createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
   dueAt: timestamp("due_at", { mode: "string" }).notNull(),
 }, (t) => [index("requests_account_idx").on(t.accountId)]);

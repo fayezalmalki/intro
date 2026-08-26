@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
+import { signIn } from "./lib/auth-helper.mjs";
 
 const BASE = "http://localhost:3000";
 const OUT = process.argv[2] ?? "/tmp/shots";
@@ -18,30 +19,62 @@ const LOCAL_CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const browser = await chromium.launch(
   fs.existsSync(LOCAL_CHROME) ? { executablePath: LOCAL_CHROME } : {},
 );
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-// `next dev` compiles each route on first request, so a cold navigation can
-// take far longer than the 30s default — especially on a CI runner.
-page.setDefaultTimeout(90_000);
-page.setDefaultNavigationTimeout(90_000);
+
 const errors = [];
-page.on("pageerror", (e) => errors.push(String(e)));
-page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-page.on("requestfailed", (r) => {
-  // ERR_ABORTED means the request was cancelled, almost always because this
-  // script navigated before a <Link> prefetch or a dev hot-update finished.
-  // That is not an application failure, and treating it as one made the script
-  // exit non-zero while every step passed.
-  if (r.failure()?.errorText === "net::ERR_ABORTED") return;
-  errors.push(`requestfailed [${r.failure()?.errorText}] ${r.url()}`);
-});
-page.on("response", (r) => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
+
+/**
+ * Roles are enforced now, so one browser context can no longer drive both
+ * halves of the flow: the requester screens need a requester, and /am refuses
+ * anyone who is not an account manager. Two contexts, each signed in through
+ * the dev-only `dev-email` provider, and each carrying its own cookie jar.
+ */
+async function identity(email) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  await signIn(context, BASE, email);
+  const page = await context.newPage();
+  // `next dev` compiles each route on first request, so a cold navigation can
+  // take far longer than the 30s default — especially on a CI runner.
+  page.setDefaultTimeout(90_000);
+  page.setDefaultNavigationTimeout(90_000);
+  watch(page, email);
+  return page;
+}
+
+function watch(page, who) {
+  page.on("pageerror", (e) => errors.push(`[${who}] ${e}`));
+  page.on("console", (m) => { if (m.type() === "error") errors.push(`[${who}] ${m.text()}`); });
+  page.on("requestfailed", (r) => {
+    // ERR_ABORTED means the request was cancelled, almost always because this
+    // script navigated before a <Link> prefetch or a dev hot-update finished.
+    // That is not an application failure, and treating it as one made the
+    // script exit non-zero while every step passed.
+    if (r.failure()?.errorText === "net::ERR_ABORTED") return;
+    errors.push(`[${who}] requestfailed [${r.failure()?.errorText}] ${r.url()}`);
+  });
+  page.on("response", (r) => {
+    if (r.status() >= 400) errors.push(`[${who}] HTTP ${r.status()} ${r.url()}`);
+  });
+}
+
+const requester = await identity("faisal@example.sa");
+const manager = await identity("reem@example.sa");
+
+/** Whichever identity the current step is acting as. */
+let page = requester;
 
 async function shot(name) {
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
 }
 
+/** Switches which identity subsequent steps act as, and says so in the log. */
+function as(who) {
+  page = who === "requester" ? requester : manager;
+  step(`— acting as ${who} —`);
+}
+
+as("requester");
 // 1. intake
-await page.goto(BASE, { waitUntil: "networkidle" });
+await page.goto(`${BASE}/new`, { waitUntil: "networkidle" });
 step("intake page loaded", await page.locator("h1").innerText());
 await shot("01-intake");
 
@@ -59,6 +92,7 @@ await shot("03-sourcing");
 
 const requestId = page.url().split("/").pop();
 
+as("manager");
 // 3. AM queue
 await page.goto(`${BASE}/am`, { waitUntil: "networkidle" });
 const queueRows = await page.locator(".tr:not(.head)").count();
@@ -110,6 +144,7 @@ await page.waitForURL(/\/published$/);
 step("published v1", (await page.locator("h1").innerText()).trim());
 await shot("07-published-v1");
 
+as("requester");
 // 6. requester sees v1 — but the account is an observer, so the gate holds
 await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
 const peopleCards = page.locator(".narrow > .card").filter({ has: page.locator(".lat") });
@@ -140,6 +175,7 @@ await shot("08-results-v1-sent");
 const second = peopleCards.filter({ hasText: firstName });
 step("repeat send offered again?", String(await second.locator("form button.btn-primary").count()));
 
+as("manager");
 // 7. AM attaches v2 from a predefined list
 await page.goto(`${BASE}/am/requests/${requestId}/attach?tab=list`, { waitUntil: "networkidle" });
 await shot("09-attach-list");
@@ -154,6 +190,7 @@ const carry = await page.locator(".note").innerText();
 step("carry-forward note", carry.replace(/\s+/g, " ").trim());
 await shot("10-published-v2");
 
+as("requester");
 // 8. requester sees v2 with state preserved
 await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
 const banner = await page.locator(".note").innerText();
@@ -164,6 +201,7 @@ const newTags = await page.locator(".chip.on").count();
 step("rows marked new in v2", String(newTags));
 await shot("11-results-v2");
 
+as("manager");
 // 9. paste attach → v3
 await page.goto(`${BASE}/am/requests/${requestId}/attach?tab=paste`, { waitUntil: "networkidle" });
 await shot("12-attach-paste");

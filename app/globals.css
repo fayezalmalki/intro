@@ -162,3 +162,118 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
 .steps { display: flex; align-items: center; gap: 0; }
 .steps .seg { display: flex; align-items: center; gap: 9px; }
 .steps .line { width: 34px; height: 1px; background: var(--line); margin: 0 4px; }
+
+/* ---- login / empty-state pages ---- */
+.login-page {
+  min-height: 100dvh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px 20px;
+}
+.divider { display: flex; align-items: center; gap: 12px; }
+.divider::before, .divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--line);
+}
+
+/* ---- small screens ----
+   Everything above this line was written against 1440px artboards and had no
+   breakpoint at all, so a phone got the desktop grids at a third of the width:
+   the queue's 666px of fixed track crushed each cell to about 40px, and the
+   pipeline's fixed 96px labels overlapped their own values. */
+@media (max-width: 720px) {
+  .wrap { padding: 18px 16px 32px; }
+
+  .bar {
+    height: auto; padding: 12px 16px;
+    flex-wrap: wrap; gap: 10px 14px;
+  }
+  .bar-left { gap: 16px; flex-wrap: wrap; }
+  .bar-nav { gap: 14px; }
+  /* The role line is the first thing worth losing — the avatar still says who
+     you are, and the name reappears the moment there is room for it. */
+  .bar-who { display: none; }
+
+  /* The queue stops being a table. Each row becomes a card whose cells stack,
+     which is the only honest option: six columns of Arabic do not fit 390px. */
+  .tbl { background: transparent; border: none; border-radius: 0; overflow: visible; }
+  .tr {
+    grid-template-columns: 1fr;
+    gap: 10px; padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    margin-bottom: 10px;
+    align-items: start;
+  }
+  .tr:last-child { margin-bottom: 0; }
+  .tr.head { display: none; }
+  .tr .btn { justify-self: start; }
+
+  h1 { font-size: 22px; }
+  h2 { font-size: 19px; }
+}
+
+/* The pipeline view's detail pairs, which are inline-styled two-up. */
+@media (max-width: 720px) {
+  .detail-grid { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/* A 330px fixed sidebar beside a flexible column is fine at 1440 and fatal at
+   390: the sidebar alone exceeds the content width, so the main column
+   collapses to a few pixels and its rows spill off the leading edge. In RTL
+   that spill runs leftward, which is why a plain scrollWidth check catches it
+   but a "does anything sit past the right edge" check does not. */
+.split { flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .split { flex-direction: column; }
+  .split-side { width: 100% !important; }
+  .act-col { width: 100% !important; }
+}
+
+/* ---- public landing ---- */
+.landing { max-width: 1100px; margin: 0 auto; }
+.landing .bar { background: transparent; border-bottom: none; padding: 0 24px; }
+.landing .bar-nav a { color: var(--ink-2); font-size: 14px; }
+.landing .bar-nav a:hover { color: var(--ink); }
+.landing-wrap { padding: 0 24px; }
+
+.hero {
+  text-align: center;
+  padding: 72px 24px 64px;
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+}
+.hero h1 { font-size: 40px; letter-spacing: -0.02em; }
+.hero h2 { font-size: 30px; }
+.hero p { max-width: 460px; }
+
+.hero-form {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; max-width: 560px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 8px 8px 8px 8px;
+}
+.hero-form input { border: none; background: transparent; padding: 8px 10px; }
+.hero-form input:focus { outline: none; }
+.hero-form .btn-primary { flex: none; padding: 9px 14px; }
+
+.band { background: var(--surface); border-block: 1px solid var(--line); padding: 64px 0; }
+.band h2 { font-size: 26px; }
+
+.tri { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.tri-cell { border-inline-start: 1px solid var(--line); padding-inline-start: 20px; }
+.tri-cell:first-child { border-inline-start: none; padding-inline-start: 0; }
+
+.steps-3 {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 26px; padding-block: 64px;
+}
+
+@media (max-width: 720px) {
+  .hero { padding: 44px 20px 40px; }
+  .hero h1 { font-size: 29px; }
+  .hero h2 { font-size: 24px; }
+  .band { padding: 44px 0; }
+  /* Three columns of Arabic do not survive 390px any better here than they did
+     in the account-manager queue. */
+  .tri, .steps-3 { grid-template-columns: minmax(0, 1fr); }
+  .tri-cell { border-inline-start: none; padding-inline-start: 0; }
+  .steps-3 { padding-block: 40px; }
+}

@@ -8,6 +8,20 @@
       "when": 1787723980255,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787732890731,
+      "tag": "0001_account_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787737942985,
+      "tag": "0002_unassigned_requests",
+      "breakpoints": true
     }
   ]
 }

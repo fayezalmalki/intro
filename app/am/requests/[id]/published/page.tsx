@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AmBar, Check, ar } from "@/components/Chrome";
+import { requireAccountManager } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ const SOURCE: Record<string, string> = {
 };
 
 export default async function PublishedPage({ params }: { params: Promise<{ id: string }> }) {
+  // Defence in depth. The actions each check the role too — that is the real
+  // boundary — but a requester who reaches this URL should be refused here.
+  const account = await requireAccountManager("open the account-manager console");
   const { id } = await params;
   const db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);
@@ -31,7 +35,7 @@ export default async function PublishedPage({ params }: { params: Promise<{ id: 
 
   return (
     <>
-      <AmBar on="queue" />
+      <AmBar on="queue" account={account} />
       <div className="wrap">
         <div className="mid stack g26" style={{ paddingTop: 40 }}>
           <div className="stack g14">
@@ -52,7 +56,7 @@ export default async function PublishedPage({ params }: { params: Promise<{ id: 
           </div>
 
           <div className="card stack g16">
-            <span className="eyebrow">VERSION HISTORY</span>
+            <span className="eyebrow">سجل النسخ</span>
             {pipelines.map((p) => (
               <div className="row g12" key={p.id} style={{ alignItems: "flex-start" }}>
                 <span

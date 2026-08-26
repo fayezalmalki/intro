@@ -5,15 +5,19 @@ import { accounts, authUsers, listMembers, people, peopleLists } from "./schema"
 import { SEED_ACCOUNTS, SEED_LISTS, SEED_PEOPLE } from "../seed";
 
 /**
- * Idempotent. Safe to run against a database that already has data.
+ * The people graph: safe to run against production, and necessary there — with
+ * no people, an AI-drafted pipeline comes back empty and there is nothing for
+ * an account manager to review.
  *
  * The explicit ids matter and are not incidental: lib/sourcing.ts keys its
  * sourced evidence off these stable person ids. Letting Postgres generate
- * UUIDs instead would leave every AI-drafted row with no evidence — and since
- * the evidence gate refuses rows without a source, the review console would
+ * UUIDs instead would leave every drafted row with no evidence — and since the
+ * evidence gate refuses rows without a source, the review console would
  * silently stop being able to approve anything.
+ *
+ * Idempotent.
  */
-export async function seed(database: Database = defaultDb): Promise<void> {
+export async function seedGraph(database: Database = defaultDb): Promise<void> {
   for (const person of SEED_PEOPLE) {
     await database.insert(people).values(person).onConflictDoNothing();
   }
@@ -27,7 +31,16 @@ export async function seed(database: Database = defaultDb): Promise<void> {
       await database.insert(listMembers).values({ listId: list.id, personId }).onConflictDoNothing();
     }
   }
+}
 
+/**
+ * Fictional accounts, for development and tests only.
+ *
+ * Deliberately not reachable from `npm run db:seed`: in production, accounts
+ * come from real sign-ins via lib/session.ts, and a seeded account manager
+ * nobody can sign in as would just be a name attached to other people's work.
+ */
+export async function seedDemoAccounts(database: Database = defaultDb): Promise<void> {
   for (const account of SEED_ACCOUNTS) {
     const [existing] = await database
       .select().from(authUsers).where(eq(authUsers.email, account.email)).limit(1);

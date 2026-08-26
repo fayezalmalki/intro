@@ -62,6 +62,8 @@ function time(iso?: string): string | undefined {
  *
  * Pure over `Db`, like lib/gate.ts, so it survives the Postgres port unchanged.
  */
+const UNASSIGNED = "غير مُسند";
+
 export function buildPipelineView(db: Db, requestId: string): PipelineView | undefined {
   const request = db.requests.find((r) => r.id === requestId);
   if (!request) return undefined;
@@ -126,9 +128,9 @@ export function buildPipelineView(db: Db, requestId: string): PipelineView | und
     summary:
       pipelines.length === 0
         ? "لم تُبنَ قائمة بعد."
-        : `${ar(pipelines.length)} نسخة · مدير الحساب ${request.assignedAm}`,
+        : `${ar(pipelines.length)} نسخة · مدير الحساب ${request.assignedAm ?? UNASSIGNED}`,
     details: [
-      { label: "مدير الحساب", value: request.assignedAm },
+      { label: "مدير الحساب", value: request.assignedAm ?? UNASSIGNED },
       {
         label: "الموعد",
         value: overdue ? "تجاوز الوقت" : new Date(request.dueAt).toISOString().slice(0, 10),

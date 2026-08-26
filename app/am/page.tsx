@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AmBar, ar } from "@/components/Chrome";
+import { requireAccountManager } from "@/lib/session";
 import { loadQueue } from "@/lib/db/loaders";
 import type { IntroRequest, RequestStatus } from "@/lib/types";
 
@@ -19,6 +20,9 @@ const GOAL: Record<string, string> = {
 };
 
 export default async function QueuePage() {
+  // Defence in depth. The actions each check the role too — that is the real
+  // boundary — but a requester who reaches this URL should be refused here.
+  const account = await requireAccountManager("open the account-manager console");
   const db = await loadQueue();
   const rows = db.requests;
   const waiting = rows.filter((r) => r.status === "in_sourcing").length;
@@ -27,7 +31,7 @@ export default async function QueuePage() {
 
   return (
     <>
-      <AmBar on="queue" />
+      <AmBar on="queue" account={account} />
       <div className="wrap">
         <div className="row between" style={{ alignItems: "baseline" }}>
           <h2>طابور الطلبات</h2>
@@ -56,11 +60,11 @@ export default async function QueuePage() {
         ) : (
           <div className="tbl">
             <div className="tr head">
-              <span>REQUEST</span>
-              <span>REQUESTER</span>
-              <span>GOAL</span>
-              <span>STATE</span>
-              <span>SLA</span>
+              <span>الطلب</span>
+              <span>مقدّم الطلب</span>
+              <span>الهدف</span>
+              <span>الحالة</span>
+              <span>الموعد</span>
               <span />
             </div>
             {rows.map((r) => {

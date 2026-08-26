@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AmBar, ar } from "@/components/Chrome";
 import { buildPipelineView, type Stage, type StageState } from "@/lib/pipeline";
+import { requireAccountManager } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
@@ -28,13 +29,16 @@ const STATE_LABEL: Record<StageState, string> = {
 };
 
 export default async function PipelinePage({ params }: { params: Promise<{ id: string }> }) {
+  // Defence in depth. The actions each check the role too — that is the real
+  // boundary — but a requester who reaches this URL should be refused here.
+  const account = await requireAccountManager("open the account-manager console");
   const { id } = await params;
   const view = buildPipelineView(await loadRequestContext(id), id);
   if (!view) notFound();
 
   return (
     <>
-      <AmBar on="queue" />
+      <AmBar on="queue" account={account} />
       <div className="wrap">
         <div className="row between" style={{ alignItems: "baseline" }}>
           <div className="row g10" style={{ alignItems: "baseline" }}>
@@ -107,6 +111,7 @@ function StageRow({ stage, index, last }: { stage: Stage; index: number; last: b
 
           {stage.details.length > 0 && (
             <div
+              className="detail-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(2, minmax(0, 1fr))",

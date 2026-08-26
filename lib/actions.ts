@@ -5,11 +5,10 @@ import { redirect } from "next/navigation";
 import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
-import { currentAccount } from "./session";
+import { currentAccount, requireAccountManager } from "./session";
 import { assertDevTools } from "./env";
 import type { Channel, PipelineSource } from "./types";
 
-const AM_NAME = "ريم";
 const SLA_HOURS = 24;
 const DEV_GRANT = 5;
 
@@ -24,7 +23,10 @@ export async function createRequest(formData: FormData): Promise<void> {
     rawText,
     brief,
     slaHours: SLA_HOURS,
-    assignedAm: AM_NAME,
+    // Deliberately unassigned. This used to stamp every request with a seeded
+    // account manager's name, which in production means a fictional owner on
+    // work nobody has claimed. An account manager claims a request from the
+    // queue instead.
   });
 
   redirect(`/requests/${requestId}/confirm`);
@@ -41,17 +43,19 @@ export async function confirmBrief(formData: FormData): Promise<void> {
 }
 
 export async function setItemStatus(formData: FormData): Promise<void> {
+  const am = await requireAccountManager("review a pipeline");
   await repo.setItemStatus(
     String(formData.get("pipelineId")),
     String(formData.get("itemId")),
     String(formData.get("status")) as "approved" | "removed",
-    AM_NAME,
+    am.displayName,
   );
   revalidatePath("/am/requests/[id]", "page");
 }
 
 export async function publishPipeline(formData: FormData): Promise<void> {
-  const requestId = await repo.publishPipeline(String(formData.get("pipelineId")), AM_NAME);
+  const am = await requireAccountManager("publish a pipeline");
+  const requestId = await repo.publishPipeline(String(formData.get("pipelineId")), am.displayName);
   if (!requestId) return;
 
   revalidatePath("/am");
@@ -59,6 +63,7 @@ export async function publishPipeline(formData: FormData): Promise<void> {
 }
 
 export async function attachPipeline(formData: FormData): Promise<void> {
+  const am = await requireAccountManager("attach a pipeline");
   const requestId = String(formData.get("requestId"));
   const source = String(formData.get("source")) as PipelineSource;
   const listId = String(formData.get("listId") ?? "");
@@ -67,7 +72,7 @@ export async function attachPipeline(formData: FormData): Promise<void> {
   await repo.attachPipeline({
     requestId,
     source,
-    actor: AM_NAME,
+    actor: am.displayName,
     listId: listId || undefined,
     rows: source === "from_list" ? undefined : parseRows(text),
   });
