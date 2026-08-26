@@ -3,6 +3,9 @@
 # next-server process specifically, so it never kills the shell that runs it
 # (which a `pkill -f next` does).
 LOG="${1:-/tmp/intro-server.log}"
+# `dev` (default) runs the flow the way CI does; `start` serves the production
+# build, which cannot run the flow — see .github/workflows/ci.yml.
+MODE="${2:-dev}"
 
 find_pid() {
   node -e "
@@ -23,8 +26,8 @@ if [ -n "$pid" ]; then
 fi
 
 rm -rf .data
-setsid nohup npm run start > "$LOG" 2>&1 < /dev/null &
-for i in $(seq 1 40); do
+setsid nohup npm run "$MODE" > "$LOG" 2>&1 < /dev/null &
+for i in $(seq 1 90); do
   sleep 1
   if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:3000/ 2>/dev/null)" = "200" ]; then
     echo "server up after ${i}s (pid $(find_pid))"

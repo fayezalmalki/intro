@@ -19,10 +19,21 @@ const browser = await chromium.launch(
   fs.existsSync(LOCAL_CHROME) ? { executablePath: LOCAL_CHROME } : {},
 );
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+// `next dev` compiles each route on first request, so a cold navigation can
+// take far longer than the 30s default — especially on a CI runner.
+page.setDefaultTimeout(90_000);
+page.setDefaultNavigationTimeout(90_000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-page.on("requestfailed", (r) => { if (!r.url().includes("_rsc=")) errors.push(`requestfailed [${r.failure()?.errorText}] ${r.url()}`); });
+page.on("requestfailed", (r) => {
+  // ERR_ABORTED means the request was cancelled, almost always because this
+  // script navigated before a <Link> prefetch or a dev hot-update finished.
+  // That is not an application failure, and treating it as one made the script
+  // exit non-zero while every step passed.
+  if (r.failure()?.errorText === "net::ERR_ABORTED") return;
+  errors.push(`requestfailed [${r.failure()?.errorText}] ${r.url()}`);
+});
 page.on("response", (r) => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
 
 async function shot(name) {
@@ -57,6 +68,10 @@ await shot("04-queue");
 // 4. review
 await page.click(`a[href="/am/requests/${requestId}"]`);
 await page.waitForLoadState("networkidle");
+// `networkidle` can settle before streamed server content paints — in dev mode
+// the route compiles on demand, so wait for a real row rather than a quiet
+// network before counting anything.
+await page.locator(".grow > .card .lat").first().waitFor();
 await shot("05-review");
 
 // approve every approvable row, one at a time, waiting for each to settle
@@ -88,6 +103,7 @@ await shot("07-published-v1");
 // 6. requester sees v1 — but the account is an observer, so the gate holds
 await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
 const peopleCards = page.locator(".narrow > .card").filter({ has: page.locator(".lat") });
+await peopleCards.first().waitFor();
 step("requester sees v1", `${await peopleCards.count()} people`);
 
 const firstName = await page.locator(".lat").first().innerText();
@@ -119,6 +135,7 @@ await page.goto(`${BASE}/am/requests/${requestId}/attach?tab=list`, { waitUntil:
 await shot("09-attach-list");
 await page.locator("form.card button").first().click();
 await page.waitForURL(/\/am\/requests\/[^/]+$/);
+await page.locator(".grow > .card .lat").first().waitFor();
 step("attached v2 → lands in review", (await page.locator(".pill").first().innerText()).trim());
 await page.click("form.card button.btn-primary");
 await page.waitForURL(/\/published$/);
@@ -142,6 +159,7 @@ await page.goto(`${BASE}/am/requests/${requestId}/attach?tab=paste`, { waitUntil
 await shot("12-attach-paste");
 await page.click("button.btn-primary");
 await page.waitForURL(/\/am\/requests\/[^/]+$/);
+await page.locator(".grow > .card .lat").first().waitFor();
 await page.click("form.card button.btn-primary");
 await page.waitForURL(/\/published$/);
 step("attached + published v3 from pasted rows", (await page.locator("h1").innerText()).trim());
@@ -151,6 +169,7 @@ await shot("13-published-v3");
 
 await browser.close();
 
-console.log("\nconsole/page errors: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
+console.log(`\n${log.length} steps passed`);
+console.log("console/page errors: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
 fs.writeFileSync(`${OUT}/log.txt`, log.join("\n") + "\n\nerrors: " + (errors.join("; ") || "none"));
 if (errors.length) process.exitCode = 1;

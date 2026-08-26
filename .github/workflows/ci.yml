@@ -49,11 +49,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run build
       - name: Run the flow end to end
+        # Deliberately `npm run dev`, not `npm start`. The flow exercises two
+        # development-only affordances: the JSON store, which lib/env.ts refuses
+        # to run under NODE_ENV=production, and the account shortcut, which is
+        # hidden outside development. `npm start` fails here by design — the
+        # production build is verified by the `check` job's build step instead.
+        # This job goes back to a production server once auth and Postgres land.
         run: |
-          npm start &
-          npx wait-on http://localhost:3000 --timeout 60000
+          npm run dev &
+          npx wait-on http://localhost:3000 --timeout 120000
           node scripts/e2e.mjs "$RUNNER_TEMP/shots"
       - uses: actions/upload-artifact@v4
         if: always()
