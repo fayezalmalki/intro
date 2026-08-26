@@ -11,7 +11,13 @@ function step(name, detail = "") {
   console.log(`  ${log.length}. ${name}${detail ? " — " + detail : ""}`);
 }
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+// Prefer this machine's preinstalled Chromium when it exists (the sandbox
+// ships one that Playwright's own resolver does not find); otherwise let
+// Playwright resolve the browser it installed, as CI does.
+const LOCAL_CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+const browser = await chromium.launch(
+  fs.existsSync(LOCAL_CHROME) ? { executablePath: LOCAL_CHROME } : {},
+);
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));

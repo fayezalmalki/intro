@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck · tests · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Unit tests
+        # PGlite runs Postgres in-process, so migrations, constraints and the
+        # RLS rehearsal all run here with no database service to provision.
+        run: npm test
+      - name: Verify migrations are in sync with the schema
+        # Catches a schema edit that never had `npm run db:generate` run for it.
+        run: |
+          npx drizzle-kit generate --name ci-drift-check
+          if [ -n "$(git status --porcelain drizzle/)" ]; then
+            echo "::error::Schema and migrations have drifted. Run 'npm run db:generate' and commit the result."
+            git status --porcelain drizzle/
+            exit 1
+          fi
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: browser flow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Run the flow end to end
+        run: |
+          npm start &
+          npx wait-on http://localhost:3000 --timeout 60000
+          node scripts/e2e.mjs "$RUNNER_TEMP/shots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore

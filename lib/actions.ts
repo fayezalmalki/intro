@@ -6,6 +6,7 @@ import { audit, id, mutate } from "./store";
 import { canSend, poolFor } from "./gate";
 import { balanceOf, entry } from "./credits";
 import { currentAccount } from "./session";
+import { assertDevTools } from "./env";
 import { parseRows, type ParsedRow } from "./parse";
 import { extractBrief } from "./intent";
 import { canApprove, generateDraft } from "./sourcing";
@@ -321,6 +322,7 @@ export async function markOutreach(
  * replace this with real verification and a PSP.
  */
 export async function devVerifyAndGrant(formData: FormData): Promise<void> {
+  assertDevTools("Verifying an account and granting credits");
   const requestId = String(formData.get("requestId"));
   mutate((db) => {
     const account = currentAccount(db);

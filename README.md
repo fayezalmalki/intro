@@ -67,6 +67,36 @@ scores around 0.25 and passes. `lib/__tests__/similarity.probe.test.ts` pins tha
 | Auth, roles, RLS | not built — `lib/session.ts` is the stand-in |
 | Billing / PSP | not built — "فعّل الإرسال" is a dev grant of 5 credits |
 
+## Deploying
+
+**Not deployable yet, on purpose.** State still lives in a JSON file, and a
+serverless filesystem loses writes between requests — so `lib/env.ts` refuses to
+start the store when `NODE_ENV=production` without a `DATABASE_URL`. A request
+that looked accepted and then vanished is worse than a boot failure.
+
+What clearing that takes:
+
+1. A Neon `DATABASE_URL`, then `npm run db:migrate` as an explicit deploy step —
+   never from `build`, where a preview deploy sharing the URL would run DDL
+   against production.
+2. Porting `lib/store.ts` reads and writes onto `lib/db/scoped.ts`.
+3. Real auth, replacing `lib/session.ts`.
+
+The development-only account shortcuts (verify + grant credits) are disabled
+whenever `NODE_ENV=production`, and `lib/__tests__/env.test.ts` holds that.
+
+Copy `.env.example` to `.env.local` to run locally. No variable is required for
+the local flow.
+
+## Release flow
+
+`main` is the default branch and is protected by CI. Work lands through pull
+requests; every one runs typecheck, the unit suite, a schema-drift check, a
+production build, and the Chromium flow.
+
+The drift check regenerates migrations and fails if anything changes — a schema
+edit without `npm run db:generate` cannot merge.
+
 ## Docs
 
 - [`docs/00-demo-review.md`](docs/00-demo-review.md) — review of the original `introsademo.html` prototype, extracted design tokens, and the gaps this MVP closes

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Db } from "./types";
 import { emptyDb } from "./seed";
+import { assertStoreUsable } from "./env";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
@@ -11,6 +12,7 @@ const DB_PATH = path.join(DATA_DIR, "db.json");
  * goes through read()/write() so the Supabase swap stays contained to this file.
  */
 function read(): Db {
+  assertStoreUsable();
   if (!fs.existsSync(DB_PATH)) {
     const db = emptyDb();
     write(db);
