@@ -70,8 +70,8 @@ evidence: [{ url, title, published_at, asserted_by: 'ai' | 'am', confidence }]
 ```
 
 The AM console renders these as citations next to `whyNow`. An item with zero evidence
-and `fit != possible` is blocked from approval. This is the single highest-leverage
-addition for AM trust.
+cannot be approved — the AM adds a source or removes the row. This is the single
+highest-leverage addition for AM trust.
 
 ## 5. Fit rubric — gap #7
 

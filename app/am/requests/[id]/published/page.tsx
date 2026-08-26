@@ -1,0 +1,112 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { AmBar, Check, ar } from "@/components/Chrome";
+import { getDb } from "@/lib/store";
+
+export const dynamic = "force-dynamic";
+
+const SOURCE: Record<string, string> = {
+  ai_generated: "مُولّدة آليًا",
+  imported_csv: "من ملف مرفوع",
+  pasted: "من صفوف ملصقة",
+  from_list: "من قائمة جاهزة",
+  manual: "يدوية",
+};
+
+export default async function PublishedPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const db = getDb();
+  const req = db.requests.find((r) => r.id === id);
+  if (!req) notFound();
+
+  const pipelines = db.pipelines.filter((p) => p.requestId === id).sort((a, b) => b.version - a.version);
+  const live = pipelines.find((p) => p.status === "published");
+  if (!live) notFound();
+
+  const carried = db.outreach.filter((o) => o.requestId === id && o.status !== "none");
+  const priorPeople = new Set(
+    pipelines.filter((p) => p.version < live.version).flatMap((p) => p.items.map((i) => i.personId)),
+  );
+  const kept = live.items.filter((i) => priorPeople.has(i.personId)).length;
+
+  return (
+    <>
+      <AmBar on="queue" />
+      <div className="wrap">
+        <div className="mid stack g26" style={{ paddingTop: 40 }}>
+          <div className="stack g14">
+            <div
+              className="row"
+              style={{
+                width: 38, height: 38, borderRadius: "50%",
+                background: "var(--accent-wash)", border: "1px solid var(--accent-line)",
+                justifyContent: "center",
+              }}
+            >
+              <Check />
+            </div>
+            <h1>النسخة {ar(live.version)} مرفوعة على الطلب.</h1>
+            <p className="muted">
+              {req.requesterName} يشوف القائمة الجديدة الآن، ويعرف إنها منك.
+            </p>
+          </div>
+
+          <div className="card stack g16">
+            <span className="eyebrow">VERSION HISTORY</span>
+            {pipelines.map((p) => (
+              <div className="row g12" key={p.id} style={{ alignItems: "flex-start" }}>
+                <span
+                  className="dot"
+                  style={{ background: p.status === "published" ? "#4F6B4C" : "#C9C9C2", marginTop: 9, width: 9, height: 9 }}
+                />
+                <div className="grow stack g4">
+                  <div className="row between">
+                    <strong className="sm" style={{ color: p.status === "published" ? "var(--ink)" : "var(--ink-2)" }}>
+                      النسخة {ar(p.version)} · {SOURCE[p.source]}
+                    </strong>
+                    <span className="xs" style={{ color: p.status === "published" ? "var(--accent)" : "var(--ink-3)" }}>
+                      {p.status === "published" ? "منشورة الآن" : p.status === "superseded" ? "استُبدلت" : "مسودة"}
+                    </span>
+                  </div>
+                  <span className="xs dim">
+                    {ar(p.items.length)} أشخاص · بناها {p.createdBy}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {live.version > 1 && (
+            <div className="note stack g8">
+              <strong>ما ضاع شيء من النسخة السابقة</strong>
+              {carried.length === 0 && kept === 0 ? (
+                <span>ما كان فيه تواصل جارٍ على النسخة السابقة.</span>
+              ) : (
+                <>
+                  {carried.map((o) => {
+                    const person = db.people.find((p) => p.id === o.personId);
+                    return (
+                      <span key={o.personId}>
+                        — التواصل مع <span className="lat">{person?.latin}</span> ما زال قائمًا، وحالته «{o.status === "sent" ? "بانتظار رد" : o.status}».
+                      </span>
+                    );
+                  })}
+                  {kept > 0 && <span>— {ar(kept)} أشخاص انتقلوا من النسخة السابقة بنفس حالتهم.</span>}
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="row g8">
+            <Link href={`/requests/${id}`} className="btn btn-primary">
+              شوف ما يراه العميل
+            </Link>
+            <Link href="/am" className="btn btn-ghost">
+              عد للطابور
+            </Link>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
