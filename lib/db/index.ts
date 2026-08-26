@@ -1,22 +1,31 @@
-import { drizzle as drizzleNeon, type NeonHttpDatabase } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
+import { drizzle as drizzleNeon, type NeonDatabase } from "drizzle-orm/neon-serverless";
+import { Pool, neonConfig } from "@neondatabase/serverless";
 import { drizzle as drizzlePostgresJs } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import ws from "ws";
 import * as schema from "./schema";
 
-export type Database = NeonHttpDatabase<typeof schema>;
+export type Database = NeonDatabase<typeof schema>;
+
+// The WebSocket driver needs a constructor; Node has none before 22's global.
+neonConfig.webSocketConstructor = globalThis.WebSocket ?? ws;
 
 /**
  * Three drivers, one exported type:
  *
- *   neon-http     production. Stateless, so it is safe on serverless and edge,
- *                 and the DrizzleAdapter recognises it.
- *   postgres-js   local development against plain Postgres, and the driver RLS
- *                 will need — it holds a session, so `SET LOCAL app.account_id`
- *                 works. Kept deliberately: see docs/03-design-review.md.
- *   pglite        tests. Postgres compiled to WASM, in-process, no service.
+ *   neon-serverless  production. A WebSocket Pool rather than the stateless
+ *                    HTTP driver, because `neon-http` throws
+ *                    "No transactions support" — and a send debits a credit,
+ *                    records an attempt and writes an audit row, which must
+ *                    land together or not at all.
+ *   postgres-js      local development against plain Postgres, and the driver
+ *                    row-level security will need: it holds a session, so
+ *                    `SET LOCAL app.account_id` works. See
+ *                    drizzle/policies/rls.sql.
+ *   pglite           tests. Postgres compiled to WASM, in-process, with the
+ *                    same transaction semantics as Neon.
  *
- * DATABASE_URL may be absent at build time (preview deploys, CI), so neon()
+ * DATABASE_URL may be absent at build time (preview deploys, CI), so the pool
  * gets a syntactically valid placeholder rather than throwing during static
  * analysis. No query is ever made on that path.
  */
@@ -27,8 +36,11 @@ function createDb(): Database {
     // exported type for the app while allowing the local driver.
     return drizzlePostgresJs(client, { schema }) as unknown as Database;
   }
-  const sql = neon(process.env.DATABASE_URL ?? "postgresql://build:placeholder@localhost/db");
-  return drizzleNeon(sql, { schema });
+  const pool = new Pool({
+    connectionString:
+      process.env.DATABASE_URL ?? "postgresql://build:placeholder@localhost/db",
+  });
+  return drizzleNeon(pool, { schema });
 }
 
 export const db = createDb();
