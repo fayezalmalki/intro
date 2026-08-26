@@ -303,3 +303,95 @@ deliberately rather than by accretion.
   requester their own requests. Worth building — it is the natural home for a returning user.
 - Claiming a request is not implemented. Requests now start unassigned and stay that way;
   `assigned_am` is writable but nothing writes it.
+
+---
+
+# Third pass: the theme itself
+
+The earlier Refero pass looked at layout and type scale. This one looks at the visual system —
+palette, surfaces, shape language — against Intro's actual tokens in `app/globals.css`.
+
+## First, what Refero cannot help with
+
+A search for Arabic, RTL, Saudi and Middle-East products returns **nothing relevant** — Zara,
+YSL, an architecture portfolio, a Swiss wellness site. The index is LTR and Western. So Refero
+has no opinion on the single thing that most distinguishes this product, and every finding
+below is about the parts of a visual system that are script-independent: how many accents,
+which surfaces, how many radii. Arabic type choices remain ours alone.
+
+Two references were close enough to be useful: **Perplexity** (`perplexity.ai`) — a *product*
+interface rather than a marketing page, creamy off-white, charcoal text, one muted accent — and
+**Operate** (`operate.so`) — ledger-like, sage and neutral, deliberately restrained.
+
+## 1. The accent does eight jobs, so the primary action does not lead
+
+`--accent: #4f6b4c` is currently used for all of:
+
+| Role | Where |
+|---|---|
+| every link | `a { color: var(--accent) }` |
+| the logo dot | `.logo span` |
+| **the primary button fill** | `.btn-primary` |
+| the toggled-on control | `.btn-on` |
+| a positive chip | `.chip.on` |
+| a positive pill | `.pill.ok` |
+| the "توافق قوي" fit label | `Chrome.tsx:88` |
+| the approval checkmark | `Chrome.tsx:116` |
+
+On the review screen this means the fit label `توافق قوي`, a source link, and the
+`انشر للعميل` action are all the same green. Nothing in the palette says which one is the
+thing to press.
+
+Both references separate these deliberately, and both say so in their own rules:
+
+- Perplexity: *"Reserve Accent Teal exclusively for active navigation states, selected items,
+  and high-priority interactive text"* — and its quick reference records
+  `primary action: no distinct CTA color`. The accent marks **state**, never the button.
+- Operate: *"Deep Moss … **Do not promote it to the primary CTA color**"* — the green is for
+  text and links; the filled action is a different colour again.
+
+This is the one finding with real consequences for using the product, not just looking at it.
+
+## 2. Pure white cards on a warm canvas
+
+`--canvas: #f7f7f4` is warm; `--surface: #ffffff` is not. Every card is therefore slightly
+cooler than the page it sits on.
+
+Perplexity's explicit don't: *"Avoid using pure white (#FFFFFF) for backgrounds; Canvas Creme
+provides a warmer, softer base."* It goes further — canvas and card are the **same** value
+(`#faf8f5`), with one soft shadow doing the separating instead of a colour step.
+
+Not a defect; the white does give crisp card edges. But it is the reason the interface reads a
+touch clinical against a palette that is otherwise warm.
+
+## 3. Shape language has drifted — four radii inside 5px
+
+In use: `5px` (chip), `7px` (button), `8px` (note, textarea), `10px` (card), plus `50%` and
+`99px`.
+
+Nobody can perceive 5 against 7 against 8. That is drift, not a system. Every reference keeps
+three or four deliberate steps — Perplexity 6/12/16/9999, Operate 4/12/18/9999 — and Say
+Briefly states the rule outright: *"Avoid arbitrary border-radius values; adhere strictly to
+6px, 16px, or 9999px."*
+
+## 4. Thirteen type sizes, some one pixel apart
+
+`10 · 11 · 12 · 13 · 14 · 15 · 19 · 22 · 25 · 26 · 33 · 34 · 56`
+
+`25` and `26` differ by a pixel, so do `33` and `34`, and there are four steps inside the range
+10–13. Perplexity's whole product runs on **three** sizes (12/14/16); Operate on five.
+
+Intro is denser than either — it has an account-manager console, not just a landing — so it
+fairly needs more steps. But it needs a *scale*, not thirteen accumulated values.
+
+## 5. What is already right, and should not be touched
+
+- **No shadows anywhere.** Zero `box-shadow` in 280 lines. Separation is done with 1px borders
+  throughout, and it is consistent. Both references permit exactly one shadow token; using none
+  is a stricter version of the same discipline, not a gap.
+- **One accent hue**, with `--warn` and `--danger` reserved for real states. The palette has not
+  sprawled.
+- **Weights 400/500/600 only**, and the landing hero now sits at 400 — matching both the
+  prototype and Perplexity's rule that hierarchy should come from size, not weight.
+- The neutral ramp (`ink` → `ink-2` → `ink-3`, `line` → `line-2` → `line-3`) is a real ramp with
+  distinguishable steps, unlike the radii.

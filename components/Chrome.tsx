@@ -138,7 +138,7 @@ export function Forbidden({ area }: { area: string }) {
   return (
     <div className="login-page">
       <div className="stack g16 narrow" style={{ width: "100%", textAlign: "center" }}>
-        <span className="logo" style={{ fontSize: 22 }}>
+        <span className="logo" style={{ fontSize: "var(--text-xl)" }}>
           intro<span>.</span>
         </span>
         <h1>هذي الصفحة مو ضمن صلاحياتك.</h1>

@@ -10,7 +10,7 @@ export default function NotFound() {
   return (
     <div className="login-page">
       <div className="stack g16 narrow" style={{ width: "100%", textAlign: "center" }}>
-        <span className="logo" style={{ fontSize: 22 }}>
+        <span className="logo" style={{ fontSize: "var(--text-xl)" }}>
           intro<span>.</span>
         </span>
         <h1>ما لقينا هذي الصفحة.</h1>

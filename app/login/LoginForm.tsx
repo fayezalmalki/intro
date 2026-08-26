@@ -149,7 +149,7 @@ export function LoginForm({ target, providers }: { target: string; providers: Pr
             autoComplete="one-time-code"
             maxLength={6}
             className="lat"
-            style={{ textAlign: "center", fontSize: 22, letterSpacing: "0.4em" }}
+            style={{ textAlign: "center", fontSize: "var(--text-xl)", letterSpacing: "0.4em" }}
             value={code}
             onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
             onKeyDown={(event) => {
