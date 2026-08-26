@@ -32,10 +32,12 @@ export async function createRequest(formData: FormData): Promise<void> {
   const now = new Date();
 
   mutate((db) => {
+    const account = currentAccount(db);
     db.requests.unshift({
       id: requestId,
-      requesterName: "فيصل",
-      requesterInitial: "F",
+      accountId: account.id,
+      requesterName: account.displayName,
+      requesterInitial: account.initial,
       rawText,
       status: "intent_review",
       brief,
@@ -43,7 +45,7 @@ export async function createRequest(formData: FormData): Promise<void> {
       createdAt: now.toISOString(),
       dueAt: new Date(now.getTime() + SLA_HOURS * 3600_000).toISOString(),
     });
-    audit(db, "فيصل", requestId, "request.created", `عبر ${brief.extractedBy}`);
+    audit(db, account.displayName, requestId, "request.created", `عبر ${brief.extractedBy}`);
   });
 
   redirect(`/requests/${requestId}/confirm`);

@@ -39,6 +39,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               {current.status === "draft" ? "مسودة" : "منشورة"} النسخة {ar(current.version)} ·{" "}
               {current.source === "ai_generated" ? "مُولّدة آليًا" : "من مدير الحساب"}
             </span>
+            <Link href={`/am/requests/${id}/pipeline`} className="btn btn-sm btn-ghost">
+              مسار الطلب
+            </Link>
             <Link href={`/am/requests/${id}/attach`} className="btn btn-sm btn-strong">
               استبدل بقائمة جاهزة أو ملف
             </Link>

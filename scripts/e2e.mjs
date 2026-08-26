@@ -94,6 +94,16 @@ const barText = await page.locator("form.card .muted").innerText();
 step("publish bar", barText.trim());
 await shot("06-approved");
 
+// the derived pipeline view — every stage of the journey on one page
+await page.click(`a[href="/am/requests/${requestId}/pipeline"]`);
+await page.locator(".mid .card").first().waitFor();
+const stages = await page.locator(".mid .card strong").allInnerTexts();
+step("pipeline stages", stages.join(" → "));
+step("stage states", (await page.locator(".mid .card .chip").allInnerTexts()).join(", "));
+await shot("06b-pipeline");
+await page.goBack();
+await page.locator(".grow > .card .lat").first().waitFor();
+
 // 5. publish v1
 await page.click('form.card button.btn-primary');
 await page.waitForURL(/\/published$/);

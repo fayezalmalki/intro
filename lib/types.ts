@@ -131,6 +131,8 @@ export interface Brief {
 
 export interface IntroRequest {
   id: string;
+  /** Owning account — the anchor every scoped query and cap check hangs off. */
+  accountId: string;
   requesterName: string;
   requesterInitial: string;
   rawText: string;
