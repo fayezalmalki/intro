@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { audit, id, mutate } from "./store";
+import { canSend, poolFor } from "./gate";
+import { balanceOf, entry } from "./credits";
+import { currentAccount } from "./session";
 import { parseRows, type ParsedRow } from "./parse";
 import { extractBrief } from "./intent";
 import { canApprove, generateDraft } from "./sourcing";
@@ -243,16 +246,53 @@ function matchPerson(people: Person[], row: ParsedRow): Person | undefined {
   );
 }
 
-export async function markOutreach(formData: FormData): Promise<void> {
+export interface SendResult {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * The only path to an outreach record. Everything runs through canSend() — no
+ * provider is ever reached without an `allowed` verdict, and both verdicts are
+ * written to send_attempts so refusals are auditable too.
+ */
+export async function markOutreach(
+  _prev: SendResult | undefined,
+  formData: FormData,
+): Promise<SendResult> {
   const requestId = String(formData.get("requestId"));
   const personId = String(formData.get("personId"));
   const channel = String(formData.get("channel")) as Channel;
-  const status = String(formData.get("status")) as OutreachStatus;
+  const body = String(formData.get("body") ?? "");
 
-  mutate((db) => {
+  const result = mutate<SendResult>((db) => {
+    const account = currentAccount(db);
+    const verdict = canSend(db, { accountId: account.id, requestId, personId, channel, body });
+
+    db.sendAttempts.push({
+      id: id("sa"),
+      accountId: account.id,
+      requestId,
+      personId,
+      pool: verdict.pool,
+      channel,
+      body,
+      variantHash: verdict.variantHash,
+      result: verdict.allowed ? "allowed" : "refused",
+      gateFailures: verdict.failures,
+      at: new Date().toISOString(),
+    });
+
+    if (!verdict.allowed) {
+      audit(db, account.displayName, requestId, "send.refused", verdict.failures.join(","));
+      return { ok: false, reason: verdict.reason };
+    }
+
+    db.ledger.push(entry(account.id, "send", personId, id("le")));
+
     const existing = db.outreach.find((o) => o.requestId === requestId && o.personId === personId);
     if (existing) {
-      existing.status = status;
+      existing.status = "sent";
       existing.channel = channel;
       existing.updatedAt = new Date().toISOString();
     } else {
@@ -260,14 +300,36 @@ export async function markOutreach(formData: FormData): Promise<void> {
         requestId,
         personId,
         channel,
-        status,
+        status: "sent",
         updatedAt: new Date().toISOString(),
       });
     }
+
     const req = db.requests.find((r) => r.id === requestId);
     if (req && req.status === "pipeline_ready") req.status = "outreach";
-    audit(db, "فيصل", requestId, `outreach.${status}`, personId);
+    audit(db, account.displayName, requestId, "send.allowed", `${poolFor(channel)}:${personId}`);
+    return { ok: true };
   });
 
+  revalidatePath(`/requests/${requestId}`);
+  return result;
+}
+
+/**
+ * Dev-only: there is no auth or billing yet, so the send gate is unreachable
+ * without a way to verify the account and grant it credits. Milestone 1 and 5
+ * replace this with real verification and a PSP.
+ */
+export async function devVerifyAndGrant(formData: FormData): Promise<void> {
+  const requestId = String(formData.get("requestId"));
+  mutate((db) => {
+    const account = currentAccount(db);
+    account.state = "verified";
+    account.verifiedAt = new Date().toISOString();
+    if (balanceOf(db, account.id) < 5) {
+      db.ledger.push(entry(account.id, "grant", "dev", id("le"), 5));
+    }
+    audit(db, "dev", account.id, "account.verified", "dev grant of 5 credits");
+  });
   revalidatePath(`/requests/${requestId}`);
 }

@@ -1,4 +1,4 @@
-import type { Db, Person, PeopleList } from "./types";
+import type { Account, Db, Person, PeopleList } from "./types";
 
 const P = (p: Person) => p;
 
@@ -102,13 +102,33 @@ export const SEED_LISTS: PeopleList[] = [
   },
 ];
 
+/**
+ * One seeded requester, deliberately `observer` — signed up, can reach a
+ * published pipeline, cannot send until verified. The demo starts at the gate.
+ */
+export const SEED_ACCOUNTS: Account[] = [
+  {
+    id: "acc-faisal",
+    displayName: "فيصل",
+    initial: "F",
+    email: "faisal@example.sa",
+    state: "observer",
+    dailyCap: 10,
+    createdAt: "2026-08-01T00:00:00.000Z",
+  },
+];
+
 export function emptyDb(): Db {
   return {
+    accounts: SEED_ACCOUNTS.map((a) => ({ ...a })),
     people: SEED_PEOPLE.map((p) => ({ ...p })),
     requests: [],
     pipelines: [],
     outreach: [],
     lists: SEED_LISTS.map((l) => ({ ...l, personIds: [...l.personIds] })),
+    ledger: [],
+    suppressions: [],
+    sendAttempts: [],
     audit: [],
   };
 }

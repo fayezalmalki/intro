@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { AppBar, FitTag, ar } from "@/components/Chrome";
-import { markOutreach } from "@/lib/actions";
+import { devVerifyAndGrant } from "@/lib/actions";
+import { SendButton } from "@/components/SendButton";
+import { balanceOf } from "@/lib/credits";
+import { currentAccount } from "@/lib/session";
 import { getDb } from "@/lib/store";
 import type { Db, OutreachStatus } from "@/lib/types";
 
@@ -27,6 +30,8 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   const prior = db.pipelines.filter((p) => p.requestId === id && p.version < published.version);
   const priorPeople = new Set(prior.flatMap((p) => p.items.map((i) => i.personId)));
   const byAm = published.source !== "ai_generated";
+  const account = currentAccount(db);
+  const credits = balanceOf(db, account.id);
 
   return (
     <>
@@ -44,6 +49,26 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
                 </strong>
                 <span>اللي تواصلت معهم قبل، حالتهم محفوظة كما هي.</span>
               </div>
+            </div>
+          )}
+
+          {account.state === "observer" ? (
+            <form action={devVerifyAndGrant} className="card row between g14">
+              <input type="hidden" name="requestId" value={id} />
+              <div className="stack g4">
+                <strong className="sm">حسابك يشوف القوائم، لكنه ما يرسل بعد.</strong>
+                <span className="sm muted">
+                  فعّل الإرسال بالتحقق من بريد العمل وحساب LinkedIn. أول رسائلك يراجعها مدير حسابك.
+                </span>
+              </div>
+              <button type="submit" className="btn-strong btn-sm">
+                فعّل الإرسال
+              </button>
+            </form>
+          ) : (
+            <div className="row between sm muted" style={{ padding: "0 2px" }}>
+              <span>الإرسال مفعّل · الحد اليومي {ar(account.dailyCap)}</span>
+              <span>الرصيد {ar(credits)} رسالة</span>
             </div>
           )}
 
@@ -88,15 +113,13 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
                     {person.openToIntros ? " · متاح للتعارف عبر Intro" : ""}
                   </span>
                   {!out || out.status === "none" ? (
-                    <form action={markOutreach}>
-                      <input type="hidden" name="requestId" value={id} />
-                      <input type="hidden" name="personId" value={item.personId} />
-                      <input type="hidden" name="channel" value={person.openToIntros ? "intro" : item.channel} />
-                      <input type="hidden" name="status" value="sent" />
-                      <button type="submit" className="btn-primary btn-sm">
-                        {person.openToIntros ? "اطلب Intro" : "أرسل رسالة"}
-                      </button>
-                    </form>
+                    <SendButton
+                      requestId={id}
+                      personId={item.personId}
+                      channel={person.openToIntros ? "intro" : item.channel}
+                      body={item.opener}
+                      label={person.openToIntros ? "اطلب Intro" : "أرسل رسالة"}
+                    />
                   ) : (
                     <span className="chip">{out.channel === "intro" ? "عبر Intro" : "تواصل مباشر"}</span>
                   )}

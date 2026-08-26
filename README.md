@@ -25,14 +25,30 @@ confirm screen shows which was used.
 3. **`/am`** — the queue, with an SLA countdown per request.
 4. **review** — the AI-drafted pipeline. Approve rows, remove rows, publish.
    The row with no sourced evidence cannot be approved.
-5. **`/requests/<id>`** — what the requester sees. Reach out to someone.
+5. **`/requests/<id>`** — what the requester sees. Try to send: the account is an
+   `observer`, so the gate refuses and says why. Hit **فعّل الإرسال** (a dev stand-in for
+   verification and billing), then send.
 6. **attach** — replace the list from a file, pasted rows or LinkedIn URLs, or a
    predefined list. It lands back in review as the next version.
 7. **publish again** — the requester sees v2, and the person you already contacted
    keeps their status.
 
-`npm run build && npm start`, then `node scripts/e2e.mjs <dir>` drives that whole
-sequence in Chromium and writes screenshots plus a step log.
+`npm test` runs the unit suite (the send gate). `npm run build && sh scripts/restart.sh`,
+then `node scripts/e2e.mjs <dir>` drives the whole sequence above in Chromium and writes
+screenshots plus a step log.
+
+### The send gate
+
+Nothing reaches a sender without an `allowed` verdict from `canSend()` in `lib/gate.ts`.
+It enforces, in one place: global suppression (hashed, so the list is not itself a mailing
+list), one message per person per request, a 90-day cross-request cooldown, a daily cap that
+the credit balance cannot override, sufficient credits, and near-duplicate detection across
+the account's own outbound. Both verdicts are written to `sendAttempts`, so refusals are
+auditable too.
+
+Near-duplicate detection uses trigram-shingle Jaccard similarity at a 0.7 threshold —
+swapping only the recipient's name scores 0.75 and is refused; a genuinely rewritten opener
+scores around 0.25 and passes. `lib/__tests__/similarity.probe.test.ts` pins that calibration.
 
 ## What's built
 
@@ -43,9 +59,13 @@ sequence in Chromium and writes screenshots plus a step log.
 | AI-drafted pipeline, evidence-gated approval | working |
 | Offline attach — CSV, pasted rows/LinkedIn URLs, predefined list | working |
 | Pipeline versioning with outreach carry-forward | working |
-| Outreach — recorded as state transitions | no email sending yet |
+| Account states (observer / verified / managed) | working — no real auth behind them yet |
+| Send gate: suppression, cooldown, daily cap, credits, near-duplicate | working, 24 unit tests |
+| Credit ledger (append-only, balance as a projection) | working |
+| Outreach — recorded as state transitions through the gate | no email sending yet |
 | Replies, inbox, double opt-in delivery | not built |
-| Auth, roles, RLS | not built — the AM console is open, switchable from the top bar |
+| Auth, roles, RLS | not built — `lib/session.ts` is the stand-in |
+| Billing / PSP | not built — "فعّل الإرسال" is a dev grant of 5 credits |
 
 ## Docs
 

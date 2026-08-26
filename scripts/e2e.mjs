@@ -79,16 +79,34 @@ await page.waitForURL(/\/published$/);
 step("published v1", (await page.locator("h1").innerText()).trim());
 await shot("07-published-v1");
 
-// 6. requester sees v1, sends one message
+// 6. requester sees v1 — but the account is an observer, so the gate holds
 await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
-const v1People = await page.locator(".narrow > .card").count();
-step("requester sees v1", `${v1People} people`);
+const peopleCards = page.locator(".narrow > .card").filter({ has: page.locator(".lat") });
+step("requester sees v1", `${await peopleCards.count()} people`);
+
 const firstName = await page.locator(".lat").first().innerText();
 await page.locator("form button.btn-primary").first().click();
-await page.waitForLoadState("networkidle");
+await page.locator(".alert").first().waitFor();
+step("observer blocked at the send gate", (await page.locator(".alert").first().innerText()).trim());
+await shot("08a-gate-blocks-observer");
+
+// verify the account (stands in for milestone 1 auth + milestone 5 billing)
+await page.locator('button:has-text("فعّل الإرسال")').click();
+const creditLine = page.locator(".narrow > .row.between.sm.muted");
+await creditLine.waitFor();
+step("account verified", (await creditLine.innerText()).replace(/\s+/g, " ").trim());
+
+// now the same send succeeds
+await page.locator("form button.btn-primary").first().click();
+await page.locator(".chip", { hasText: /عبر Intro|تواصل مباشر/ }).first().waitFor();
 const sentBadge = await page.locator(".chip", { hasText: /عبر Intro|تواصل مباشر/ }).first().innerText();
 step("outreach recorded", `${firstName} → ${sentBadge}`);
+step("credits after one send", (await creditLine.innerText()).replace(/\s+/g, " ").trim());
 await shot("08-results-v1-sent");
+
+// the same person, again — one message per person per request
+const second = peopleCards.filter({ hasText: firstName });
+step("repeat send offered again?", String(await second.locator("form button.btn-primary").count()));
 
 // 7. AM attaches v2 from a predefined list
 await page.goto(`${BASE}/am/requests/${requestId}/attach?tab=list`, { waitUntil: "networkidle" });
