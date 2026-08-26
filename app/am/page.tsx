@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { AmBar, ar } from "@/components/Chrome";
-import { requireAccountManager } from "@/lib/session";
+import { AmBar, ar, Forbidden } from "@/components/Chrome";
+import { accountForPage } from "@/lib/session";
 import { loadQueue } from "@/lib/db/loaders";
 import type { IntroRequest, RequestStatus } from "@/lib/types";
 
@@ -21,8 +21,10 @@ const GOAL: Record<string, string> = {
 
 export default async function QueuePage() {
   // Defence in depth. The actions each check the role too — that is the real
-  // boundary — but a requester who reaches this URL should be refused here.
-  const account = await requireAccountManager("open the account-manager console");
+  // boundary — but a requester who reaches this URL should be told so, not
+  // shown a crash page.
+  const account = await accountForPage("account_manager");
+  if (!account) return <Forbidden area="لوحة مدير الحساب مخصصة لمديري الحسابات." />;
   const db = await loadQueue();
   const rows = db.requests;
   const waiting = rows.filter((r) => r.status === "in_sourcing").length;

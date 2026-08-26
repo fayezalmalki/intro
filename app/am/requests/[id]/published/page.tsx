@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AmBar, Check, ar } from "@/components/Chrome";
-import { requireAccountManager } from "@/lib/session";
+import { AmBar, Check, ar, Forbidden } from "@/components/Chrome";
+import { accountForPage } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +16,10 @@ const SOURCE: Record<string, string> = {
 
 export default async function PublishedPage({ params }: { params: Promise<{ id: string }> }) {
   // Defence in depth. The actions each check the role too — that is the real
-  // boundary — but a requester who reaches this URL should be refused here.
-  const account = await requireAccountManager("open the account-manager console");
+  // boundary — but a requester who reaches this URL should be told so, not
+  // shown a crash page.
+  const account = await accountForPage("account_manager");
+  if (!account) return <Forbidden area="لوحة مدير الحساب مخصصة لمديري الحسابات." />;
   const { id } = await params;
   const db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);

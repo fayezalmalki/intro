@@ -4,7 +4,12 @@ import { db as defaultDb } from "./db";
 import { accounts, authUsers } from "./db/schema";
 import type { Account, Role } from "./types";
 
-/** Bootstraps the first administrator, who can then grant roles in-app. */
+/**
+ * Bootstraps the first administrator, who can then grant roles from /am/team.
+ *
+ * Read once, at provisioning. Adding an address here later does not promote an
+ * account that already exists — see accountForUser.
+ */
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
@@ -115,4 +120,41 @@ export async function requireAccountManager(
   const account = await currentAccount(database);
   if (!isAccountManager(account)) throw new NotPermitted(action);
   return account;
+}
+
+/**
+ * The authorization boundary for changing someone's role.
+ *
+ * Deliberately admin-only rather than account-manager-only: an account manager
+ * who could grant the role could promote themselves, which would make the
+ * distinction between the two decorative.
+ */
+export async function requireAdmin(
+  action: string,
+  database: Database = defaultDb,
+): Promise<Account> {
+  const account = await currentAccount(database);
+  if (account.role !== "admin") throw new NotPermitted(action);
+  return account;
+}
+
+/**
+ * The page-level counterpart to requireAccountManager / requireAdmin.
+ *
+ * Those throw, which is right for a server action: an action reached directly
+ * must fail closed, and a caller ignoring a returned value would be a hole.
+ * On a page the same throw reaches the error boundary and renders "صار خطأ غير
+ * متوقع" under a 500 — telling someone the app broke when in fact they simply
+ * are not allowed in. This returns null instead so the page can say so.
+ *
+ * Not a weaker check: the actions still hold the boundary, and this runs the
+ * same policy.
+ */
+export async function accountForPage(
+  need: "account_manager" | "admin",
+  database: Database = defaultDb,
+): Promise<Account | null> {
+  const account = await currentAccount(database);
+  const permitted = need === "admin" ? account.role === "admin" : isAccountManager(account);
+  return permitted ? account : null;
 }

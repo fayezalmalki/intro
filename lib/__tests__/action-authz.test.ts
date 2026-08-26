@@ -23,6 +23,7 @@ vi.mock("../db/repo", () => ({
   confirmBrief: vi.fn(async () => { repoCalls.push("confirmBrief"); }),
   recordSend: vi.fn(async () => { repoCalls.push("recordSend"); return { ok: true }; }),
   verifyAndGrant: vi.fn(async () => { repoCalls.push("verifyAndGrant"); }),
+  setAccountRole: vi.fn(async () => { repoCalls.push("setAccountRole"); return { ok: true }; }),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -50,6 +51,10 @@ vi.mock("../session", async (importOriginal) => {
     currentAccount: async () => current,
     requireAccountManager: async (action: string) => {
       if (!actual.isAccountManager(current)) throw new actual.NotPermitted(action);
+      return current;
+    },
+    requireAdmin: async (action: string) => {
+      if (current.role !== "admin") throw new actual.NotPermitted(action);
       return current;
     },
   };
@@ -103,5 +108,43 @@ describe("account-manager actions", () => {
     const actions = await import("../actions");
     await actions.createRequest(form({ rawText: "أدور وظيفة قيادية." }));
     expect(repoCalls).toContain("createRequest");
+  });
+});
+
+/**
+ * Granting a role is admin-only, not account-manager-only. An account manager
+ * who could grant it could promote themselves, and the separation between the
+ * two roles would mean nothing — so the account-manager case is the one that
+ * matters here, and it must be refused.
+ */
+describe("grantRole", () => {
+  beforeEach(() => {
+    repoCalls.length = 0;
+    vi.resetModules();
+  });
+
+  const fields = { accountId: "a2", role: "account_manager" };
+
+  for (const role of ["requester", "account_manager"] as const) {
+    it(`rejects a ${role}, before touching the repository`, async () => {
+      current = account(role);
+      const actions = await import("../actions");
+      await expect(actions.grantRole(form(fields))).rejects.toThrow(/not permitted/i);
+      expect(repoCalls).toEqual([]);
+    });
+  }
+
+  it("allows an admin", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.grantRole(form(fields));
+    expect(repoCalls).toContain("setAccountRole");
+  });
+
+  it("ignores a role that is not one of the three", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.grantRole(form({ accountId: "a2", role: "superuser" }));
+    expect(repoCalls).toEqual([]);
   });
 });

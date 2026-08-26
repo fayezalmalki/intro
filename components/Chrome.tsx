@@ -8,7 +8,7 @@ import { isAccountManager } from "@/lib/session";
  * the avatar "F" above every requester's — which survived the move to real
  * sign-ins because auth never touched the presentation layer.
  */
-export function AmBar({ on, account }: { on?: "queue" | "lists"; account: Account }) {
+export function AmBar({ on, account }: { on?: "queue" | "team"; account: Account }) {
   return (
     <div className="bar">
       <div className="bar-left">
@@ -19,6 +19,12 @@ export function AmBar({ on, account }: { on?: "queue" | "lists"; account: Accoun
           <Link href="/am" className={on === "queue" ? "on" : ""}>
             الطابور
           </Link>
+          {/* Only admins can change roles, so only admins are shown the door. */}
+          {account.role === "admin" && (
+            <Link href="/am/team" className={on === "team" ? "on" : ""}>
+              الفريق
+            </Link>
+          )}
         </nav>
       </div>
       <div className="row g10">
@@ -121,4 +127,28 @@ export function ar(n: number | string): string {
     .split("")
     .map((d) => (/\d/.test(d) ? DIGITS[+d] : d))
     .join("");
+}
+
+/**
+ * Shown when someone signed in reaches a screen their role does not cover.
+ * Deliberately not an error page: nothing went wrong, and saying so invites a
+ * pointless retry and a support message.
+ */
+export function Forbidden({ area }: { area: string }) {
+  return (
+    <div className="login-page">
+      <div className="stack g16 narrow" style={{ width: "100%", textAlign: "center" }}>
+        <span className="logo" style={{ fontSize: 22 }}>
+          intro<span>.</span>
+        </span>
+        <h1>هذي الصفحة مو ضمن صلاحياتك.</h1>
+        <span className="sm muted">{area}</span>
+        <div className="row g10" style={{ justifyContent: "center" }}>
+          <Link href="/" className="btn btn-primary">
+            رجوع للرئيسية
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
 }

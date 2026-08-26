@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AmBar, ar } from "@/components/Chrome";
+import { AmBar, ar, Forbidden } from "@/components/Chrome";
 import { buildPipelineView, type Stage, type StageState } from "@/lib/pipeline";
-import { requireAccountManager } from "@/lib/session";
+import { accountForPage } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +30,10 @@ const STATE_LABEL: Record<StageState, string> = {
 
 export default async function PipelinePage({ params }: { params: Promise<{ id: string }> }) {
   // Defence in depth. The actions each check the role too — that is the real
-  // boundary — but a requester who reaches this URL should be refused here.
-  const account = await requireAccountManager("open the account-manager console");
+  // boundary — but a requester who reaches this URL should be told so, not
+  // shown a crash page.
+  const account = await accountForPage("account_manager");
+  if (!account) return <Forbidden area="لوحة مدير الحساب مخصصة لمديري الحسابات." />;
   const { id } = await params;
   const view = buildPipelineView(await loadRequestContext(id), id);
   if (!view) notFound();

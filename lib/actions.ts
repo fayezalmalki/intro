@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
-import { currentAccount, requireAccountManager } from "./session";
+import { currentAccount, requireAccountManager, requireAdmin } from "./session";
 import { assertDevTools } from "./env";
-import type { Channel, PipelineSource } from "./types";
+import type { Channel, PipelineSource, Role } from "./types";
 
 const SLA_HOURS = 24;
 const DEV_GRANT = 5;
@@ -125,4 +125,30 @@ export async function devVerifyAndGrant(formData: FormData): Promise<void> {
   const account = await currentAccount();
   await repo.verifyAndGrant(account.id, DEV_GRANT);
   revalidatePath(`/requests/${requestId}`);
+}
+
+const ROLES: readonly Role[] = ["requester", "account_manager", "admin"];
+
+/**
+ * Grants or revokes a role. Admin only.
+ *
+ * Returns a message rather than throwing on a refused change: "you cannot
+ * demote the last administrator" is information the person needs, not an
+ * error, and an unhandled throw here would show them the crash boundary.
+ */
+export async function grantRole(formData: FormData): Promise<void> {
+  const admin = await requireAdmin("change an account's role");
+
+  const targetAccountId = String(formData.get("accountId") ?? "");
+  const role = String(formData.get("role") ?? "") as Role;
+  if (!targetAccountId || !ROLES.includes(role)) return;
+
+  const result = await repo.setAccountRole({
+    actorAccountId: admin.id,
+    targetAccountId,
+    role,
+  });
+
+  revalidatePath("/am/team");
+  if (!result.ok) redirect(`/am/team?refused=${result.reason}`);
 }
