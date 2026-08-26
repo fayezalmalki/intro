@@ -3,11 +3,14 @@
 LOG="${1:-/tmp/intro-pg.log}"
 PIDFILE=.data/pg.pid
 
+# The pidfile is the happy path; pg-stop.mjs also finds an orphan whose
+# pidfile was deleted, which is exactly what a `rm -rf .data` does.
 if [ -f "$PIDFILE" ]; then
   kill "$(cat $PIDFILE)" 2>/dev/null
-  sleep 2
   rm -f "$PIDFILE"
 fi
+node scripts/pg-stop.mjs
+sleep 2
 
 mkdir -p .data
 setsid nohup node scripts/db-local.mjs > "$LOG" 2>&1 < /dev/null &
