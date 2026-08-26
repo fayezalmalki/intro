@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #F7F7F4; color: #111111;
+           font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #4F6B4C; text-decoration: none; }
+    a:hover { color: #3C5339; }
+    .lat { font-family: 'IBM Plex Sans', system-ui, sans-serif; letter-spacing: 0.02em; }
+    button { font-family: inherit; cursor: pointer; }
+  </style>
+</helmet>
+<div dir="rtl" style="width:1440px; min-height:900px; background:#F7F7F4; display:flex; flex-direction:column;">
+  <div style="display:flex; align-items:center; justify-content:space-between; height:60px; padding:0 32px; background:#FFFFFF; border-bottom:1px solid #DEDED7;">
+    <div style="display:flex; align-items:center; gap:28px;">
+      <div class="lat" style="font-size:19px; font-weight:600; letter-spacing:-0.02em;">intro<span style="color:#4F6B4C;">.</span></div>
+      <div style="display:flex; align-items:center; gap:20px; font-size:14px; color:#686868;">
+        <div style="color:#111111; font-weight:500; border-bottom:2px solid #111111; height:60px; display:flex; align-items:center;">الطابور</div>
+        <div>القوائم</div>
+        <div>الأشخاص</div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="font-size:13px; color:#686868;">ريم · مديرة حسابات</div>
+      <div class="lat" style="width:30px; height:30px; border-radius:50%; background:#EFEFEA; border:1px solid #DEDED7; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#686868;">R</div>
+    </div>
+  </div>
+
+  <div style="padding:26px 32px 0; display:flex; align-items:baseline; justify-content:space-between;">
+    <div style="font-size:22px; font-weight:600; letter-spacing:-0.01em;">طابور الطلبات</div>
+    <div style="display:flex; align-items:center; gap:22px; font-size:13px;">
+      <div style="color:#686868;">في الانتظار <span style="color:#111111; font-weight:500;">٧</span></div>
+      <div style="color:#686868;">تجاوزت الوقت <span style="color:#8C4A40; font-weight:500;">٢</span></div>
+      <div style="color:#686868;">نُشرت اليوم <span style="color:#4F6B4C; font-weight:500;">٥</span></div>
+    </div>
+  </div>
+
+  <div style="padding:18px 32px 0; display:flex; align-items:center; justify-content:space-between;">
+    <div style="display:flex; gap:6px;">
+      <div style="font-size:13px; color:#111111; background:#FFFFFF; border:1px solid #C9C9C2; border-radius:7px; padding:7px 14px;">طلباتي · ٥</div>
+      <div style="font-size:13px; color:#686868; background:transparent; border:1px solid #DEDED7; border-radius:7px; padding:7px 14px;">كل الطلبات · ١٢</div>
+      <div style="font-size:13px; color:#8C4A40; background:transparent; border:1px solid #E4CFCF; border-radius:7px; padding:7px 14px;">متأخرة · ٢</div>
+    </div>
+    <div style="font-size:13px; color:#A3A3A0;">التوزيع تلقائي حسب القطاع</div>
+  </div>
+
+  <div style="padding:14px 32px 32px;">
+    <div style="background:#FFFFFF; border:1px solid #DEDED7; border-radius:10px; overflow:hidden;">
+      <div style="display:grid; grid-template-columns: 1fr 150px 132px 156px 140px 96px; gap:16px; padding:12px 20px; background:#F7F7F4; border-bottom:1px solid #DEDED7; font-size:11px; letter-spacing:0.08em; color:#A3A3A0;">
+        <div>REQUEST</div><div>REQUESTER</div><div>GOAL</div><div>STATE</div><div>SLA</div><div></div>
+      </div>
+
+      <sc-for list="{{ items }}" as="q" hint-placeholder-count="6">
+        <div style="display:grid; grid-template-columns: 1fr 150px 132px 156px 140px 96px; gap:16px; padding:17px 20px; border-bottom:1px solid #EDEDE7; align-items:center;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:0;">
+            <div style="font-size:14px; color:#111111; font-weight:500;">{{ q.title }}</div>
+            <div style="font-size:12px; color:#A3A3A0;">{{ q.excerpt }}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="lat" style="width:24px; height:24px; flex:none; border-radius:50%; background:#EFEFEA; border:1px solid #DEDED7; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; color:#686868;">{{ q.initial }}</div>
+            <div style="font-size:13px; color:#686868;">{{ q.requester }}</div>
+          </div>
+          <div><div style="display:inline-block; font-size:12px; color:#686868; background:#F7F7F4; border:1px solid #E4E4DE; border-radius:5px; padding:3px 9px;">{{ q.goal }}</div></div>
+          <div style="display:flex; align-items:center; gap:7px;">
+            <div style="width:7px; height:7px; border-radius:50%; background:{{ q.stateDot }}; flex:none;"></div>
+            <div style="font-size:13px; color:#686868;">{{ q.state }}</div>
+          </div>
+          <div style="font-size:13px; color:{{ q.slaColor }};">{{ q.sla }}</div>
+          <div><button style="width:100%; font-size:13px; color:{{ q.ctaColor }}; background:{{ q.ctaBg }}; border:1px solid {{ q.ctaBorder }}; border-radius:7px; padding:7px 0;">{{ q.cta }}</button></div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ITEMS = [
+      { title: "وظيفة قيادية في الـ Product", excerpt: "«أدور وظيفة قيادية في الـ Product في شركات تقنية سعودية.»",
+        initial: "F", requester: "فيصل", goal: "وظيفة", state: "مسودة جاهزة", tone: "ready", sla: "متبقٍ ٦ س ١٢ د", slaTone: "ok", cta: "راجع" },
+      { title: "شراكات في قطاع التأمين", excerpt: "«أبي أوصل للمسؤول عن الشراكات في شركات التأمين.»",
+        initial: "M", requester: "منى", goal: "شراكة", state: "قيد التجهيز", tone: "work", sla: "متبقٍ ١ س ٠٤ د", slaTone: "warn", cta: "راجع" },
+      { title: "مستثمرون في المرحلة المبكرة", excerpt: "«أبحث عن مستثمر لمرحلة ما قبل البذرة.»",
+        initial: "K", requester: "خالد", goal: "استثمار", state: "متأخر", tone: "late", sla: "متأخر ٣ س ٢٦ د", slaTone: "late", cta: "راجع" },
+      { title: "بيع منصة مدفوعات للبنوك", excerpt: "«أبي أبيع للبنوك — مين المسؤول عن Open Banking؟»",
+        initial: "S", requester: "سعد", goal: "مبيعات", state: "متأخر", tone: "late", sla: "متأخر ٤٥ د", slaTone: "late", cta: "راجع" },
+      { title: "رؤساء تسويق في التجزئة", excerpt: "«أحتاج أوصل لرؤساء التسويق في التجزئة.»",
+        initial: "N", requester: "نوف", goal: "مبيعات", state: "منشورة · النسخة ٢", tone: "done", sla: "—", slaTone: "none", cta: "افتح" },
+      { title: "شريك تقني لمنتج مبكر", excerpt: "«أبحث عن شريك تقني لمنتج في مرحلة مبكرة.»",
+        initial: "A", requester: "عبير", goal: "شراكة", state: "منشورة · النسخة ١", tone: "done", sla: "—", slaTone: "none", cta: "افتح" }
+    ];
+    const DOT  = { ready: "#4F6B4C", work: "#C9C9C2", late: "#8C4A40", done: "#DDE6DA" };
+    const SLAC = { ok: "#4F6B4C", warn: "#8A6A2F", late: "#8C4A40", none: "#A3A3A0" };
+    return {
+      items: ITEMS.map((q) => Object.assign({}, q, {
+        stateDot: DOT[q.tone],
+        slaColor: SLAC[q.slaTone],
+        ctaColor: q.tone === "done" ? "#686868" : "#111111",
+        ctaBg: q.tone === "done" ? "transparent" : "#FFFFFF",
+        ctaBorder: q.tone === "done" ? "#DEDED7" : "#C9C9C2"
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>
