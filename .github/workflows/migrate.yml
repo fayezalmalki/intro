@@ -1,28 +1,25 @@
 name: Migrate
 
-# Applies database migrations after a merge to main.
+# Applies database migrations and seeds the people graph after a merge to main.
 #
 # Not on pull requests, and not from `next build`: a preview deploy sharing the
 # connection string would otherwise run DDL against production.
 #
-# Needs a repository secret. Vercel's environment variables are a separate
-# store — a workflow on GitHub's runners cannot read them.
+# This job FAILS when the secret is missing. An earlier version skipped and
+# succeeded so it would not block merges before the secret existed — and the
+# result was a green check that read as "migrations ran" while the database
+# stayed empty, which is how production broke. A red X naming the missing
+# secret is worth more than a green tick that means nothing happened.
 #
 #   Settings → Secrets and variables → Actions → New repository secret
 #   DATABASE_URL_UNPOOLED   (from Vercel's Neon integration)
 #
-# The unpooled connection is deliberate: the pooled one goes through pgbouncer,
-# which can mangle DDL and prepared statements.
-#
-# Until that secret exists this workflow is inert — it says what is missing and
-# succeeds rather than failing every merge.
+# Unpooled deliberately: the pooled connection goes through pgbouncer, which
+# can mangle DDL and prepared statements.
 
 on:
   push:
     branches: [main]
-    paths:
-      - "drizzle/**"
-      - ".github/workflows/migrate.yml"
   workflow_dispatch:
 
 concurrency:
@@ -39,12 +36,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply migrations
+
+      - name: Check the connection string is configured
         env:
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
         run: |
           if [ -z "$DATABASE_URL_UNPOOLED" ]; then
-            echo "::notice::DATABASE_URL_UNPOOLED is not set — skipping. Add it under Settings → Secrets and variables → Actions."
-            exit 0
+            echo "::error::DATABASE_URL_UNPOOLED is not set. Migrations cannot run, so the database will not match the code that is about to deploy. Add it under Settings → Secrets and variables → Actions, using Neon's UNPOOLED connection string."
+            exit 1
           fi
-          npm run db:migrate
+
+      - name: Apply migrations
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+        run: npm run db:migrate
+
+      # The people graph only. Accounts come from real sign-ins — see
+      # lib/db/seed.ts.
+      - name: Seed the people graph
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_UNPOOLED }}
+        run: npm run db:seed

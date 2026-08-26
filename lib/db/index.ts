@@ -55,11 +55,25 @@ function createDb(): Database {
  */
 let instance: Database | undefined;
 
+/**
+ * The concrete client, for callers that inspect it rather than just query it.
+ * `@auth/drizzle-adapter` detects the dialect from the instance, and a Proxy
+ * over an empty object fails that check with "Unsupported database type".
+ *
+ * Safe to call at module scope in request-path modules: creating the pool
+ * opens no connection, and only lib/auth.ts needs it — the scripts that made
+ * laziness necessary never import it.
+ */
+export function resolveDb(): Database {
+  instance ??= createDb();
+  return instance;
+}
+
 export const db: Database = new Proxy({} as Database, {
   get(_target, property) {
-    instance ??= createDb();
-    const value = Reflect.get(instance as object, property);
-    return typeof value === "function" ? value.bind(instance) : value;
+    const resolved = resolveDb();
+    const value = Reflect.get(resolved as object, property);
+    return typeof value === "function" ? value.bind(resolved) : value;
   },
 });
 

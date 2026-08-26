@@ -5,7 +5,7 @@ import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { and, eq, gt } from "drizzle-orm";
 import { authConfig } from "../auth.config";
-import { db } from "./db";
+import { db, resolveDb } from "./db";
 import {
   authAccounts, authSessions, authUsers, authVerificationTokens, otpCodes,
 } from "./db/schema";
@@ -13,7 +13,7 @@ import { sendMagicLinkEmail } from "./mailer";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
-  adapter: DrizzleAdapter(db, {
+  adapter: DrizzleAdapter(resolveDb(), {
     usersTable: authUsers,
     accountsTable: authAccounts,
     sessionsTable: authSessions,

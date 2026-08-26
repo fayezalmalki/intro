@@ -1,19 +1,23 @@
-/** Seeds the configured database. Idempotent — see lib/db/seed.ts. */
+/**
+ * Seeds the people graph. Idempotent, and production-safe: it inserts no
+ * accounts. Development and tests use `npm run db:reset`, which also loads the
+ * demo accounts.
+ */
 import { config } from "dotenv";
 
 // Next loads .env.local automatically; a bare tsx script does not.
 config({ path: ".env.local" });
 config();
 
-import { seed } from "../lib/db/seed";
+import { seedGraph } from "../lib/db/seed";
 
 async function main(): Promise<void> {
   if (!process.env.DATABASE_URL) {
     console.error("DATABASE_URL is not set — refusing to guess a target.");
     process.exit(1);
   }
-  await seed();
-  console.log("seeded");
+  await seedGraph();
+  console.log("seeded the people graph");
   // The driver holds an open pool; nothing else keeps this process alive.
   process.exit(0);
 }

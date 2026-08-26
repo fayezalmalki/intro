@@ -12,7 +12,7 @@ config();
 
 import { sql } from "drizzle-orm";
 import { db } from "../lib/db";
-import { seed } from "../lib/db/seed";
+import { seedDemoAccounts, seedGraph } from "../lib/db/seed";
 
 async function main(): Promise<void> {
   if (!process.env.DATABASE_URL) {
@@ -26,7 +26,8 @@ async function main(): Promise<void> {
     truncate requests, pipelines, pipeline_items, outreach, send_attempts,
              ledger, audit_events, suppressions, accounts, auth_users cascade
   `);
-  await seed();
+  await seedGraph();
+  await seedDemoAccounts();
   console.log("reset and seeded");
   process.exit(0);
 }
