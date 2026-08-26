@@ -1,4 +1,4 @@
-import { AmBar, Forbidden } from "@/components/Chrome";
+import { AmBar, Forbidden, ar } from "@/components/Chrome";
 import { grantRole } from "@/lib/actions";
 import { listAccounts } from "@/lib/db/repo";
 import { accountForPage } from "@/lib/session";
@@ -10,6 +10,18 @@ const ROLE_LABEL: Record<Role, string> = {
   requester: "مُقدّم طلب",
   account_manager: "مدير حسابات",
   admin: "مشرف",
+};
+
+/**
+ * What each role actually confers. The buttons used to say only the role's
+ * name, so granting one meant knowing from memory what it opened up — and the
+ * grant is not trivially reversible, since promoting the wrong person and then
+ * demoting yourself runs into the last-administrator rule.
+ */
+const ROLE_GRANTS: Record<Role, string> = {
+  requester: "يقدّم طلبات فقط",
+  account_manager: "يفتح الطابور ويراجع القوائم وينشرها",
+  admin: "كل صلاحيات مدير الحسابات، وكمان يغيّر الأدوار",
 };
 
 const REFUSED: Record<string, string> = {
@@ -39,8 +51,13 @@ export default async function TeamPage({
           <div className="stack g6">
             <h2>الفريق</h2>
             <span className="sm muted">
-              الأدوار تتحدد أول ما يسجّل الشخص دخوله، وتتغيّر من هنا. مدير الحسابات يفتح الطابور
-              ويراجع القوائم؛ المشرف يقدر يغيّر الأدوار كمان.
+              الأدوار تتحدد أول ما يسجّل الشخص دخوله، وتتغيّر من هنا.
+            </span>
+            {/* The live count is what makes a locked row explain itself: with one
+                administrator, "المشرف الوحيد" reads as a rule rather than a bug. */}
+            <span className="xs dim">
+              {ar(accounts.length)} حساب · {ar(admins)} مشرف
+              {admins === 1 ? " — لازم يبقى واحد على الأقل" : ""}
             </span>
           </div>
 
@@ -54,7 +71,6 @@ export default async function TeamPage({
             </div>
             {accounts.map((account) => {
               const isSelf = account.id === admin.id;
-              const isLastAdmin = account.role === "admin" && admins === 1;
               return (
                 <div className="tr tr-team" key={account.id}>
                   <div className="row g10">
@@ -65,12 +81,18 @@ export default async function TeamPage({
                     </div>
                   </div>
 
-                  <span className="sm muted">{ROLE_LABEL[account.role]}</span>
+                  <div className="stack g4">
+                    <span className="sm muted">{ROLE_LABEL[account.role]}</span>
+                    <span className="xs dim">{ROLE_GRANTS[account.role]}</span>
+                  </div>
 
+                  {/* No "last administrator" branch here: reaching this screen
+                      requires being an admin, so another account that is the
+                      only admin cannot exist. repo.setAccountRole still refuses
+                      it — the action is a POST endpoint reachable directly, and
+                      that check is the one that runs. */}
                   {isSelf ? (
                     <span className="xs dim">دورك — يغيّره مشرف آخر</span>
-                  ) : isLastAdmin ? (
-                    <span className="xs dim">المشرف الوحيد — رقِّ غيره أولًا</span>
                   ) : (
                     <div className="row g6 wrapx">
                       {(Object.keys(ROLE_LABEL) as Role[])
@@ -79,7 +101,11 @@ export default async function TeamPage({
                           <form action={grantRole} key={role}>
                             <input type="hidden" name="accountId" value={account.id} />
                             <input type="hidden" name="role" value={role} />
-                            <button type="submit" className="btn btn-sm">
+                            <button
+                              type="submit"
+                              className="btn btn-sm"
+                              title={ROLE_GRANTS[role]}
+                            >
                               {ROLE_LABEL[role]}
                             </button>
                           </form>

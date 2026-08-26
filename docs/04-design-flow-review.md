@@ -230,6 +230,71 @@ through sign-in, and comes back prefilled. That needed middleware to carry `path
 into `next` rather than the path alone — otherwise someone types what they want, signs in, and
 lands on an empty box.
 
+---
+
+# Second pass: with Refero
+
+The MCP is connected now, so this is the review originally asked for. Two of its surfaces
+apply and they split cleanly: `refero_search_styles` covers web marketing pages — the landing —
+while `refero_search_screens` covers in-app screens.
+
+**The limit, stated up front.** Refero indexes predominantly LTR products. It is a reference
+for type scale, density, rhythm and pattern; it is **not** a reference for Arabic typography or
+RTL correctness. Nothing below ports a layout verbatim on Refero's say-so, and where its
+guidance does not transfer, that is said rather than quietly followed.
+
+## The landing hero was undersized — and this is not Refero's opinion alone
+
+Refero's closest analogue is **Say Briefly** (`saybriefly.com`): off-white canvas `#fcfaf5`,
+a deep olive used for headings and the primary action, centred spacious hero, flat surfaces.
+That is nearly Intro's palette already — canvas `#f7f7f4`, accent `#4f6b4c`. Its display type
+runs 55/66/90px. Across the other references the display range clusters the same way.
+
+Rather than take that on trust, I measured the original prototype:
+
+| | Prototype | What I built | 
+|---|---|---|
+| `.hero h1` size | **56px** | 40px |
+| weight | **400** | 600 |
+
+So the landing was wrong in two ways at once, and the second matters more than the first: at
+weight 600 it reads as a bold section heading, where the prototype's large-and-light treatment
+is what gives the page its airy, editorial feel. Refero pointed at the size; the prototype —
+the actual design intent — settled both. Now 56px/400, and 33px on a phone.
+
+**Not taken from Refero:** its typeface guidance (Bricolage Grotesque, Inter). IBM Plex Sans
+Arabic is the correct choice here and the references cannot speak to that.
+
+## The team screen: two things Teachable does that we did not
+
+Teachable's *User Roles* screen is the closest in-app comparison to `/am/team`. It is organised
+by role rather than by person — right for a product with many users per role, wrong for a
+concierge team of three, so that structure was not copied. Two details were:
+
+1. **It says what a role grants.** Our buttons said only `مشرف` / `مدير حسابات`. Someone
+   granting one had to know from memory what it opened up — and the grant is not cleanly
+   reversible, since promoting the wrong person and then demoting yourself hits the
+   last-administrator rule. Every row and every button now states what the role confers.
+2. **It shows a live count** ("using 1 of 1 admin seats"). The team screen now reads
+   `٢ حساب · ١ مشرف — لازم يبقى واحد على الأقل`. That count is exactly what makes the locked
+   row legible: with it, the lock reads as a rule rather than a bug.
+
+## A defect the comparison exposed in my own code
+
+Writing the count made the page's `isLastAdmin` branch visibly unreachable. Reaching `/am/team`
+requires being an admin; the branch is only evaluated for *another* account; and another
+account that is the sole admin cannot exist while you are also one. It was dead code shaped
+like a guard, which is worse than no branch — it implies a protection that never runs. Removed,
+with a comment pointing at `repo.setAccountRole`, where the check actually lives and is tested.
+
+## Noted, not acted on
+
+Every admin reference Refero returned — Teachable, Acuity, Aboard — uses a **persistent left
+sidebar**. The account-manager console uses a top bar. At two nav items a sidebar would be
+over-structure, so this is not a defect today. It is the thing that should change if
+`القوائم` and `الأشخاص` ever get built, and it is recorded here so that decision is made
+deliberately rather than by accretion.
+
 ## Still open
 
 - `القوائم` and `الأشخاص` were deleted, not built. Lists exist in the data model and on the
