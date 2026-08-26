@@ -9,7 +9,7 @@ import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
 import { loadRequestContext } from "./loaders";
 import type {
-  Brief, Channel, Db, ItemStatus, PipelineSource, RequestStatus,
+  Account, Brief, Channel, Db, ItemStatus, PipelineSource, RequestStatus, Role,
 } from "../types";
 
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -314,4 +314,70 @@ export async function verifyAndGrant(
 
     await audit(tx, "dev", accountId, "account.verified", `dev grant of ${amount} credits`);
   });
+}
+
+/** Why a role change was refused, so the caller can say something useful. */
+export type RoleChangeResult =
+  | { ok: true }
+  | { ok: false; reason: "unknown_account" | "self" | "last_admin" };
+
+/**
+ * Changes an account's role.
+ *
+ * Both refusals live inside the transaction rather than on the page, because
+ * the page is not the only caller: `grantRole` is a server action, which is a
+ * POST endpoint anyone can invoke without ever loading a screen. A check that
+ * only guards the form guards nothing.
+ */
+export async function setAccountRole(
+  input: { actorAccountId: string; targetAccountId: string; role: Role },
+  database: Database = defaultDb,
+): Promise<RoleChangeResult> {
+  return database.transaction(async (tx) => {
+    // An admin demoting themselves is almost always a misclick, and it is the
+    // easiest way to trip the last-admin rule below by accident.
+    if (input.actorAccountId === input.targetAccountId) return { ok: false, reason: "self" };
+
+    const [target] = await tx
+      .select().from(accounts).where(eq(accounts.id, input.targetAccountId)).limit(1);
+    if (!target) return { ok: false, reason: "unknown_account" };
+    if (target.role === input.role) return { ok: true };
+
+    if (target.role === "admin" && input.role !== "admin") {
+      // Locking every administrator out of /am leaves no in-app way back —
+      // the same shape of failure as a migration that reports success while
+      // doing nothing. Counted inside the transaction so a concurrent demotion
+      // of the other last admin cannot slip between the count and the write.
+      const remaining = await tx
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(and(eq(accounts.role, "admin"), ne(accounts.id, input.targetAccountId)));
+      if (remaining.length === 0) return { ok: false, reason: "last_admin" };
+    }
+
+    const [actor] = await tx
+      .select().from(accounts).where(eq(accounts.id, input.actorAccountId)).limit(1);
+
+    await tx.update(accounts).set({ role: input.role }).where(eq(accounts.id, target.id));
+    await tx.insert(auditEvents).values({
+      actor: actor?.displayName ?? input.actorAccountId,
+      entity: target.id,
+      action: `role.${input.role}`,
+      detail: `${target.email}: ${target.role} → ${input.role}`,
+    });
+
+    return { ok: true };
+  });
+}
+
+/** Every account, for the team screen. */
+export async function listAccounts(database: Database = defaultDb): Promise<Account[]> {
+  const rows = await database.select().from(accounts).orderBy(accounts.createdAt);
+  return rows.map((row) => ({
+    ...row,
+    verifiedAt: row.verifiedAt ?? undefined,
+    frozenAt: row.frozenAt ?? undefined,
+    frozenReason: row.frozenReason ?? undefined,
+    assignedAm: row.assignedAm ?? undefined,
+  }));
 }

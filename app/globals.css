@@ -277,3 +277,11 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
   .tri-cell { border-inline-start: none; padding-inline-start: 0; }
   .steps-3 { padding-block: 40px; }
 }
+
+/* The team table's own tracks. A class, not an inline style: an inline
+   gridTemplateColumns outranks the @media rule below and would keep the
+   desktop layout on a phone. */
+.tr-team { grid-template-columns: 1fr 190px 260px; }
+@media (max-width: 720px) {
+  .tr-team { grid-template-columns: minmax(0, 1fr); }
+}
