@@ -103,12 +103,18 @@ export const SEED_LISTS: PeopleList[] = [
 ];
 
 /**
- * One seeded requester, deliberately `observer` — signed up, can reach a
+ * Two accounts, because the product has two sides.
+ *
+ * The requester is deliberately an `observer` — signed up, can reach a
  * published pipeline, cannot send until verified. The demo starts at the gate.
+ *
+ * The account manager is what makes /am reachable at all now that the role is
+ * enforced; without it there is nobody who can approve a pipeline.
  */
-export const SEED_ACCOUNTS: Account[] = [
+export const SEED_ACCOUNTS: Array<Omit<Account, "userId">> = [
   {
     id: "acc-faisal",
+    role: "requester",
     displayName: "فيصل",
     initial: "F",
     email: "faisal@example.sa",
@@ -116,11 +122,25 @@ export const SEED_ACCOUNTS: Account[] = [
     dailyCap: 10,
     createdAt: "2026-08-01T00:00:00.000Z",
   },
+  {
+    id: "acc-reem",
+    role: "account_manager",
+    displayName: "ريم",
+    initial: "R",
+    email: "reem@example.sa",
+    state: "managed",
+    dailyCap: 50,
+    createdAt: "2026-08-01T00:00:00.000Z",
+  },
 ];
 
+/**
+ * An in-memory `Db` for tests over the pure functions. `userId` is a
+ * placeholder here; lib/db/seed.ts resolves the real one from auth_users.
+ */
 export function emptyDb(): Db {
   return {
-    accounts: SEED_ACCOUNTS.map((a) => ({ ...a })),
+    accounts: SEED_ACCOUNTS.map((a) => ({ ...a, userId: `user-${a.id}` })),
     people: SEED_PEOPLE.map((p) => ({ ...p })),
     requests: [],
     pipelines: [],

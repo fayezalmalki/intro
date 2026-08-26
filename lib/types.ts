@@ -1,4 +1,9 @@
-export type Role = "requester" | "account_manager";
+/**
+ * What an account may do, as opposed to `AccountState`, which is how far it has
+ * been trusted to send. A requester with `state: "verified"` can send; only an
+ * account_manager can approve a pipeline and publish it to someone.
+ */
+export type Role = "requester" | "account_manager" | "admin";
 
 /**
  * Access model: the intake is open, the sending is gated. An `observer` signs
@@ -159,6 +164,8 @@ export interface Outreach {
 
 export interface Account {
   id: string;
+  userId: string;
+  role: Role;
   displayName: string;
   initial: string;
   email: string;
