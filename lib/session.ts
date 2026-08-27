@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "./db";
 import { db as defaultDb } from "./db";
-import { accounts, authUsers } from "./db/schema";
+import { accounts, authUsers, requests } from "./db/schema";
 import type { Account, Role } from "./types";
 
 /**
@@ -104,6 +104,47 @@ export async function currentAccount(database: Database = defaultDb): Promise<Ac
 
 export function isAccountManager(account: Account): boolean {
   return account.role === "account_manager" || account.role === "admin";
+}
+
+/**
+ * Who may read a request.
+ *
+ * `currentAccount()` proves someone is signed in and nothing more. Until this
+ * existed, /requests/[id] loaded a request by id and rendered it to anyone with
+ * the URL — another person's brief, the full pipeline of names, titles and
+ * companies, and a send button spending the *viewer's* credits.
+ *
+ * Account managers stay allowed on purpose: they can already read the same
+ * request at /am/requests/[id], so refusing them here would protect nothing and
+ * would break their own path through the app.
+ */
+export function canReadRequest(account: Account, requestAccountId: string): boolean {
+  return account.id === requestAccountId || isAccountManager(account);
+}
+
+/**
+ * The account that owns a request, for the actions that write against it.
+ *
+ * Stricter than canReadRequest, and deliberately not role-based: confirmBrief
+ * rewrites the requester's own summary, and markOutreach spends the caller's
+ * credits against the request it names. An account manager acting through
+ * either would produce ledger rows for one account attached to another
+ * account's request — incoherent whatever the role.
+ *
+ * A missing request is refused the same way as one owned by someone else, so
+ * the error does not report which request ids exist.
+ */
+export async function requireRequestOwner(
+  requestId: string,
+  action: string,
+  database: Database = defaultDb,
+): Promise<Account> {
+  const account = await currentAccount(database);
+  const [request] = await database
+    .select({ accountId: requests.accountId })
+    .from(requests).where(eq(requests.id, requestId)).limit(1);
+  if (!request || request.accountId !== account.id) throw new NotPermitted(action);
+  return account;
 }
 
 /**

@@ -87,6 +87,31 @@ export async function loadQueue(database: Database = defaultDb): Promise<Db> {
   return out;
 }
 
+/**
+ * One requester's own requests, plus the pipelines behind them so the list can
+ * show where each one stands without a query per row.
+ *
+ * The `accountId` filter is the entire difference between this and loadQueue,
+ * which deliberately reads every request because that is what an account
+ * manager's queue is. Getting that filter wrong here would turn a requester's
+ * own list into everybody's.
+ */
+export async function loadMyRequests(
+  accountId: string,
+  database: Database = defaultDb,
+): Promise<Db> {
+  const out = empty();
+  const rows = await database.select().from(requests).where(eq(requests.accountId, accountId));
+  out.requests = rows.map((r) => undef(r) as Db["requests"][number]);
+  if (rows.length === 0) return out;
+
+  const pipelineRows = await database
+    .select().from(pipelines)
+    .where(inArray(pipelines.requestId, rows.map((r) => r.id)));
+  out.pipelines = nest(pipelineRows, []);
+  return out;
+}
+
 /** Lists and their members, for the attach screen. */
 export async function loadLists(database: Database = defaultDb): Promise<Db> {
   const out = empty();

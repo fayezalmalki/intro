@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
-import { currentAccount, requireAccountManager, requireAdmin } from "./session";
+import { currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
 import { assertDevTools } from "./env";
 import type { Channel, PipelineSource, Role } from "./types";
 
@@ -35,6 +35,11 @@ export async function createRequest(formData: FormData): Promise<void> {
 export async function confirmBrief(formData: FormData): Promise<void> {
   const requestId = String(formData.get("requestId"));
   const summary = String(formData.get("summaryAr") ?? "").trim();
+
+  // A server action is a POST endpoint anyone can invoke without ever loading
+  // the page, so the check on the confirm screen is not the boundary. Without
+  // this, any signed-in account could rewrite anyone's brief.
+  await requireRequestOwner(requestId, "confirm this request");
 
   await repo.confirmBrief(requestId, summary || undefined);
 
@@ -100,7 +105,10 @@ export async function markOutreach(
   formData: FormData,
 ): Promise<SendResult> {
   const requestId = String(formData.get("requestId"));
-  const account = await currentAccount();
+  // Owner-only, not role-based: recordSend charges `account.id` for a send
+  // against `requestId`, so a mismatched pair would write ledger rows for one
+  // account attached to another account's request.
+  const account = await requireRequestOwner(requestId, "send on this request");
 
   const result = await repo.recordSend({
     accountId: account.id,

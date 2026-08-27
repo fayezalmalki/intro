@@ -45,7 +45,10 @@ export function AppBar({ account }: { account: Account }) {
         <Link href="/" className="logo">
           intro<span>.</span>
         </Link>
-        <Link href="/" className="sm muted">
+        <Link href="/requests" className="sm muted">
+          طلباتي
+        </Link>
+        <Link href="/new" className="sm muted">
           + Intro جديد
         </Link>
       </div>
