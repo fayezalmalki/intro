@@ -100,7 +100,7 @@ export default async function AttachPage({
                 className="lat"
                 defaultValue={tab === "csv" ? SAMPLE_CSV : SAMPLE_PASTE}
                 aria-label="الصفوف"
-                style={{ fontSize: 13, lineHeight: 2 }}
+                style={{ fontSize: "var(--text-sm)", lineHeight: 2 }}
               />
               <div className="row between">
                 <span className="sm dim">
