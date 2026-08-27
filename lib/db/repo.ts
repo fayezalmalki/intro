@@ -316,6 +316,84 @@ export async function verifyAndGrant(
   });
 }
 
+/** Why a verification was refused, so the caller can say something useful. */
+export type VerifyResult =
+  | { ok: true; granted: boolean }
+  | { ok: false; reason: "unknown_account" };
+
+/**
+ * Verifies an account for sending and puts credits in its ledger.
+ *
+ * The production counterpart to verifyAndGrant, which stays dev-only. The
+ * difference that matters is `ref`: verifyAndGrant hardcodes "dev-grant", so
+ * ledger_idempotency_idx makes a second grant a silent no-op — right for a
+ * dev tool that may run on every restart, wrong here, where it would mean an
+ * account can be topped up exactly once and never again. A caller-supplied ref
+ * keeps a double-submitted form safe while leaving a later top-up possible.
+ *
+ * `granted` reports which of the two happened, so the page can say "credits
+ * added" rather than implying it when the index absorbed a repeat.
+ */
+export async function verifyAndCredit(
+  input: { accountId: string; amount: number; ref: string; actor: string },
+  database: Database = defaultDb,
+): Promise<VerifyResult> {
+  return database.transaction(async (tx) => {
+    const [account] = await tx
+      .select({ id: accounts.id }).from(accounts)
+      .where(eq(accounts.id, input.accountId)).limit(1);
+    if (!account) return { ok: false as const, reason: "unknown_account" as const };
+
+    await tx.update(accounts)
+      .set({ state: "verified", verifiedAt: new Date().toISOString() })
+      .where(eq(accounts.id, input.accountId));
+
+    const inserted = await tx.insert(ledgerTable)
+      .values({ accountId: input.accountId, delta: input.amount, reason: "grant", ref: input.ref })
+      .onConflictDoNothing()
+      .returning({ id: ledgerTable.id });
+
+    await audit(tx, input.actor, input.accountId, "account.verified",
+      inserted.length
+        ? `verified and granted ${input.amount} credits (${input.ref})`
+        : `verified; grant ${input.ref} already applied`);
+
+    return { ok: true as const, granted: inserted.length > 0 };
+  });
+}
+
+/**
+ * Credit standing by account, for the team page.
+ *
+ * balanceOf in lib/credits.ts sums an in-memory Db, which is right for the
+ * gate — it already holds the one account's ledger. Listing every account
+ * would otherwise mean loading every ledger row to add them up.
+ *
+ * `grants` counts grant rows rather than summing them, because it is what the
+ * page turns into the next grant's ref. A count only ever goes up, so a
+ * re-rendered page always produces a ref that has not been used, while a
+ * double-submitted one repeats the ref it was rendered with and is absorbed.
+ * A balance would not do: credits are spent as well as granted, so the same
+ * balance can recur and would swallow a legitimate top-up.
+ */
+export type CreditStanding = { balance: number; grants: number };
+
+export async function creditStanding(
+  database: Database = defaultDb,
+): Promise<Map<string, CreditStanding>> {
+  const rows = await database
+    .select({
+      accountId: ledgerTable.accountId,
+      balance: sql<number>`sum(${ledgerTable.delta})::int`,
+      grants: sql<number>`count(*) filter (where ${ledgerTable.reason} = 'grant')::int`,
+    })
+    .from(ledgerTable)
+    .groupBy(ledgerTable.accountId);
+  return new Map(
+    rows.map((r) => [r.accountId, { balance: Number(r.balance ?? 0), grants: Number(r.grants ?? 0) }]),
+  );
+}
+
 /** Why a role change was refused, so the caller can say something useful. */
 export type RoleChangeResult =
   | { ok: true }

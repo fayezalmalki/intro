@@ -24,6 +24,7 @@ vi.mock("../db/repo", () => ({
   recordSend: vi.fn(async () => { repoCalls.push("recordSend"); return { ok: true }; }),
   verifyAndGrant: vi.fn(async () => { repoCalls.push("verifyAndGrant"); }),
   setAccountRole: vi.fn(async () => { repoCalls.push("setAccountRole"); return { ok: true }; }),
+  verifyAndCredit: vi.fn(async () => { repoCalls.push("verifyAndCredit"); return { ok: true, granted: true }; }),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -206,4 +207,53 @@ describe("owner-only actions", () => {
       expect(repoCalls).toEqual([]);
     });
   }
+});
+
+
+/**
+ * Verifying an account is admin-only, for the same reason granting a role is:
+ * an account manager who could verify accounts could verify their own and
+ * hand themselves the sending credits, which is the thing the account state
+ * exists to withhold.
+ */
+describe("verifyAccount", () => {
+  beforeEach(() => {
+    repoCalls.length = 0;
+    vi.resetModules();
+  });
+
+  for (const role of ["requester", "account_manager"] as const) {
+    it(`rejects a ${role}, before touching the repository`, async () => {
+      current = account(role);
+      const actions = await import("../actions");
+      await expect(actions.verifyAccount(form({ accountId: "a2" }))).rejects.toThrow(/not permitted/i);
+      expect(repoCalls).toEqual([]);
+    });
+  }
+
+  it("allows an admin", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.verifyAccount(form({ accountId: "a2" }));
+    expect(repoCalls).toContain("verifyAndCredit");
+  });
+
+  /**
+   * Deliberately permitted, unlike grantRole's self-change. Every account is
+   * provisioned as an observer, the admin's included, so refusing this would
+   * leave the only person who can reach the page unable to send.
+   */
+  it("allows an admin to verify their own account", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.verifyAccount(form({ accountId: current.id }));
+    expect(repoCalls).toContain("verifyAndCredit");
+  });
+
+  it("ignores a submission with no account", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.verifyAccount(form({ accountId: "" }));
+    expect(repoCalls).toEqual([]);
+  });
 });

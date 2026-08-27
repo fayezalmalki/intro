@@ -1,6 +1,6 @@
 import { AmBar, Forbidden, ar } from "@/components/Chrome";
-import { grantRole } from "@/lib/actions";
-import { listAccounts } from "@/lib/db/repo";
+import { grantRole, verifyAccount } from "@/lib/actions";
+import { creditStanding, listAccounts } from "@/lib/db/repo";
 import { accountForPage } from "@/lib/session";
 import type { Role } from "@/lib/types";
 
@@ -30,6 +30,13 @@ const REFUSED: Record<string, string> = {
   unknown_account: "ما لقينا هذا الحساب.",
 };
 
+/**
+ * How many credits verification grants. Kept in step with VERIFY_GRANT in
+ * lib/actions.ts by saying the number out loud on the button, so a change
+ * there that is not reflected here is visible rather than quiet.
+ */
+const VERIFY_GRANT = 10;
+
 export default async function TeamPage({
   searchParams,
 }: {
@@ -41,7 +48,15 @@ export default async function TeamPage({
   if (!admin) return <Forbidden area="تغيير الأدوار مخصص للمشرفين." />;
   const { refused } = await searchParams;
   const accounts = await listAccounts();
+  const credits = await creditStanding();
   const admins = accounts.filter((a) => a.role === "admin").length;
+  // "Cannot send" is the useful count, and it is not the same as "observer":
+  // a verified account whose credits ran out is equally stuck, and used to be
+  // stuck permanently, since the only button on this page appeared for
+  // observers.
+  const stuck = accounts.filter(
+    (a) => a.state === "observer" || (credits.get(a.id)?.balance ?? 0) < 1,
+  ).length;
 
   return (
     <>
@@ -58,6 +73,7 @@ export default async function TeamPage({
             <span className="xs dim">
               {ar(accounts.length)} حساب · {ar(admins)} مشرف
               {admins === 1 ? " — لازم يبقى واحد على الأقل" : ""}
+              {stuck > 0 ? ` · ${ar(stuck)} ما يقدر يرسل` : ""}
             </span>
           </div>
 
@@ -67,6 +83,7 @@ export default async function TeamPage({
             <div className="tr head tr-team">
               <span>الحساب</span>
               <span>الدور</span>
+              <span>الإرسال</span>
               <span>تغيير</span>
             </div>
             {accounts.map((account) => {
@@ -84,6 +101,44 @@ export default async function TeamPage({
                   <div className="stack g4">
                     <span className="sm muted">{ROLE_LABEL[account.role]}</span>
                     <span className="xs dim">{ROLE_GRANTS[account.role]}</span>
+                  </div>
+
+                  {/* The role says what someone may *do* in the console; this
+                      says whether they may send at all. They are independent:
+                      an admin is provisioned as an observer like everyone
+                      else, so the person running this page starts unable to
+                      send and would otherwise have no way to change that. */}
+                  <div className="stack g6">
+                    {(() => {
+                      const standing = credits.get(account.id) ?? { balance: 0, grants: 0 };
+                      const observer = account.state === "observer";
+                      return (
+                        <form action={verifyAccount} className="stack g4">
+                          <input type="hidden" name="accountId" value={account.id} />
+                          <input type="hidden" name="grants" value={standing.grants} />
+                          {observer ? (
+                            <span className="xs dim">مراقب — ما يقدر يرسل</span>
+                          ) : (
+                            <>
+                              <span className="sm muted">مفعّل</span>
+                              <span className="xs dim">
+                                رصيد {ar(standing.balance)} رسالة
+                                {standing.balance < 1 ? " — ما يقدر يرسل" : ""}
+                              </span>
+                            </>
+                          )}
+                          <button
+                            type="submit"
+                            className="btn btn-sm"
+                            title={`يفعّل الإرسال ويضيف ${VERIFY_GRANT} رسائل للرصيد`}
+                          >
+                            {observer
+                              ? `فعّل وامنح ${ar(VERIFY_GRANT)} رسائل`
+                              : `امنح ${ar(VERIFY_GRANT)} رسائل`}
+                          </button>
+                        </form>
+                      );
+                    })()}
                   </div>
 
                   {/* No "last administrator" branch here: reaching this screen

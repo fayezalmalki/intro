@@ -12,6 +12,15 @@ import type { Channel, PipelineSource, Role } from "./types";
 const SLA_HOURS = 24;
 const DEV_GRANT = 5;
 
+/**
+ * What an admin's verification puts in an account's ledger.
+ *
+ * Small on purpose: there is no billing yet, so this is the whole supply of
+ * sends an account has. Ten is the per-request cap the requester's own screen
+ * already promises, so a verified account can work one request through.
+ */
+const VERIFY_GRANT = 10;
+
 export async function createRequest(formData: FormData): Promise<void> {
   const rawText = String(formData.get("rawText") ?? "").trim();
   if (!rawText) return;
@@ -155,6 +164,47 @@ export async function grantRole(formData: FormData): Promise<void> {
     actorAccountId: admin.id,
     targetAccountId,
     role,
+  });
+
+  revalidatePath("/am/team");
+  if (!result.ok) redirect(`/am/team?refused=${result.reason}`);
+}
+
+
+/**
+ * Verifies an account for sending and gives it credits. Admin only.
+ *
+ * Until this existed, sending was unreachable in production: every account is
+ * provisioned as an observer with an empty ledger (lib/session.ts), so the
+ * gate refused every send with account_not_verified and insufficient_credits,
+ * and the only code that cleared them was devVerifyAndGrant — which
+ * assertDevTools blocks outside development. A requester reached a published
+ * pipeline and was told to «أكمل التحقق أولًا», pointing at a step that did
+ * not exist.
+ *
+ * An admin verifying their own account is deliberately allowed. grantRole
+ * refuses a self-change because self-promotion would make the role split
+ * meaningless; granting yourself credits you already control the ledger for
+ * defeats nothing, and refusing it would leave the send path untestable by
+ * the only person who can reach this page.
+ */
+export async function verifyAccount(formData: FormData): Promise<void> {
+  const admin = await requireAdmin("verify an account");
+
+  const targetAccountId = String(formData.get("accountId") ?? "");
+  if (!targetAccountId) return;
+
+  // How many grants the page saw when it rendered this button. A count only
+  // goes up, so re-rendering always produces a ref that has not been used —
+  // while a double-submitted form repeats the one it was rendered with and is
+  // absorbed by ledger_idempotency_idx instead of doubling the credits.
+  const grants = Number(formData.get("grants") ?? 0);
+
+  const result = await repo.verifyAndCredit({
+    accountId: targetAccountId,
+    amount: VERIFY_GRANT,
+    ref: `admin-grant:${Number.isFinite(grants) ? grants : 0}`,
+    actor: admin.displayName,
   });
 
   revalidatePath("/am/team");
