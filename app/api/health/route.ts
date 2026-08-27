@@ -25,8 +25,50 @@ function rowsOf<T>(result: unknown): T[] {
   return Array.isArray(rows) ? (rows as T[]) : [];
 }
 
+/**
+ * Settings the app degrades *through* rather than dies on, so they belong
+ * beside the checks rather than among them.
+ *
+ * The extractor is the reason this exists. lib/intent.ts falls back to a
+ * keyword extractor whenever the key is missing or the call fails, and the
+ * only place that fact ever surfaced was the confirm screen — which a request
+ * passes through once and never returns to. So a dead key produced worse
+ * briefs and no signal at all.
+ *
+ * Booleans only, matching the promise above: whether a setting is present,
+ * never its value, its length, or a masked prefix of it.
+ */
+function configuration(): Record<string, boolean> {
+  return {
+    // Mirrors lib/intent.ts exactly. Re-deriving the condition here would let
+    // the two drift, and the drift would report the opposite of the truth.
+    intent_extractor: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+    mailer: Boolean(process.env.SMTP_PASSWORD),
+    google_oauth: Boolean(process.env.AUTH_GOOGLE_ID),
+  };
+}
+
 export async function GET(): Promise<Response> {
   const checks: Check[] = [];
+
+  // Fatal, unlike the settings in configuration(). Without AUTH_SECRET there
+  // is no session at all; without ADMIN_EMAILS no account can ever become an
+  // admin, so nobody can grant a role or verify an account.
+  const authSecret = Boolean(process.env.AUTH_SECRET);
+  checks.push({
+    name: "auth_secret_configured",
+    ok: authSecret,
+    detail: authSecret ? undefined : "AUTH_SECRET is not set — sign-in cannot work on this deployment.",
+  });
+
+  const adminEmails = Boolean(process.env.ADMIN_EMAILS?.trim());
+  checks.push({
+    name: "admin_emails_configured",
+    ok: adminEmails,
+    detail: adminEmails
+      ? undefined
+      : "ADMIN_EMAILS is not set — no account can be provisioned as an admin.",
+  });
 
   const configured = Boolean(process.env.DATABASE_URL);
   checks.push({
@@ -74,6 +116,9 @@ export async function GET(): Promise<Response> {
     }
   }
 
+  // `config` deliberately does not affect the verdict. google_oauth is off by
+  // choice today, and an endpoint that went red for a deliberate choice would
+  // teach us to ignore it.
   const ok = checks.every((c) => c.ok);
-  return Response.json({ ok, checks }, { status: ok ? 200 : 503 });
+  return Response.json({ ok, checks, config: configuration() }, { status: ok ? 200 : 503 });
 }
