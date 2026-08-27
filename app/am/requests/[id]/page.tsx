@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AmBar, FitTag, LinkIcon, ar, Forbidden } from "@/components/Chrome";
+import { AmBar, FitTag, LinkIcon, Provenance, ar, Forbidden } from "@/components/Chrome";
 import { publishPipeline, setItemStatus } from "@/lib/actions";
 import { canApprove } from "@/lib/sourcing";
 import { accountForPage } from "@/lib/session";
@@ -78,6 +78,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             <div className="card stack g12">
               <span className="eyebrow">الفهم المُعتمد</span>
               <p className="sm">{b.summaryAr}</p>
+              {/* Same sentence the requester saw on the confirm screen. An
+                  account manager working from «قواعد محلية · ثقة ٣٥٪» is
+                  reading a keyword match, not an understanding of the ask. */}
+              <Provenance brief={b} />
               <div className="stack g8" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 13 }}>
                 {b.targetRoles.length > 0 && <Row k="الأدوار" v={b.targetRoles.join("، ")} />}
                 {b.industries.length > 0 && <Row k="القطاع" v={b.industries.join("، ")} />}

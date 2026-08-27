@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AppBar, ar } from "@/components/Chrome";
+import { AppBar, Provenance } from "@/components/Chrome";
 import { confirmBrief } from "@/lib/actions";
 import { canReadRequest, currentAccount } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
@@ -58,9 +58,7 @@ export default async function ConfirmPage({ params }: { params: Promise<{ id: st
             </div>
 
             <div className="row between" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 16 }}>
-              <span className="sm dim">
-                استُخرج بـ{b.extractedBy === "claude" ? "Claude" : "قواعد محلية"} · ثقة {ar(Math.round(b.confidence * 100))}٪
-              </span>
+              <Provenance brief={b} />
               <button type="submit" className="btn-primary">
                 تمام، كمّل
               </button>

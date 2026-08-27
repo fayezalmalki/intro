@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Account, Fit } from "@/lib/types";
+import type { Account, Brief, Fit } from "@/lib/types";
 import { isAccountManager } from "@/lib/session";
 
 /**
@@ -92,6 +92,24 @@ const FIT: Record<Fit, { label: string; color: string; dot: string }> = {
   medium: { label: "يستحق التجربة", color: "var(--ink-2)", dot: "#C9C9C2" },
   possible: { label: "احتمال توافق", color: "var(--ink-2)", dot: "#E0E0DA" },
 };
+
+/**
+ * Where a brief came from, and how sure the extractor was.
+ *
+ * Shared rather than repeated because the requester's confirm screen and the
+ * account manager's review screen must agree: two copies of this sentence
+ * would eventually say different things about the same brief. lib/intent.ts
+ * falls back to a keyword extractor on a missing credential or a failed call,
+ * so «قواعد محلية» is the visible symptom of a dead ANTHROPIC_API_KEY.
+ */
+export function Provenance({ brief }: { brief: Pick<Brief, "extractedBy" | "confidence"> }) {
+  return (
+    <span className="sm dim">
+      استُخرج بـ{brief.extractedBy === "claude" ? "Claude" : "قواعد محلية"} · ثقة{" "}
+      {ar(Math.round(brief.confidence * 100))}٪
+    </span>
+  );
+}
 
 export function FitTag({ fit }: { fit: Fit }) {
   const f = FIT[fit];
