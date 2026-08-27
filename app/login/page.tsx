@@ -32,7 +32,7 @@ export default async function LoginPage({
     <div className="login-page">
       <div className="stack g26 narrow" style={{ width: "100%" }}>
         <div className="stack g8" style={{ textAlign: "center" }}>
-          <span className="logo" style={{ fontSize: 24 }}>
+          <span className="logo" style={{ fontSize: "var(--text-xl)" }}>
             intro<span>.</span>
           </span>
           <span className="sm muted">سجّل دخولك عشان تكمّل طلبك.</span>
