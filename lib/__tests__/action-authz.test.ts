@@ -24,6 +24,7 @@ vi.mock("../db/repo", () => ({
   recordSend: vi.fn(async () => { repoCalls.push("recordSend"); return { ok: true }; }),
   verifyAndGrant: vi.fn(async () => { repoCalls.push("verifyAndGrant"); }),
   setAccountRole: vi.fn(async () => { repoCalls.push("setAccountRole"); return { ok: true }; }),
+  verifyAndCredit: vi.fn(async () => { repoCalls.push("verifyAndCredit"); return { ok: true, granted: true }; }),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -37,6 +38,9 @@ const account = (role: Account["role"]): Account => ({
 });
 
 let current: Account = account("requester");
+
+/** Which account owns which request, for the owner-only actions below. */
+const requestOwner: Record<string, string> = { r1: "a1", r2: "someone-else" };
 
 /**
  * Only the session lookup is stubbed. The policy itself — isAccountManager and
@@ -55,6 +59,10 @@ vi.mock("../session", async (importOriginal) => {
     },
     requireAdmin: async (action: string) => {
       if (current.role !== "admin") throw new actual.NotPermitted(action);
+      return current;
+    },
+    requireRequestOwner: async (requestId: string, action: string) => {
+      if (requestOwner[requestId] !== current.id) throw new actual.NotPermitted(action);
       return current;
     },
   };
@@ -145,6 +153,107 @@ describe("grantRole", () => {
     current = account("admin");
     const actions = await import("../actions");
     await actions.grantRole(form({ accountId: "a2", role: "superuser" }));
+    expect(repoCalls).toEqual([]);
+  });
+});
+
+
+/**
+ * confirmBrief and markOutreach are owner-only, and not by role.
+ *
+ * Reading someone else's request needed a check; writing to it needs a
+ * stricter one. confirmBrief rewrites the requester's own summary, and
+ * markOutreach charges the caller's credits against the request it names — so
+ * an account manager passing through either would attach one account's ledger
+ * rows to another account's request, which is incoherent whatever the role.
+ *
+ * The policy itself is tested against a real database in request-access.test.ts.
+ * What matters here is that each action actually calls it, before the repository.
+ */
+describe("owner-only actions", () => {
+  beforeEach(() => {
+    repoCalls.length = 0;
+    vi.resetModules();
+  });
+
+  const OWNER_ACTIONS = [
+    { name: "confirmBrief", repo: "confirmBrief", extra: { summaryAr: "بركز على قادة المنتج." } },
+    { name: "markOutreach", repo: "recordSend", extra: { personId: "p1", channel: "intro", body: "سلام" } },
+  ] as const;
+
+  const call = async (name: string, fields: Record<string, string>) => {
+    const actions = await import("../actions");
+    const fn = actions[name as keyof typeof actions] as (...a: unknown[]) => Promise<unknown>;
+    // markOutreach is a useActionState action, so it takes the previous state first.
+    return name === "markOutreach" ? fn(undefined, form(fields)) : fn(form(fields));
+  };
+
+  for (const { name, repo, extra } of OWNER_ACTIONS) {
+    it(`${name} lets the owner through`, async () => {
+      current = account("requester");
+      await call(name, { requestId: "r1", ...extra });
+      expect(repoCalls).toContain(repo);
+    });
+
+    it(`${name} refuses a stranger, before touching the repository`, async () => {
+      current = account("requester");
+      await expect(call(name, { requestId: "r2", ...extra })).rejects.toThrow(/not permitted/i);
+      expect(repoCalls).toEqual([]);
+    });
+
+    it(`${name} refuses an account manager who does not own it`, async () => {
+      current = account("account_manager");
+      await expect(call(name, { requestId: "r2", ...extra })).rejects.toThrow(/not permitted/i);
+      expect(repoCalls).toEqual([]);
+    });
+  }
+});
+
+
+/**
+ * Verifying an account is admin-only, for the same reason granting a role is:
+ * an account manager who could verify accounts could verify their own and
+ * hand themselves the sending credits, which is the thing the account state
+ * exists to withhold.
+ */
+describe("verifyAccount", () => {
+  beforeEach(() => {
+    repoCalls.length = 0;
+    vi.resetModules();
+  });
+
+  for (const role of ["requester", "account_manager"] as const) {
+    it(`rejects a ${role}, before touching the repository`, async () => {
+      current = account(role);
+      const actions = await import("../actions");
+      await expect(actions.verifyAccount(form({ accountId: "a2" }))).rejects.toThrow(/not permitted/i);
+      expect(repoCalls).toEqual([]);
+    });
+  }
+
+  it("allows an admin", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.verifyAccount(form({ accountId: "a2" }));
+    expect(repoCalls).toContain("verifyAndCredit");
+  });
+
+  /**
+   * Deliberately permitted, unlike grantRole's self-change. Every account is
+   * provisioned as an observer, the admin's included, so refusing this would
+   * leave the only person who can reach the page unable to send.
+   */
+  it("allows an admin to verify their own account", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.verifyAccount(form({ accountId: current.id }));
+    expect(repoCalls).toContain("verifyAndCredit");
+  });
+
+  it("ignores a submission with no account", async () => {
+    current = account("admin");
+    const actions = await import("../actions");
+    await actions.verifyAccount(form({ accountId: "" }));
     expect(repoCalls).toEqual([]);
   });
 });

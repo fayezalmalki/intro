@@ -4,7 +4,7 @@ import { devVerifyAndGrant } from "@/lib/actions";
 import { devToolsEnabled } from "@/lib/env";
 import { SendButton } from "@/components/SendButton";
 import { balanceOf } from "@/lib/credits";
-import { currentAccount } from "@/lib/session";
+import { canReadRequest, currentAccount } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 import type { Account, Db, OutreachStatus } from "@/lib/types";
 
@@ -24,7 +24,9 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const db: Db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);
-  if (!req) notFound();
+  // notFound() rather than a refusal screen: a refusal would confirm that a
+  // request with this id exists and belongs to someone else.
+  if (!req || !canReadRequest(account, req.accountId)) notFound();
 
   const published = db.pipelines.find((p) => p.requestId === id && p.status === "published");
   if (!published) return (
