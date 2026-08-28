@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AmBar, ar, Forbidden } from "@/components/Chrome";
+import { Console, ar, Forbidden } from "@/components/Chrome";
 import { buildPipelineView, type Stage, type StageState } from "@/lib/pipeline";
 import { accountForPage } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
@@ -8,8 +8,8 @@ import { loadRequestContext } from "@/lib/db/loaders";
 export const dynamic = "force-dynamic";
 
 const DOT: Record<StageState, string> = {
-  done: "#4F6B4C",
-  active: "#4F6B4C",
+  done: "var(--accent)",
+  active: "var(--accent)",
   blocked: "#8C4A40",
   pending: "#DEDED7",
 };
@@ -39,8 +39,7 @@ export default async function PipelinePage({ params }: { params: Promise<{ id: s
   if (!view) notFound();
 
   return (
-    <>
-      <AmBar on="queue" account={account} />
+    <Console on="queue" account={account}>
       <div className="wrap">
         <div className="row between" style={{ alignItems: "baseline" }}>
           <div className="row g10" style={{ alignItems: "baseline" }}>
@@ -67,7 +66,7 @@ export default async function PipelinePage({ params }: { params: Promise<{ id: s
           ))}
         </div>
       </div>
-    </>
+    </Console>
   );
 }
 

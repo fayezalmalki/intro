@@ -17,7 +17,7 @@ export default function GlobalError({
       <body
         style={{
           margin: 0,
-          background: "#F7F7F4",
+          background: "#FAFAF7",
           color: "#111111",
           fontFamily: "system-ui, sans-serif",
           display: "flex",

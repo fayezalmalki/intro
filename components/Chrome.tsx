@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Account, Brief, Fit } from "@/lib/types";
+import type { Account, Brief, Fit, GoalType, OutreachStatus } from "@/lib/types";
 import { isAccountManager } from "@/lib/session";
 
 /**
@@ -8,14 +8,37 @@ import { isAccountManager } from "@/lib/session";
  * the avatar "F" above every requester's — which survived the move to real
  * sign-ins because auth never touched the presentation layer.
  */
-export function AmBar({ on, account }: { on?: "queue" | "team"; account: Account }) {
+/**
+ * The console shell: a fixed rail beside the work.
+ *
+ * The requester keeps a top bar (AppBar, below) and the console gets the rail.
+ * That is not inconsistency — it is the same argument as the last design
+ * review, that a 240px fixed column for two destinations is over-structure. The
+ * requester has two; the console has the queue, the team, and a per-request
+ * stack underneath, with people_lists already in the database waiting for a
+ * screen.
+ *
+ * Takes the signed-in account rather than naming anyone. Both bars used to
+ * print the two seeded demo people — "ريم" above every account manager's work,
+ * the avatar "F" above every requester's — which survived the move to real
+ * sign-ins because auth never touched the presentation layer.
+ */
+export function Console({
+  on,
+  account,
+  children,
+}: {
+  on?: "queue" | "team";
+  account: Account;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="bar">
-      <div className="bar-left">
+    <div className="console">
+      <div className="rail">
         <Link href="/am" className="logo">
-          intro<span>.</span>
+          <Wordmark on="ink" />
         </Link>
-        <nav className="bar-nav">
+        <nav className="rail-nav">
           <Link href="/am" className={on === "queue" ? "on" : ""}>
             الطابور
           </Link>
@@ -26,14 +49,22 @@ export function AmBar({ on, account }: { on?: "queue" | "team"; account: Account
             </Link>
           )}
         </nav>
+        <div className="grow" />
+        <div className="rail-who">
+          <div className="avatar sm">{account.initial}</div>
+          <div className="stack rail-who-text">
+            <span className="sm" style={{ color: "#fff", fontWeight: 600 }}>
+              {account.displayName}
+            </span>
+            <span className="xs" style={{ color: "var(--on-dark-2)" }}>
+              {ROLE_LABEL[account.role]}
+            </span>
+          </div>
+          <div className="grow" />
+          <SignOut />
+        </div>
       </div>
-      <div className="row g10">
-        <span className="sm muted bar-who">
-          {account.displayName} · {ROLE_LABEL[account.role]}
-        </span>
-        <div className="avatar">{account.initial}</div>
-        <SignOut />
-      </div>
+      <div className="console-main">{children}</div>
     </div>
   );
 }
@@ -43,7 +74,7 @@ export function AppBar({ account }: { account: Account }) {
     <div className="bar">
       <div className="bar-left">
         <Link href="/" className="logo">
-          intro<span>.</span>
+          <Wordmark />
         </Link>
         <Link href="/requests" className="sm muted">
           طلباتي
@@ -88,10 +119,84 @@ function SignOut() {
 }
 
 const FIT: Record<Fit, { label: string; color: string; dot: string }> = {
-  strong: { label: "توافق قوي", color: "var(--accent)", dot: "#4F6B4C" },
-  medium: { label: "يستحق التجربة", color: "var(--ink-2)", dot: "#C9C9C2" },
-  possible: { label: "احتمال توافق", color: "var(--ink-2)", dot: "#E0E0DA" },
+  strong: { label: "توافق قوي", color: "var(--accent)", dot: "var(--accent)" },
+  medium: { label: "يستحق التجربة", color: "var(--ink-2)", dot: "var(--line-2)" },
+  possible: { label: "احتمال توافق", color: "var(--ink-2)", dot: "var(--line)" },
 };
+
+/**
+ * The badge tones from the handoff, which assigns a specific pair per state.
+ * They are not interchangeable: a solid fill means the state is terminal, a
+ * tint means it is still in flight.
+ */
+type Tone = "" | "accent" | "warn" | "bad" | "solid" | "ink";
+
+export function Badge({ tone = "", children }: { tone?: Tone; children: React.ReactNode }) {
+  return <span className={`badge${tone ? ` ${tone}` : ""}`}>{children}</span>;
+}
+
+const FIT_BADGE: Record<Fit, { tone: Tone; label: string }> = {
+  strong: { tone: "accent", label: "توافق قوي" },
+  medium: { tone: "warn", label: "متوسط" },
+  possible: { tone: "", label: "محتمل" },
+};
+
+export function FitBadge({ fit }: { fit: Fit }) {
+  const f = FIT_BADGE[fit];
+  return <Badge tone={f.tone}>{f.label}</Badge>;
+}
+
+/**
+ * Where a person stands. Our six outreach states map onto the handoff's badge
+ * tones almost exactly; "none" is its NEW, and "accepted" is its CONNECTED —
+ * the only terminal good outcome, so it takes the solid ink fill.
+ */
+const OUTREACH_BADGE: Record<OutreachStatus, { tone: Tone; label: string } | null> = {
+  none: { tone: "", label: "جديد" },
+  queued: { tone: "warn", label: "في الانتظار" },
+  sent: { tone: "accent", label: "تواصلنا" },
+  replied: { tone: "solid", label: "ردّ" },
+  accepted: { tone: "ink", label: "تم التعارف" },
+  declined: { tone: "bad", label: "اعتذر" },
+};
+
+export function OutreachBadge({ status }: { status: OutreachStatus }) {
+  const s = OUTREACH_BADGE[status];
+  return s ? <Badge tone={s.tone}>{s.label}</Badge> : null;
+}
+
+/**
+ * The handoff sorts every request into three directions. Our briefs carry five
+ * goal types, so partnerships join sales, and a named person or an investor is
+ * research before it is a pitch.
+ */
+const DIRECTION: Record<GoalType, { tone: Tone; label: string }> = {
+  sales: { tone: "accent", label: "مبيعات" },
+  partnership: { tone: "accent", label: "شراكات" },
+  investment: { tone: "warn", label: "استثمار" },
+  person: { tone: "warn", label: "شخص محدد" },
+  job: { tone: "", label: "توظيف" },
+};
+
+export function DirectionBadge({ goal }: { goal: GoalType }) {
+  const d = DIRECTION[goal];
+  return <Badge tone={d.tone}>{d.label}</Badge>;
+}
+
+/**
+ * The traced mark from the design handoff, replacing the wordmark that was set
+ * as text. Two fixed-colour files rather than the currentColor master, because
+ * an <img> is an isolated document and cannot inherit the page's colour.
+ */
+export function Wordmark({ on = "light", size }: { on?: "light" | "ink"; size?: "lg" }) {
+  return (
+    <img
+      className={`wordmark${size ? ` ${size}` : ""}`}
+      src={on === "ink" ? "/logo/intro-ar-paper.svg" : "/logo/intro-ar-ink.svg"}
+      alt="Intro"
+    />
+  );
+}
 
 /**
  * Where a brief came from, and how sure the extractor was.
@@ -159,8 +264,8 @@ export function Forbidden({ area }: { area: string }) {
   return (
     <div className="login-page">
       <div className="stack g16 narrow" style={{ width: "100%", textAlign: "center" }}>
-        <span className="logo" style={{ fontSize: "var(--text-xl)" }}>
-          intro<span>.</span>
+        <span className="logo lg">
+          <Wordmark />
         </span>
         <h1>هذي الصفحة مو ضمن صلاحياتك.</h1>
         <span className="sm muted">{area}</span>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AmBar, ar, Forbidden } from "@/components/Chrome";
+import { Console, DirectionBadge, ar, Forbidden } from "@/components/Chrome";
 import { accountForPage } from "@/lib/session";
 import { loadQueue } from "@/lib/db/loaders";
 import type { IntroRequest, RequestStatus } from "@/lib/types";
@@ -7,16 +7,11 @@ import type { IntroRequest, RequestStatus } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const STATE: Record<RequestStatus, { label: string; dot: string }> = {
-  intent_review: { label: "بانتظار تأكيد العميل", dot: "#E0E0DA" },
-  in_sourcing: { label: "مسودة جاهزة", dot: "#4F6B4C" },
-  pipeline_ready: { label: "منشورة", dot: "#DDE6DA" },
-  outreach: { label: "التواصل جارٍ", dot: "#DDE6DA" },
-  closed: { label: "مغلق", dot: "#E0E0DA" },
-};
-
-const GOAL: Record<string, string> = {
-  job: "وظيفة", sales: "مبيعات", partnership: "شراكة",
-  investment: "استثمار", person: "شخص محدد",
+  intent_review: { label: "بانتظار تأكيد العميل", dot: "var(--line)" },
+  in_sourcing: { label: "مسودة جاهزة", dot: "var(--accent)" },
+  pipeline_ready: { label: "منشورة", dot: "var(--accent-line)" },
+  outreach: { label: "التواصل جارٍ", dot: "var(--accent-line)" },
+  closed: { label: "مغلق", dot: "var(--line)" },
 };
 
 export default async function QueuePage() {
@@ -32,25 +27,39 @@ export default async function QueuePage() {
   const published = rows.filter((r) => r.status === "pipeline_ready" || r.status === "outreach").length;
 
   return (
-    <>
-      <AmBar on="queue" account={account} />
+    <Console on="queue" account={account}>
       <div className="wrap">
-        <div className="row between" style={{ alignItems: "baseline" }}>
-          <h2>طابور الطلبات</h2>
-          <div className="row g20 sm muted">
-            <span>
-              في الانتظار <strong style={{ color: "var(--ink)" }}>{ar(waiting)}</strong>
-            </span>
-            <span>
-              تجاوزت الوقت <strong style={{ color: "var(--danger)" }}>{ar(late)}</strong>
-            </span>
-            <span>
-              منشورة <strong style={{ color: "var(--accent)" }}>{ar(published)}</strong>
-            </span>
-          </div>
+        <div className="console-bar">
+          <h1>طابور الطلبات</h1>
         </div>
 
-        <div style={{ height: 18 }} />
+        {/* The three counts used to run inline beside the heading, where the
+            one that matters — work that has gone past its promise — sat third
+            in a muted row. On cards it is a figure in the danger colour. */}
+        <div className="kpis" style={{ marginBottom: 24 }}>
+          <div className="kpi">
+            <div className="kpi-label">في الانتظار</div>
+            <div className="kpi-figure">{ar(waiting)}</div>
+            <div className="kpi-sub">مسودة جاهزة للمراجعة</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">تجاوزت الوقت</div>
+            <div className="kpi-figure" style={{ color: late > 0 ? "var(--danger)" : undefined }}>
+              {ar(late)}
+            </div>
+            <div className="kpi-sub">{late > 0 ? "تحتاج تحرّك الآن" : "كل شيء داخل الوقت"}</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">منشورة</div>
+            <div className="kpi-figure">{ar(published)}</div>
+            <div className="kpi-sub">وصلت للعميل</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">إجمالي الطلبات</div>
+            <div className="kpi-figure">{ar(rows.length)}</div>
+            <div className="kpi-sub">منذ البداية</div>
+          </div>
+        </div>
 
         {rows.length === 0 ? (
           <div className="card stack g10">
@@ -86,7 +95,7 @@ export default async function QueuePage() {
                     <span className="sm muted">{r.requesterName}</span>
                   </div>
                   <span>
-                    <span className="chip">{GOAL[r.brief?.goalType ?? "person"]}</span>
+                    <DirectionBadge goal={r.brief?.goalType ?? "person"} />
                   </span>
                   <div className="row g6">
                     <span className="dot" style={{ background: s.dot }} />
@@ -107,7 +116,7 @@ export default async function QueuePage() {
           </div>
         )}
       </div>
-    </>
+    </Console>
   );
 }
 

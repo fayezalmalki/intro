@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AppBar, FitTag, ar } from "@/components/Chrome";
+import { AppBar, FitBadge, OutreachBadge, ar } from "@/components/Chrome";
 import { devVerifyAndGrant } from "@/lib/actions";
 import { devToolsEnabled } from "@/lib/env";
 import { SendButton } from "@/components/SendButton";
@@ -114,16 +114,16 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
                       {person.title} · {person.company}
                     </span>
                   </div>
-                  <FitTag fit={item.fit} />
+                  <div className="row g6 wrapx" style={{ justifyContent: "flex-end" }}>
+                    {out && out.status !== "none" && <OutreachBadge status={out.status} />}
+                    <FitBadge fit={item.fit} />
+                  </div>
                 </div>
 
                 <p className="sm">{item.why}</p>
 
                 {out && out.status !== "none" && (
-                  <div className="row g8 chip" style={{ padding: "9px 12px", borderRadius: 7 }}>
-                    <span className="dot" style={{ background: out.status === "sent" ? "#C9C9C2" : "#4F6B4C" }} />
-                    {OUTREACH_LABEL[out.status]}
-                  </div>
+                  <span className="sm muted">{OUTREACH_LABEL[out.status]}</span>
                 )}
 
                 <div className="row between g10" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 13 }}>
@@ -181,7 +181,7 @@ function Sourcing({
           <div className="steps">
             {steps.map((s, i) => (
               <div className="seg" key={s.label}>
-                <span className="dot" style={{ background: s.done ? "#4F6B4C" : "var(--line)" }} />
+                <span className="dot" style={{ background: s.done ? "var(--accent)" : "var(--line)" }} />
                 <span className="sm" style={{ color: s.done ? "var(--ink)" : "var(--ink-3)" }}>
                   {s.label}
                 </span>

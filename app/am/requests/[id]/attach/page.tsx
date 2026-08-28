@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AmBar, ar, Forbidden } from "@/components/Chrome";
+import { Console, ar, Forbidden } from "@/components/Chrome";
 import { attachPipeline } from "@/lib/actions";
 import { accountForPage } from "@/lib/session";
 import { loadLists, loadRequestContext, merge } from "@/lib/db/loaders";
@@ -39,8 +39,7 @@ export default async function AttachPage({
     Math.max(0, ...db.pipelines.filter((p) => p.requestId === id).map((p) => p.version)) + 1;
 
   return (
-    <>
-      <AmBar on="queue" account={account} />
+    <Console on="queue" account={account}>
       <div className="wrap">
         <div className="row g10" style={{ alignItems: "baseline" }}>
           <Link href={`/am/requests/${id}`} className="sm dim">
@@ -114,6 +113,6 @@ export default async function AttachPage({
           )}
         </div>
       </div>
-    </>
+    </Console>
   );
 }

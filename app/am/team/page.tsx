@@ -1,4 +1,4 @@
-import { AmBar, Forbidden, ar } from "@/components/Chrome";
+import { Console, Forbidden, ar } from "@/components/Chrome";
 import { grantRole, verifyAccount } from "@/lib/actions";
 import { creditStanding, listAccounts } from "@/lib/db/repo";
 import { accountForPage } from "@/lib/session";
@@ -59,8 +59,7 @@ export default async function TeamPage({
   ).length;
 
   return (
-    <>
-      <AmBar on="team" account={admin} />
+    <Console on="team" account={admin}>
       <div className="wrap">
         <div className="mid stack g16">
           <div className="stack g6">
@@ -70,10 +69,17 @@ export default async function TeamPage({
             </span>
             {/* The live count is what makes a locked row explain itself: with one
                 administrator, "المشرف الوحيد" reads as a rule rather than a bug. */}
-            <span className="xs dim">
-              {ar(accounts.length)} حساب · {ar(admins)} مشرف
-              {admins === 1 ? " — لازم يبقى واحد على الأقل" : ""}
-              {stuck > 0 ? ` · ${ar(stuck)} ما يقدر يرسل` : ""}
+            {/* Separate elements rather than one string. A middot between a
+                clause and an Arabic-Indic numeral renders ambiguously in RTL —
+                «الأقل · ٣» read as "٣٠" in the browser — so the counts are
+                laid out with gaps instead of punctuation. */}
+            <span className="row g14 wrapx xs dim">
+              <span>{ar(accounts.length)} حساب</span>
+              <span>
+                {ar(admins)} مشرف
+                {admins === 1 ? " — لازم يبقى واحد على الأقل" : ""}
+              </span>
+              {stuck > 0 && <span>{ar(stuck)} ما يقدر يرسل</span>}
             </span>
           </div>
 
@@ -173,6 +179,6 @@ export default async function TeamPage({
           </div>
         </div>
       </div>
-    </>
+    </Console>
   );
 }
