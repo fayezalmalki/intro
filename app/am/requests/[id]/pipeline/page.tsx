@@ -8,8 +8,8 @@ import { loadRequestContext } from "@/lib/db/loaders";
 export const dynamic = "force-dynamic";
 
 const DOT: Record<StageState, string> = {
-  done: "#4F6B4C",
-  active: "#4F6B4C",
+  done: "var(--accent)",
+  active: "var(--accent)",
   blocked: "#8C4A40",
   pending: "#DEDED7",
 };

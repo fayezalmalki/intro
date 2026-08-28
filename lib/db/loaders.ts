@@ -105,10 +105,25 @@ export async function loadMyRequests(
   out.requests = rows.map((r) => undef(r) as Db["requests"][number]);
   if (rows.length === 0) return out;
 
+  const requestIds = rows.map((r) => r.id);
   const pipelineRows = await database
-    .select().from(pipelines)
-    .where(inArray(pipelines.requestId, rows.map((r) => r.id)));
-  out.pipelines = nest(pipelineRows, []);
+    .select().from(pipelines).where(inArray(pipelines.requestId, requestIds));
+
+  // Items, not just the pipeline rows: the dashboard's "people matched" figure
+  // counts them, and counting per row would be a query per request.
+  const itemRows = pipelineRows.length
+    ? await database
+        .select().from(pipelineItems)
+        .where(inArray(pipelineItems.pipelineId, pipelineRows.map((p) => p.id)))
+    : [];
+  out.pipelines = nest(pipelineRows, itemRows);
+
+  // Outreach carries the accepted and reply figures. Scoped to this account's
+  // own requests, like everything else here.
+  out.outreach = (await database
+    .select().from(outreach).where(inArray(outreach.requestId, requestIds)))
+    .map((o) => undef(o) as Db["outreach"][number]);
+
   return out;
 }
 

@@ -7,11 +7,11 @@ import type { IntroRequest, RequestStatus } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const STATE: Record<RequestStatus, { label: string; dot: string }> = {
-  intent_review: { label: "بانتظار تأكيد العميل", dot: "#E0E0DA" },
-  in_sourcing: { label: "مسودة جاهزة", dot: "#4F6B4C" },
-  pipeline_ready: { label: "منشورة", dot: "#DDE6DA" },
-  outreach: { label: "التواصل جارٍ", dot: "#DDE6DA" },
-  closed: { label: "مغلق", dot: "#E0E0DA" },
+  intent_review: { label: "بانتظار تأكيد العميل", dot: "var(--line)" },
+  in_sourcing: { label: "مسودة جاهزة", dot: "var(--accent)" },
+  pipeline_ready: { label: "منشورة", dot: "var(--accent-line)" },
+  outreach: { label: "التواصل جارٍ", dot: "var(--accent-line)" },
+  closed: { label: "مغلق", dot: "var(--line)" },
 };
 
 const GOAL: Record<string, string> = {

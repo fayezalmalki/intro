@@ -103,7 +103,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               <span className="eyebrow">النسخ</span>
               {pipelines.map((p) => (
                 <div className="row g10" key={p.id} style={{ alignItems: "flex-start", opacity: p.status === "superseded" ? 0.55 : 1 }}>
-                  <span className="dot" style={{ background: p.status === "superseded" ? "#C9C9C2" : "#4F6B4C", marginTop: 8 }} />
+                  <span className="dot" style={{ background: p.status === "superseded" ? "var(--line-2)" : "var(--accent)", marginTop: 8 }} />
                   <div className="stack">
                     <span className="sm">
                       النسخة {ar(p.version)} · {p.createdBy}

@@ -532,3 +532,11 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
   .kpi { padding: 14px 16px; }
   .kpi-figure { font-size: var(--text-2xl); }
 }
+
+/* The requester's request table. A class rather than an inline style: an
+   inline gridTemplateColumns outranks the media query and would keep the
+   desktop tracks on a phone. */
+.tr-req { grid-template-columns: 1fr 110px 100px 200px 90px; }
+@media (max-width: 720px) {
+  .tr-req { grid-template-columns: minmax(0, 1fr); }
+}
