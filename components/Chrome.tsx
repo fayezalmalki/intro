@@ -157,9 +157,10 @@ export function DirectionBadge({ goal }: { goal: GoalType }) {
  * as text. Two fixed-colour files rather than the currentColor master, because
  * an <img> is an isolated document and cannot inherit the page's colour.
  */
-export function Wordmark({ on = "light" }: { on?: "light" | "ink" }) {
+export function Wordmark({ on = "light", size }: { on?: "light" | "ink"; size?: "lg" }) {
   return (
     <img
+      className={`wordmark${size ? ` ${size}` : ""}`}
       src={on === "ink" ? "/logo/intro-ar-paper.svg" : "/logo/intro-ar-ink.svg"}
       alt="Intro"
     />
