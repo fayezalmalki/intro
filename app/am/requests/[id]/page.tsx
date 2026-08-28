@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AmBar, FitTag, LinkIcon, Provenance, ar, Forbidden } from "@/components/Chrome";
+import { Console, FitTag, LinkIcon, Provenance, ar, Forbidden } from "@/components/Chrome";
 import { publishPipeline, setItemStatus } from "@/lib/actions";
 import { canApprove } from "@/lib/sourcing";
 import { accountForPage } from "@/lib/session";
@@ -38,8 +38,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const b = req.brief;
 
   return (
-    <>
-      <AmBar on="queue" account={account} />
+    <Console on="queue" account={account}>
       <div className="wrap">
         <div className="row between" style={{ alignItems: "baseline" }}>
           <div className="row g10" style={{ alignItems: "baseline" }}>
@@ -211,7 +210,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
       </div>
-    </>
+    </Console>
   );
 }
 
@@ -242,8 +241,7 @@ function Row({ k, v }: { k: string; v: string }) {
  */
 function AwaitingConfirmation({ account, request }: { account: Account; request: IntroRequest }) {
   return (
-    <>
-      <AmBar on="queue" account={account} />
+    <Console on="queue" account={account}>
       <div className="wrap">
         <div className="mid stack g20" style={{ paddingTop: 20 }}>
           <div className="row g10" style={{ alignItems: "baseline" }}>
@@ -277,6 +275,6 @@ function AwaitingConfirmation({ account, request }: { account: Account; request:
           </div>
         </div>
       </div>
-    </>
+    </Console>
   );
 }

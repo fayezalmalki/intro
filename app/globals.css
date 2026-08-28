@@ -507,6 +507,11 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
   display: flex; align-items: center; gap: 10px;
 }
 .rail-who .avatar { background: var(--accent); border-color: var(--accent); color: #fff; }
+.rail .btn { background: transparent; border-color: var(--ink-line); color: var(--on-dark-2); }
+.rail .btn:hover { border-color: var(--on-dark-2); color: #fff; }
+/* .wrap carries its own page padding, which would double up inside the main
+   column. The console pages keep the class for their max-width helpers. */
+.console-main > .wrap { padding: 0; }
 .console-main { flex: 1; min-width: 0; padding: 28px 32px 48px; }
 .console-bar {
   display: flex; align-items: center; gap: 16px; margin-bottom: 28px; flex-wrap: wrap;

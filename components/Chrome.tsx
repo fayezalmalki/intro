@@ -8,14 +8,37 @@ import { isAccountManager } from "@/lib/session";
  * the avatar "F" above every requester's — which survived the move to real
  * sign-ins because auth never touched the presentation layer.
  */
-export function AmBar({ on, account }: { on?: "queue" | "team"; account: Account }) {
+/**
+ * The console shell: a fixed rail beside the work.
+ *
+ * The requester keeps a top bar (AppBar, below) and the console gets the rail.
+ * That is not inconsistency — it is the same argument as the last design
+ * review, that a 240px fixed column for two destinations is over-structure. The
+ * requester has two; the console has the queue, the team, and a per-request
+ * stack underneath, with people_lists already in the database waiting for a
+ * screen.
+ *
+ * Takes the signed-in account rather than naming anyone. Both bars used to
+ * print the two seeded demo people — "ريم" above every account manager's work,
+ * the avatar "F" above every requester's — which survived the move to real
+ * sign-ins because auth never touched the presentation layer.
+ */
+export function Console({
+  on,
+  account,
+  children,
+}: {
+  on?: "queue" | "team";
+  account: Account;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="bar">
-      <div className="bar-left">
+    <div className="console">
+      <div className="rail">
         <Link href="/am" className="logo">
-          <Wordmark />
+          <Wordmark on="ink" />
         </Link>
-        <nav className="bar-nav">
+        <nav className="rail-nav">
           <Link href="/am" className={on === "queue" ? "on" : ""}>
             الطابور
           </Link>
@@ -26,14 +49,22 @@ export function AmBar({ on, account }: { on?: "queue" | "team"; account: Account
             </Link>
           )}
         </nav>
+        <div className="grow" />
+        <div className="rail-who">
+          <div className="avatar sm">{account.initial}</div>
+          <div className="stack rail-who-text">
+            <span className="sm" style={{ color: "#fff", fontWeight: 600 }}>
+              {account.displayName}
+            </span>
+            <span className="xs" style={{ color: "var(--on-dark-2)" }}>
+              {ROLE_LABEL[account.role]}
+            </span>
+          </div>
+          <div className="grow" />
+          <SignOut />
+        </div>
       </div>
-      <div className="row g10">
-        <span className="sm muted bar-who">
-          {account.displayName} · {ROLE_LABEL[account.role]}
-        </span>
-        <div className="avatar">{account.initial}</div>
-        <SignOut />
-      </div>
+      <div className="console-main">{children}</div>
     </div>
   );
 }

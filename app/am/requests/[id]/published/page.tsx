@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AmBar, Check, ar, Forbidden } from "@/components/Chrome";
+import { Console, Check, ar, Forbidden } from "@/components/Chrome";
 import { accountForPage } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 
@@ -36,8 +36,7 @@ export default async function PublishedPage({ params }: { params: Promise<{ id: 
   const kept = live.items.filter((i) => priorPeople.has(i.personId)).length;
 
   return (
-    <>
-      <AmBar on="queue" account={account} />
+    <Console on="queue" account={account}>
       <div className="wrap">
         <div className="mid stack g26" style={{ paddingTop: 40 }}>
           <div className="stack g14">
@@ -113,6 +112,6 @@ export default async function PublishedPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
       </div>
-    </>
+    </Console>
   );
 }
