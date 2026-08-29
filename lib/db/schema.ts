@@ -1,14 +1,17 @@
 import { sql } from "drizzle-orm";
 import {
   pgTable, text, integer, boolean, timestamp, jsonb, uuid,
-  primaryKey, uniqueIndex, index,
+  primaryKey, uniqueIndex, index, check,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
 import type {
-  AccountState, Channel, Evidence, Fit, GateFailure, GoalType, ItemStatus,
-  LedgerReason, OutreachStatus, PipelineSource, PipelineStatus, RequestStatus,
-  Role, SendPool, UsageKind,
+  AccountState, Channel, CheckoutStatus, CountSource, DraftLang, DraftSpecific,
+  DraftStatus, DraftTemplate, Evidence, ExampleCompany, Fit, GateFailure,
+  GoalType, GtmRunStatus, GtmStep, ItemStatus, LedgerReason, OutreachStatus,
+  PipelineSource, PipelineStatus, ProfileSource, RequestStatus, Role,
+  SegmentOrigin, SendPool, UsageKind,
 } from "../types";
+import type { EmailStatus } from "../coresignal.types";
 
 // ── NextAuth tables — copied from about-sa so the DrizzleAdapter works ──
 
@@ -329,3 +332,230 @@ export const webhookEvents = pgTable("webhook_events", {
   /** Set when the handler finished with it; null means received but unprocessed. */
   processedAt: timestamp("processed_at", { mode: "string" }),
 }, (t) => [uniqueIndex("webhook_events_provider_event_idx").on(t.provider, t.eventId)]);
+
+// ── The GTM flow ──────────────────────────────────────────────
+//
+// Self-serve, unattended, vendor-sourced: a website in, and segments,
+// companies, decision makers and an Arabic opener out. Kept apart from
+// `requests`/`pipelines` on purpose — that loop is account-manager work with an
+// SLA and an evidence gate, and collapsing the two would put a 24-hour SLA on a
+// screen nobody is waiting on.
+
+/**
+ * One pass through the flow, and the record of how it went.
+ *
+ * `steps` is a jsonb array rather than a table because nothing queries inside
+ * it: it is read whole to render the rail and written whole when a step moves.
+ * A step that failed keeps its message here, which is what lets the screen say
+ * *what* broke instead of spinning.
+ */
+export const gtmRuns = pgTable("gtm_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  websiteUrl: text("website_url").notNull(),
+  status: text("status").$type<GtmRunStatus>().notNull().default("running"),
+  steps: jsonb("steps").$type<GtmStep[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [index("gtm_runs_account_idx").on(t.accountId)]);
+
+/**
+ * What we believe the user's own company does, and where that belief came from.
+ *
+ * `source` is not decoration. `claude` means a model read the page, `html`
+ * means we fell back to the page's own metadata, and `manual` means a person
+ * typed it after a step failed. The composer treats all three as equally
+ * quotable *about the sender* — it is their own company — but the screen says
+ * which, so nobody mistakes a meta-description for research.
+ */
+export const companyProfiles = pgTable("company_profiles", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  runId: text("run_id").notNull().references(() => gtmRuns.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  websiteUrl: text("website_url").notNull(),
+  name: text("name").notNull(),
+  /** One line, in Arabic: what they sell and to whom. */
+  sells: text("sells").notNull().default(""),
+  market: text("market").notNull().default(""),
+  sizeSignal: text("size_signal").notNull().default(""),
+  language: text("language").notNull().default("ar"),
+  offerings: jsonb("offerings").$type<string[]>().notNull().default([]),
+  competitors: jsonb("competitors").$type<ExampleCompany[]>().notNull().default([]),
+  source: text("source").$type<ProfileSource>().notNull(),
+  /** The page text the profile was read from, trimmed. Provenance, not content. */
+  sourceExcerpt: text("source_excerpt").notNull().default(""),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("company_profiles_run_idx").on(t.runId)]);
+
+/**
+ * A candidate campaign: who to go after, why they hurt, and how many there are.
+ *
+ * `countQuery` sits beside `matchCount` and is the reason both are here. Phase
+ * 0 established that these totals swing hard with query strictness, so a number
+ * without the query that produced it is a number nobody can check. The UI
+ * renders the query next to the count, and when `countSource` is `unavailable`
+ * it renders no number at all — an unsourceable count is not displayed, ever.
+ */
+export const segments = pgTable("segments", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  runId: text("run_id").notNull().references(() => gtmRuns.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  rank: integer("rank").notNull().default(0),
+  name: text("name").notNull(),
+  icon: text("icon").notNull().default("◆"),
+  description: text("description").notNull().default(""),
+  pain: text("pain").notNull().default(""),
+  criteria: jsonb("criteria").$type<string[]>().notNull().default([]),
+  exampleCompanies: jsonb("example_companies").$type<ExampleCompany[]>().notNull().default([]),
+  /** Null unless a real free search returned an `x-total-results` for it. */
+  matchCount: integer("match_count"),
+  countQuery: jsonb("count_query"),
+  countEndpoint: text("count_endpoint"),
+  countSource: text("count_source").$type<CountSource>().notNull().default("unavailable"),
+  /** Why there is no count, in one line — shown instead of the number. */
+  countError: text("count_error"),
+  countedAt: timestamp("counted_at", { mode: "string" }),
+  origin: text("origin").$type<SegmentOrigin>().notNull().default("ai"),
+  removedAt: timestamp("removed_at", { mode: "string" }),
+}, (t) => [
+  index("segments_run_idx").on(t.runId),
+  // A count may only exist alongside the query that produced it. The rule the
+  // product rests on, held one layer below the code that could forget it.
+  check(
+    "segments_count_needs_query",
+    sql`${t.matchCount} is null or (${t.countQuery} is not null and ${t.countSource} = 'coresignal')`,
+  ),
+]);
+
+/**
+ * A company that matched a segment's free search.
+ *
+ * `kept` is the cost boundary. Rows arrive from a free search and cost nothing;
+ * only a kept row may ever be handed to a paid collect, and `enrichedAt` marks
+ * the ones that were. Everything else on this table is what the free search
+ * already told us.
+ */
+export const targetCompanies = pgTable("target_companies", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  segmentId: text("segment_id").notNull().references(() => segments.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  coresignalId: integer("coresignal_id"),
+  name: text("name").notNull(),
+  website: text("website"),
+  linkedinUrl: text("linkedin_url"),
+  employeesCount: integer("employees_count"),
+  industry: text("industry"),
+  hqCountry: text("hq_country"),
+  kept: boolean("kept").notNull().default(false),
+  enrichedAt: timestamp("enriched_at", { mode: "string" }),
+  source: text("source").$type<"search" | "collect" | "manual" | "fixture">().notNull().default("search"),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [index("target_companies_segment_idx").on(t.segmentId)]);
+
+/**
+ * A decision maker, and how far their address may be trusted.
+ *
+ * `emailStatus` is stored rather than reduced to a boolean because the four
+ * values are not two: `matched_pattern` and `guessed_common_pattern` are both
+ * "not verified", but only the second is literally a guess, and the review
+ * screen says so in those words. See lib/coresignal.types.ts.
+ */
+export const targetPeople = pgTable("target_people", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  companyId: text("company_id").references(() => targetCompanies.id, { onDelete: "cascade" }),
+  segmentId: text("segment_id").notNull().references(() => segments.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  coresignalId: integer("coresignal_id"),
+  fullName: text("full_name").notNull(),
+  firstName: text("first_name"),
+  title: text("title").notNull().default(""),
+  companyName: text("company_name").notNull().default(""),
+  linkedinUrl: text("linkedin_url"),
+  email: text("email"),
+  emailStatus: text("email_status").$type<EmailStatus>(),
+  /** Explicitly kept by the user. Only a kept row may be collected. */
+  kept: boolean("kept").notNull().default(false),
+  /** Set when 20 credits were actually spent on this row. */
+  collectedAt: timestamp("collected_at", { mode: "string" }),
+  source: text("source").$type<"search" | "collect" | "manual" | "fixture">().notNull().default("search"),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [
+  index("target_people_segment_idx").on(t.segmentId),
+  index("target_people_company_idx").on(t.companyId),
+  // An address without a status would be an address of unknown provenance,
+  // which is the one thing the email gate exists to prevent.
+  check(
+    "target_people_email_needs_status",
+    sql`${t.email} is null or ${t.emailStatus} is not null`,
+  ),
+]);
+
+/**
+ * The opener, in Arabic and in English, and what it was allowed to cite.
+ *
+ * `specifics` is the honesty record: every concrete claim in the body, paired
+ * with the field it came from. A draft with an empty `specifics` is a draft
+ * that had nothing true to say, and the composer writes a shorter opener rather
+ * than inventing one — lib/gtm/compose.ts holds that rule and its tests.
+ *
+ * The CHECK is the centre of the whole review screen: `sent` cannot be written
+ * without a provider message id. Not a convention, not a code review note — a
+ * constraint, so a future send path that forgets fails its INSERT.
+ */
+export const introDrafts = pgTable("intro_drafts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  personId: text("person_id").notNull().references(() => targetPeople.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  segmentId: text("segment_id").notNull().references(() => segments.id, { onDelete: "cascade" }),
+  template: text("template").$type<DraftTemplate>().notNull().default("direct"),
+  lang: text("lang").$type<DraftLang>().notNull().default("ar"),
+  subjectAr: text("subject_ar").notNull().default(""),
+  bodyAr: text("body_ar").notNull().default(""),
+  subjectEn: text("subject_en").notNull().default(""),
+  bodyEn: text("body_en").notNull().default(""),
+  specifics: jsonb("specifics").$type<DraftSpecific[]>().notNull().default([]),
+  status: text("status").$type<DraftStatus>().notNull().default("prepared"),
+  /** The only thing that may accompany `sent`, and the constraint says so. */
+  providerMessageId: text("provider_message_id"),
+  sentAt: timestamp("sent_at", { mode: "string" }),
+  editedByUser: boolean("edited_by_user").notNull().default(false),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("intro_drafts_person_idx").on(t.personId),
+  index("intro_drafts_segment_idx").on(t.segmentId),
+  check(
+    "intro_drafts_sent_needs_provider_id",
+    sql`${t.status} <> 'sent' or ${t.providerMessageId} is not null`,
+  ),
+]);
+
+/**
+ * A checkout, from the moment the paywall is accepted to the moment a provider
+ * webhook settles it.
+ *
+ * Credits are not granted from here — the webhook writes a `ledger` row with
+ * this checkout's id as `ref`, and `ledger_idempotency_idx` absorbs the retry.
+ * This table exists so an unsettled checkout is visible as unsettled rather
+ * than as a user who paid and got nothing.
+ */
+export const checkouts = pgTable("checkouts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  /** The provider's own id for this checkout. Unique per provider. */
+  providerRef: text("provider_ref").notNull(),
+  /** One StreamPay account serves several apps; every row is tagged. */
+  product: text("product").notNull().default("intro"),
+  credits: integer("credits").notNull(),
+  /** In halalas, so money is never a float. */
+  amountHalalas: integer("amount_halalas").notNull(),
+  currency: text("currency").notNull().default("SAR"),
+  status: text("status").$type<CheckoutStatus>().notNull().default("created"),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  settledAt: timestamp("settled_at", { mode: "string" }),
+}, (t) => [
+  uniqueIndex("checkouts_provider_ref_idx").on(t.provider, t.providerRef),
+  index("checkouts_account_idx").on(t.accountId),
+]);

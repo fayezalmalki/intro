@@ -18,6 +18,11 @@ const KIND_LABEL: Record<UsageKind, string> = {
   otp_verified: "رمز مقبول",
   otp_verify_failed: "رمز مرفوض",
   account_created: "حساب جديد",
+  gtm_run_started: "تحليل موقع جديد",
+  gtm_step_failed: "خطوة متعثّرة",
+  collect_confirmed: "شراء إثراء مؤكّد",
+  checkout_started: "بدء دفع",
+  checkout_paid: "دفعة مكتملة",
 };
 
 /**

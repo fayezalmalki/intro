@@ -63,26 +63,18 @@ export type Endpoint = keyof typeof CREDIT_COST;
 
 /**
  * How the vendor arrived at an address, and therefore how far it may be
- * trusted. Only `verified` means the mailbox was checked; the rest are
- * inference, and `guessed_common_pattern` is a guess in the literal sense.
+ * trusted. Defined in lib/coresignal.types.ts and re-exported here: this
+ * module is `server-only`, and the status is stored on a row and rendered in
+ * a client component, so the union has to be reachable without the API key.
  *
  * This matters more here than it would elsewhere: intro.sa sends to people who
  * never asked to hear from us, so a bounce is not an inconvenience, it is
  * reputation damage on a domain that also carries our login mail. See
  * docs/sending-domains.md.
  */
-export type EmailStatus =
-  | "verified"
-  | "matched_email"
-  | "matched_pattern"
-  | "guessed_common_pattern";
-
-export const EMAIL_STATUSES: readonly EmailStatus[] = [
-  "verified",
-  "matched_email",
-  "matched_pattern",
-  "guessed_common_pattern",
-];
+export type { EmailStatus } from "./coresignal.types";
+export { EMAIL_STATUSES, EMAIL_STATUS_LABEL, isUsableEmail } from "./coresignal.types";
+import type { EmailStatus } from "./coresignal.types";
 
 /** Only the fields we actually read; the vendor returns a great deal more. */
 export interface EmployeeRecord {
