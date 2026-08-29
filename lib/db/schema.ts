@@ -376,6 +376,12 @@ export const companyProfiles = pgTable("company_profiles", {
   name: text("name").notNull(),
   /** One line, in Arabic: what they sell and to whom. */
   sells: text("sells").notNull().default(""),
+  /**
+   * The same line in English. Stored rather than translated at render time:
+   * the English draft variant is a rewrite in the same register, and without
+   * an English source it would be an English frame around Arabic sentences.
+   */
+  sellsEn: text("sells_en").notNull().default(""),
   market: text("market").notNull().default(""),
   sizeSignal: text("size_signal").notNull().default(""),
   language: text("language").notNull().default("ar"),
@@ -403,9 +409,11 @@ export const segments = pgTable("segments", {
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
   rank: integer("rank").notNull().default(0),
   name: text("name").notNull(),
+  nameEn: text("name_en").notNull().default(""),
   icon: text("icon").notNull().default("◆"),
   description: text("description").notNull().default(""),
   pain: text("pain").notNull().default(""),
+  painEn: text("pain_en").notNull().default(""),
   criteria: jsonb("criteria").$type<string[]>().notNull().default([]),
   exampleCompanies: jsonb("example_companies").$type<ExampleCompany[]>().notNull().default([]),
   /** Null unless a real free search returned an `x-total-results` for it. */
