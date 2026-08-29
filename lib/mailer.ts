@@ -6,6 +6,13 @@ import nodemailer from "nodemailer";
  * separate domain with a separate provider, so a complaint on outreach can
  * never take login mail down with it.
  *
+ * intro.sa is also connected to Resend, which is the better home for pool 1 —
+ * it handles bounces and exposes complaint feedback, where ImprovMX is a
+ * forwarding relay that reports almost nothing back. Moving the primary path
+ * onto it is a change to this module alone: lib/otp.ts sits above the
+ * transport and does not care which one is underneath. This SMTP path stays
+ * either way, as the fallback.
+ *
  * The transport half is ported from careers.sa `convex/email.ts`, which
  * learned all of it the hard way in production: nodemailer does not infer TLS
  * from the port, an unconfigured SMTP password is a silent no-op that looks

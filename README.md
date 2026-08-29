@@ -94,7 +94,8 @@ rather than a rewrite:
    grant a role or verify an account.
 3. `SMTP_USER` and `SMTP_PASSWORD` for the intro.sa ImprovMX alias. Without them
    `/api/auth/send-otp` refuses in production rather than pretending to have
-   sent — see [`docs/sending-domains.md`](docs/sending-domains.md).
+   sent. intro.sa is also connected to Resend, which is where sign-in mail is
+   headed — see [`docs/sending-domains.md`](docs/sending-domains.md).
 
 `/api/health` reports which of those is missing, so an opaque 500 becomes a URL
 that names the problem.
@@ -120,7 +121,7 @@ edit without `npm run db:generate` cannot merge.
 - [`docs/01-mvp-plan.md`](docs/01-mvp-plan.md) — the loop, request state machine, pipeline versioning, compliance, milestones
 - [`docs/02-data-model.md`](docs/02-data-model.md) — the target Postgres schema
 - [`docs/03-design-review.md`](docs/03-design-review.md) — sending architecture, access model, monetization, tools, and the build order
-- [`docs/sending-domains.md`](docs/sending-domains.md) — the three reputation pools, the DNS records to create, and why warmup starts now
+- [`docs/sending-domains.md`](docs/sending-domains.md) — the three reputation pools, the DNS records to create, and why cold sending is deferred
 - [`design/`](design/) — the Claude Design canvas source (`.dc.html` artboards + `canvas.json`)
 
 ## Shape
@@ -143,6 +144,10 @@ Next.js 15 (App Router, server actions) · React 19 · **Drizzle ORM over Postgr
 production, PGlite locally and in tests · NextAuth v5 with `@auth/drizzle-adapter` ·
 nodemailer over ImprovMX SMTP · Claude API for intent extraction · Zod · Vitest, plus a
 Playwright driver at `scripts/e2e.mjs`.
+
+Outbound mail is deliberately minimal: pool 1 (sign-in codes to our own users) is the only
+thing that sends. Cold outreach is deferred — see
+[`docs/sending-domains.md`](docs/sending-domains.md).
 
 There is no file store and no `lib/store.ts`. Every read goes through `lib/db/loaders.ts`,
 which assembles the `Db` shape the pure domain functions already consume, and every write
