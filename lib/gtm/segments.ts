@@ -149,7 +149,9 @@ export async function proposeSegments(profile: AnalyzedProfile): Promise<DraftSe
  */
 export function fallbackSegments(profile: AnalyzedProfile): DraftSegment[] {
   const country = profile.market || "Saudi Arabia";
-  const what = profile.sells || profile.name;
+  // A criterion is a bullet, not a paragraph: the company's own name reads as a
+  // criterion, a three-sentence positioning line does not.
+  const what = profile.name || "منتجك";
   return [
     {
       name: "شركات متوسطة في السوق السعودي",

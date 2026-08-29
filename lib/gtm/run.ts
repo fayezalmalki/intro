@@ -110,7 +110,14 @@ export async function runFreeSteps(
   await step(runId, accountId, "competitors", database, async () => {
     const found = profile?.competitors.length ?? 0;
     if (found === 0) {
-      throw new Error("ما قدرنا نستنتج منافسين من الصفحة. أضفهم يدويًا إذا تبي.");
+      // Two different causes, two different messages. "We read your page with
+      // a title tag" and "a model read your page and could not name anyone"
+      // call for different things from the person reading this.
+      throw new Error(
+        profile?.source === "claude"
+          ? "ما قدرنا نستنتج منافسين من محتوى الصفحة. أضفهم يدويًا من «عدّل الملف»."
+          : "استنتاج المنافسين يحتاج تحليلًا بنموذج، وما فيه مفتاح Claude في هذي البيئة. أضفهم يدويًا من «عدّل الملف».",
+      );
     }
     return `${found} منافس مقترح — غير مُتحقق منهم`;
   });

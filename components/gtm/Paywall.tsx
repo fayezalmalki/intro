@@ -55,8 +55,16 @@ export function Paywall({
       </div>
 
       <div className="row between wrapx g12">
-        <span className="sm muted">
-          رصيدك الحالي: <strong>{ar(balance)}</strong> · مسودات معتمدة: <strong>{ar(approved)}</strong>
+        {/* Two spans, not one sentence with a separator in the middle: a «·»
+            between two Arabic-Indic numerals sits ambiguously in the bidi
+            algorithm and lands next to the wrong figure. */}
+        <span className="row g14 wrapx sm muted">
+          <span>
+            رصيدك الحالي: <strong>{ar(balance)}</strong>
+          </span>
+          <span>
+            مسودات معتمدة: <strong>{ar(approved)}</strong>
+          </span>
         </span>
         <span className="sm dim">
           سعر الوحدة {formatSar(HALALAS_PER_CREDIT)} في كل الباقات — الباقة الأكبر تشتري راحة، لا خصمًا.

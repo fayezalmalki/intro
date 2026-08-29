@@ -35,6 +35,20 @@ import { startCheckout } from "../payments/checkout";
  * that account's id.
  */
 
+/**
+ * Revalidates both screens of a run.
+ *
+ * `revalidatePath("/gtm/<id>")` does **not** cover `/gtm/<id>/review` — they
+ * are different paths, and an approval made on the review screen was silently
+ * not repainting because of it. Every action that changes something either
+ * screen renders goes through here rather than remembering which one it
+ * affects.
+ */
+function revalidateRun(runId: string): void {
+  revalidatePath(`/gtm/${runId}`);
+  revalidatePath(`/gtm/${runId}/review`);
+}
+
 function s(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
 }
@@ -79,7 +93,7 @@ export async function rerunFreeSteps(formData: FormData): Promise<void> {
   const account = await currentAccount();
   const runId = s(formData, "runId");
   await runFreeSteps(runId, account.id);
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 /**
@@ -111,7 +125,7 @@ export async function saveProfileByHand(formData: FormData): Promise<void> {
   await repo.saveProfile(runId, account.id, bundle.run.websiteUrl, profile, db);
   await repo.setStep(runId, account.id, "profile", "done", { note: `${profile.name} — كتابة يدوية` });
   await repo.setRunStatus(runId, account.id, "running");
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 // ── Segments ──────────────────────────────────────────────────
@@ -130,13 +144,13 @@ export async function saveSegment(formData: FormData): Promise<void> {
 
   if (segmentId) await repo.editSegment(segmentId, account.id, input);
   else await repo.addSegment(runId, account.id, input);
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 export async function deleteSegment(formData: FormData): Promise<void> {
   const account = await currentAccount();
   await repo.removeSegment(s(formData, "segmentId"), account.id);
-  revalidatePath(`/gtm/${s(formData, "runId")}`);
+  revalidateRun(s(formData, "runId"));
 }
 
 /**
@@ -171,7 +185,7 @@ export async function recountSegment(formData: FormData): Promise<void> {
       db,
     );
   }
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 // ── Keeping rows. Free, reversible, and the whole cost boundary. ──
@@ -179,13 +193,13 @@ export async function recountSegment(formData: FormData): Promise<void> {
 export async function toggleCompany(formData: FormData): Promise<void> {
   const account = await currentAccount();
   await repo.setCompanyKept(s(formData, "companyId"), account.id, s(formData, "kept") === "1");
-  revalidatePath(`/gtm/${s(formData, "runId")}`);
+  revalidateRun(s(formData, "runId"));
 }
 
 export async function togglePerson(formData: FormData): Promise<void> {
   const account = await currentAccount();
   await repo.setPersonKept(s(formData, "personId"), account.id, s(formData, "kept") === "1");
-  revalidatePath(`/gtm/${s(formData, "runId")}`);
+  revalidateRun(s(formData, "runId"));
 }
 
 // ── The paid steps ────────────────────────────────────────────
@@ -255,7 +269,7 @@ export async function revealCompanies(
       .where(and(eq(targetCompanies.id, id), eq(targetCompanies.accountId, account.id)));
   }
 
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
   return { ok: true, message: `كشفنا ${verdict.plan.buy.length} شركة.`, creditsSpent: spent };
 }
 
@@ -292,7 +306,7 @@ export async function findPeople(formData: FormData): Promise<void> {
       );
     }
   }
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 /**
@@ -361,7 +375,7 @@ export async function revealPeople(
   await repo.setStep(runId, account.id, "people", "done", { note: `${verdict.plan.buy.length} شخص مكشوف` });
   await repo.setStep(runId, account.id, "drafts", "done", { note: "المسودات جاهزة للمراجعة" });
 
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
   return { ok: true, message: `كشفنا ${verdict.plan.buy.length} شخص وكتبنا مسوداتهم.`, creditsSpent: spent };
 }
 
@@ -427,7 +441,7 @@ export async function loadExampleRows(formData: FormData): Promise<void> {
   await composeDraftsForRun(runId, account.id, account.displayName, defaultTemplate(formData), db);
   await repo.setStep(runId, account.id, "people", "done", { note: "صفوف مثال — ليست من مزوّد بيانات" });
   await repo.setStep(runId, account.id, "drafts", "done", { note: "مسودات على صفوف مثال" });
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 // ── Drafts and review ─────────────────────────────────────────
@@ -436,7 +450,7 @@ export async function changeTemplate(formData: FormData): Promise<void> {
   const account = await currentAccount();
   const runId = s(formData, "runId");
   await composeDraftsForRun(runId, account.id, account.displayName, defaultTemplate(formData), db);
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 export async function saveDraft(formData: FormData): Promise<void> {
@@ -448,13 +462,13 @@ export async function saveDraft(formData: FormData): Promise<void> {
     body: s(formData, "body"),
     lang,
   });
-  revalidatePath(`/gtm/${runId}`);
+  revalidateRun(runId);
 }
 
 export async function switchLang(formData: FormData): Promise<void> {
   const account = await currentAccount();
   await repo.setDraftLang(s(formData, "draftId"), account.id, s(formData, "lang") === "en" ? "en" : "ar");
-  revalidatePath(`/gtm/${s(formData, "runId")}`);
+  revalidateRun(s(formData, "runId"));
 }
 
 /**
@@ -470,7 +484,7 @@ export async function decideDraft(formData: FormData): Promise<void> {
   const raw = s(formData, "status");
   if (raw !== "approved" && raw !== "rejected" && raw !== "prepared") return;
   await repo.setDraftDecision(s(formData, "draftId"), account.id, raw);
-  revalidatePath(`/gtm/${s(formData, "runId")}`);
+  revalidateRun(s(formData, "runId"));
 }
 
 // ── The paywall ───────────────────────────────────────────────
@@ -490,7 +504,9 @@ export async function beginCheckout(formData: FormData): Promise<void> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
   const started = await startCheckout(
-    { accountId: account.id, bundle, returnUrl: `${appUrl}/gtm/${runId}` },
+    // Back to the review screen, which is where they were and where the new
+    // balance shows — not the run page, which is a step backwards.
+    { accountId: account.id, bundle, returnUrl: `${appUrl}/gtm/${runId}/review` },
     paymentProvider(),
     db,
   );

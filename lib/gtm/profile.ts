@@ -96,6 +96,27 @@ export function hostOf(url: string): string {
   }
 }
 
+/**
+ * The first sentence of a marketing paragraph.
+ *
+ * A meta description is often three sentences of positioning, and the whole
+ * thing dropped into «أنا فلان من شركة. {sells}» reads like a brochure fell
+ * into the letter. One sentence is both shorter and truer to what the line is
+ * for, and the profile card offers the edit for anyone who wants a different
+ * one. Cut at a sentence end where there is one, and at a word boundary
+ * otherwise — never mid-word, which looks like a bug rather than a summary.
+ */
+export function firstSentence(text: string, max = 170): string {
+  const clean = text.trim().replace(/\s+/g, " ");
+  if (!clean) return "";
+  const end = clean.search(/[.!?؟؛]\s|[.!?؟؛]$/u);
+  const cut = end > 20 ? clean.slice(0, end) : clean;
+  if (cut.length <= max) return cut.trim();
+  const truncated = cut.slice(0, max);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return (lastSpace > 40 ? truncated.slice(0, lastSpace) : truncated).trim();
+}
+
 function stripTags(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -253,7 +274,7 @@ export async function analyzeSite(site: SiteText): Promise<AnalyzedProfile> {
  */
 export function fromMetadata(site: SiteText): AnalyzedProfile {
   const name = site.title.split(/[|–—\-·]/)[0].trim() || hostOf(site.url);
-  const sells = site.description.trim() || site.text.slice(0, 180).trim();
+  const sells = firstSentence(site.description.trim() || site.text);
   return {
     name,
     sells,

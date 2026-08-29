@@ -62,10 +62,13 @@ export function DraftReview({
   runId,
   people,
   sendingEnabled,
+  englishComplete,
 }: {
   runId: string;
   people: ReviewPerson[];
   sendingEnabled: boolean;
+  /** False when the profile has no English line and the EN body borrowed Arabic. */
+  englishComplete: boolean;
 }) {
   const [selectedId, setSelectedId] = useState(people[0]?.id ?? "");
   const selected = people.find((p) => p.id === selectedId) ?? people[0];
@@ -112,7 +115,12 @@ export function DraftReview({
         ))}
       </div>
 
-      <Letter runId={runId} person={selected} sendingEnabled={sendingEnabled} />
+      <Letter
+        runId={runId}
+        person={selected}
+        sendingEnabled={sendingEnabled}
+        englishComplete={englishComplete}
+      />
     </div>
   );
 }
@@ -141,10 +149,12 @@ function Letter({
   runId,
   person,
   sendingEnabled,
+  englishComplete,
 }: {
   runId: string;
   person: ReviewPerson;
   sendingEnabled: boolean;
+  englishComplete: boolean;
 }) {
   const draft = person.draft;
   const [lang, setLang] = useState<DraftLang>(draft?.lang ?? "ar");
@@ -209,6 +219,13 @@ function Letter({
             </button>
           </div>
         </div>
+
+        {lang === "en" && !englishComplete && (
+          <div className="alert">
+            ما فيه صيغة إنجليزية لملف شركتك، فبعض جمل هذي الرسالة استعارت العربي. اكتب
+            السطر الإنجليزي في ملف الشركة عشان تطلع رسالة إنجليزية مكتملة.
+          </div>
+        )}
 
         {person.isFixture && (
           <div className="alert">

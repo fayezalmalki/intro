@@ -59,8 +59,12 @@ describe("pricing", () => {
   });
 
   it("prints a price without floating point", () => {
-    expect(formatSar(9900)).toBe("99٫00 ر.س");
-    expect(formatSar(49500)).toBe("495٫00 ر.س");
+    expect(formatSar(9900)).toBe("99 ر.س");
+    expect(formatSar(49500)).toBe("495 ر.س");
+    expect(formatSar(198000)).toBe("1,980 ر.س");
+    // Halalas still print when there are any, so a future non-round price is
+    // not silently rounded away.
+    expect(formatSar(9950)).toBe("99.50 ر.س");
   });
 
   it("resolves a bundle by id and refuses an unknown one", () => {

@@ -117,7 +117,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ runId: 
             </div>
           </form>
 
-          <DraftReview runId={runId} people={people} sendingEnabled={sendingEnabled} />
+          <DraftReview
+            runId={runId}
+            people={people}
+            sendingEnabled={sendingEnabled}
+            englishComplete={Boolean(bundle.profile?.sellsEn)}
+          />
 
           <Paywall
             runId={runId}

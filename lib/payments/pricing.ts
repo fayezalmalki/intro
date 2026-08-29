@@ -32,11 +32,19 @@ export function bundleById(id: string): Bundle | undefined {
   return BUNDLES.find((b) => b.id === id);
 }
 
-/** «٩٩٫٠٠ ر.س» — halalas in, a price out. Never a float in between. */
+/**
+ * «٩٩ ر.س» — halalas in, a price out, never a float in between.
+ *
+ * Whole riyals print without a decimal part. Every bundle here is a whole
+ * number of riyals, and "1,980٫00" beside "1,980" in a thousands separator was
+ * two different separators in one string, which reads as a typo rather than a
+ * price.
+ */
 export function formatSar(halalas: number): string {
   const riyals = Math.floor(halalas / 100);
-  const rest = String(halalas % 100).padStart(2, "0");
-  return `${riyals.toLocaleString("en-US")}٫${rest} ر.س`;
+  const rest = halalas % 100;
+  const whole = riyals.toLocaleString("en-US");
+  return rest === 0 ? `${whole} ر.س` : `${whole}.${String(rest).padStart(2, "0")} ر.س`;
 }
 
 /** What one credit costs in this bundle. Equal across all of them, by design. */

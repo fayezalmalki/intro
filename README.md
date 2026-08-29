@@ -23,6 +23,37 @@ Set `ANTHROPIC_API_KEY` to have Claude extract the intent brief. Without one the
 falls back to a deterministic keyword extractor, so every screen still works — the
 confirm screen shows which was used.
 
+## The self-serve GTM flow
+
+Alongside the account-manager loop below, `/gtm` is the unattended path: a
+website in, and segments, decision makers and an Arabic opener out.
+
+1. **`/gtm`** — one field, the user's own website. `careers.sa`.
+2. The run rail shows six steps with real per-step states. Steps 1–4 run
+   automatically because every one of them is free; a step that fails says
+   *what* failed and offers the manual correction beside it.
+3. **Segments** — 4–6 campaigns, each with a pain line, three criteria and a
+   count. Every count prints the exact free-search query that produced it. A
+   count that cannot be sourced shows the reason in place of the number; there
+   is no estimate anywhere.
+4. **Companies → people** — the search endpoints return **ids, not records**, so
+   a company name and a person's name are both purchases. Keeping a row is free
+   and reversible; the buy button names the credit cost and the confirmation
+   carries that figure back to the server, which refuses if the selection moved.
+5. **`/gtm/<id>/review`** — the person beside their letter. Approve, reject, edit
+   inline, toggle Arabic/English. Delivery is copy, LinkedIn, or the user's own
+   mail client — sending from Intro is off, and the screen says so.
+6. **The paywall** — at the send moment, after everything above is visible. It
+   states what a credit is and that this screen charges nothing today.
+
+**`/examples`** is public and needs no key, no credit and no sign-up: it renders
+the composer live over hand-written fixtures, so the Arabic drafts can be read
+before anyone signs up.
+
+Set `ANTHROPIC_API_KEY` for the site analysis and the segment proposals, and
+`CORESIGNAL_API_KEY` for real counts and real rows. Without either, every screen
+still works and each one says which half is missing rather than filling in.
+
 ## Walk the loop
 
 1. **`/`** — write a request. `أدور وظيفة قيادية في الـ Product في شركات تقنية سعودية.`
@@ -75,10 +106,14 @@ scores around 0.25 and passes. `lib/__tests__/similarity.probe.test.ts` pins tha
 | Roles (requester / account_manager / admin), enforced inside every server action | working |
 | Row-level security | policies written (`drizzle/policies/rls.sql`), not applied — queries are scoped in `lib/db/scoped.ts` and rehearsed in `lib/__tests__/rls.probe.test.ts` |
 | Usage instrumentation + `/am/ops` — OTP delivery health, vendor spend | working |
-| Coresignal client — typed, credit-accounted, per-args dedupe | working, not yet wired into sourcing |
-| Sourcing | `lib/sourcing.ts` still returns eight fixed people |
-| Webhook idempotency log | table + helper only; no payment code yet |
-| Billing / PSP | not built — "فعّل الإرسال" is a dev grant of 5 credits |
+| Coresignal client — typed, credit-accounted, per-args dedupe | working; wired into the GTM flow's free searches |
+| Sourcing (AM loop) | `lib/sourcing.ts` still returns eight fixed people |
+| GTM flow — site analysis, segments, sourced counts, paid-collect gate | working |
+| Arabic intro composer — three templates, English variant, worked examples | working, 25 unit tests |
+| Draft review — approval, email-status gate, copy / LinkedIn / mailto | working |
+| Outbound sending | off behind `INTRO_SENDING_ENABLED`; nothing can be marked sent without a provider message id |
+| Webhook idempotency log | wired: `webhook_events` + the ledger's own idempotency index |
+| Billing / PSP | StreamPay seam built; falls back to a clearly-marked test provider when no credentials are present |
 
 ## Deploying
 
