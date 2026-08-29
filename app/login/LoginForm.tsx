@@ -25,10 +25,23 @@ export function LoginForm({ target, providers }: { target: string; providers: Pr
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+      };
       if (response.status === 429) {
-        setError("أرسلنا رمزًا قبل شوي. انتظر دقيقة وحاول مرة ثانية.");
+        // Two different refusals. "Wait a minute" is wrong advice for someone
+        // who has used up three sends in ten minutes.
+        setError(
+          body.error === "too_many"
+            ? "وصلت الحد. جرّب بعد ١٠ دقائق."
+            : "أرسلنا رمزًا قبل شوي. انتظر دقيقة وحاول مرة ثانية.",
+        );
       } else if (!response.ok) {
-        setError("ما قدرنا نرسل الرمز. تأكد من البريد وحاول مرة ثانية.");
+        // The route classifies the SMTP failure and sends back copy that says
+        // what actually went wrong; a single generic line for five different
+        // faults teaches people to retry a problem retrying cannot fix.
+        setError(body.message ?? "ما قدرنا نرسل الرمز. تأكد من البريد وحاول مرة ثانية.");
       } else {
         setStage("code");
       }

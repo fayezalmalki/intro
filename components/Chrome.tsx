@@ -28,7 +28,7 @@ export function Console({
   account,
   children,
 }: {
-  on?: "queue" | "team";
+  on?: "queue" | "team" | "ops";
   account: Account;
   children: React.ReactNode;
 }) {
@@ -41,6 +41,12 @@ export function Console({
         <nav className="rail-nav">
           <Link href="/am" className={on === "queue" ? "on" : ""}>
             الطابور
+          </Link>
+          {/* Delivery health and vendor spend are account-manager work — the
+              person who has to notice that nobody can sign in is the person
+              already living in this console. */}
+          <Link href="/am/ops" className={on === "ops" ? "on" : ""}>
+            التشغيل
           </Link>
           {/* Only admins can change roles, so only admins are shown the door. */}
           {account.role === "admin" && (

@@ -54,3 +54,11 @@ CREATE POLICY ledger_own ON ledger
 
 -- people, companies and suppressions are deliberately global: the people graph
 -- is shared across accounts, and a suppression must bind every account.
+--
+-- usage_events, api_call_log and webhook_events are deliberately outside this
+-- file too, for a different reason: nothing a requester can reach ever reads
+-- them. They are operator tables — /am/ops loads them behind
+-- requireAccountManager, and vendor spend is a company fact rather than an
+-- account's own data. Their account_id columns are attribution ("who caused
+-- this"), not ownership, and both are nullable because the most interesting
+-- rows — a failed OTP send — happen before any account exists.

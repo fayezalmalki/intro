@@ -1,26 +1,32 @@
 import { NextResponse } from "next/server";
-import { and, eq, gt } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { otpCodes } from "@/lib/db/schema";
-import { sendOtpEmail } from "@/lib/mailer";
+import { generateCode, hashCode, OTP_LIMITS, replaceCode, sendGate } from "@/lib/otp";
+import {
+  classifySmtpError,
+  isEmailConfigured,
+  sendOtpEmail,
+  SMTP_FAILURE_MESSAGES,
+} from "@/lib/mailer";
+import { logUsage } from "@/lib/usage";
 
 export const runtime = "nodejs";
 
-const TTL_MINUTES = 10;
+const TTL_MINUTES = OTP_LIMITS.ttlMs / 60_000;
 
 /**
- * How long a caller must wait before a second code for the same address. This
- * is the rate limit, and it is deliberately derived from the codes table rather
- * than an in-memory counter: serverless instances do not share memory, so a
- * counter would reset on every cold start and rate-limit nothing.
+ * Issues a sign-in code.
+ *
+ * Order of operations is the whole point, and it is the order careers.sa
+ * arrived at after an incident: **precheck → send → commit**. The rate limit is
+ * checked read-only, the mail server is asked to take the message, and only a
+ * confirmed handoff writes the code row and advances the cooldown. A failed
+ * send therefore stores nothing and consumes nothing — the user retries
+ * immediately, because the fault was ours.
+ *
+ * The code never leaves the server except inside the email. There is no
+ * on-screen fallback for an unconfigured or failing mailer: that is precisely
+ * what the careers.sa incident was — an OTP printed to the browser because SMTP
+ * was quietly not configured in production.
  */
-const RESEND_SECONDS = 60;
-
-function sixDigits(): string {
-  // crypto, not Math.random: the code is the whole credential.
-  return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
-}
-
 export async function POST(request: Request): Promise<NextResponse> {
   let email: string;
   try {
@@ -30,35 +36,66 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  // 254 is the maximum length of an address; anything longer is not a typo.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
   }
 
-  const [recent] = await db
-    .select()
-    .from(otpCodes)
-    .where(
-      and(
-        eq(otpCodes.email, email),
-        gt(otpCodes.expiresAt, new Date(Date.now() + (TTL_MINUTES * 60 - RESEND_SECONDS) * 1000)),
-      ),
-    )
-    .limit(1);
-  if (recent) {
-    return NextResponse.json({ error: "too_soon", retryAfter: RESEND_SECONDS }, { status: 429 });
+  // 1. Read-only rate-limit precheck. Consumes nothing.
+  const gate = await sendGate(email);
+  if (!gate.ok) {
+    return NextResponse.json(
+      {
+        error: gate.reason === "too_many" ? "too_many" : "too_soon",
+        retryAfter: gate.retryAfterSeconds,
+      },
+      { status: 429, headers: { "retry-after": String(gate.retryAfterSeconds ?? 60) } },
+    );
   }
 
-  // Supersede any outstanding code, so an address never has two live codes.
-  await db.delete(otpCodes).where(eq(otpCodes.email, email));
+  // Refuse loudly rather than pretending. An unconfigured mailer that returns
+  // `ok` is a login screen asking for a code nobody will ever receive.
+  if (process.env.NODE_ENV === "production" && !isEmailConfigured()) {
+    console.error("[send-otp] SMTP is not configured — refusing to issue a code");
+    await logUsage({ kind: "otp_send_failed", email, meta: { class: "not_configured" } });
+    return NextResponse.json(
+      { error: "send_failed", message: SMTP_FAILURE_MESSAGES.not_configured },
+      { status: 503 },
+    );
+  }
 
-  const code = sixDigits();
-  await db.insert(otpCodes).values({
-    email,
-    code,
-    expiresAt: new Date(Date.now() + TTL_MINUTES * 60 * 1000),
-  });
+  const code = generateCode();
 
-  await sendOtpEmail(email, code);
+  // 2. Send FIRST.
+  try {
+    await sendOtpEmail(email, code);
+  } catch (error) {
+    const failureClass = classifySmtpError(error);
+    const err = error as { code?: string; responseCode?: number };
+    console.error(`[send-otp] OTP send failed (${failureClass})`, error);
+    await logUsage({
+      kind: "otp_send_failed",
+      email,
+      meta: {
+        class: failureClass,
+        code: err?.code ?? null,
+        responseCode: err?.responseCode ?? null,
+      },
+    });
+    return NextResponse.json(
+      { error: "send_failed", message: SMTP_FAILURE_MESSAGES[failureClass] },
+      { status: 502 },
+    );
+  }
+
+  // 3. Confirmed handoff → store the hash, start the cooldown.
+  const committed = await replaceCode(email, hashCode(code));
+  await logUsage({ kind: "otp_sent", email });
+
+  // A same-millisecond double request can pass both prechecks; the loser's
+  // commit is refused and its code is simply never valid. Nothing to report —
+  // the winner's code is in the same inbox.
+  if (!committed.ok) console.warn(`[send-otp] concurrent request for ${email}; code discarded`);
 
   // Never echo the code, and never reveal whether the address has an account:
   // the response is identical either way.

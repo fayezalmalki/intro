@@ -38,7 +38,8 @@ confirm screen shows which was used.
 7. **publish again** — the requester sees v2, and the person you already contacted
    keeps their status.
 
-`npm test` runs the unit suite (the send gate). `npm run build && sh scripts/restart.sh`,
+`npm test` runs the unit suite — the send gate, the OTP limiter, the Coresignal
+credit accounting, migrations and the RLS rehearsal. `npm run build && sh scripts/restart.sh`,
 then `node scripts/e2e.mjs <dir>` drives the whole sequence above in Chromium and writes
 screenshots plus a step log.
 
@@ -64,28 +65,39 @@ scores around 0.25 and passes. `lib/__tests__/similarity.probe.test.ts` pins tha
 | AI-drafted pipeline, evidence-gated approval | working |
 | Offline attach — CSV, pasted rows/LinkedIn URLs, predefined list | working |
 | Pipeline versioning with outreach carry-forward | working |
-| Account states (observer / verified / managed) | working — no real auth behind them yet |
+| Account states (observer / verified / managed) | working |
 | Send gate: suppression, cooldown, daily cap, credits, near-duplicate | working, 24 unit tests |
 | Credit ledger (append-only, balance as a projection) | working |
 | Outreach — recorded as state transitions through the gate | no email sending yet |
 | Replies, inbox, double opt-in delivery | not built |
-| Auth, roles, RLS | not built — `lib/session.ts` is the stand-in |
+| Auth — NextAuth v5: Google, email OTP, magic link, over `@auth/drizzle-adapter` | working |
+| OTP hardening — sha256 at rest, ≤8 attempts, ≤3 sends / 10 min, precheck → send → commit | working |
+| Roles (requester / account_manager / admin), enforced inside every server action | working |
+| Row-level security | policies written (`drizzle/policies/rls.sql`), not applied — queries are scoped in `lib/db/scoped.ts` and rehearsed in `lib/__tests__/rls.probe.test.ts` |
+| Usage instrumentation + `/am/ops` — OTP delivery health, vendor spend | working |
+| Coresignal client — typed, credit-accounted, per-args dedupe | working, not yet wired into sourcing |
+| Sourcing | `lib/sourcing.ts` still returns eight fixed people |
+| Webhook idempotency log | table + helper only; no payment code yet |
 | Billing / PSP | not built — "فعّل الإرسال" is a dev grant of 5 credits |
 
 ## Deploying
 
-**Not deployable yet, on purpose.** State still lives in a JSON file, and a
-serverless filesystem loses writes between requests — so `lib/env.ts` refuses to
-start the store when `NODE_ENV=production` without a `DATABASE_URL`. A request
-that looked accepted and then vanished is worse than a boot failure.
+Everything is in Postgres and auth is real, so a deploy needs an environment
+rather than a rewrite:
 
-What clearing that takes:
+1. A Neon `DATABASE_URL` — and `DATABASE_URL_UNPOOLED`, which the migrator
+   prefers, because pgbouncer in transaction mode can mangle DDL. Then
+   `npm run db:migrate` as an explicit deploy step, never from `build`, where a
+   preview deploy sharing the URL would run DDL against production.
+2. `AUTH_SECRET` and `ADMIN_EMAILS`. Without the first there is no session at
+   all; without the second no account can ever become an admin, so nobody can
+   grant a role or verify an account.
+3. `SMTP_USER` and `SMTP_PASSWORD` for the intro.sa ImprovMX alias. Without them
+   `/api/auth/send-otp` refuses in production rather than pretending to have
+   sent — see [`docs/sending-domains.md`](docs/sending-domains.md).
 
-1. A Neon `DATABASE_URL`, then `npm run db:migrate` as an explicit deploy step —
-   never from `build`, where a preview deploy sharing the URL would run DDL
-   against production.
-2. Porting `lib/store.ts` reads and writes onto `lib/db/scoped.ts`.
-3. Real auth, replacing `lib/session.ts`.
+`/api/health` reports which of those is missing, so an opaque 500 becomes a URL
+that names the problem.
 
 The development-only account shortcuts (verify + grant credits) are disabled
 whenever `NODE_ENV=production`, and `lib/__tests__/env.test.ts` holds that.
@@ -108,6 +120,7 @@ edit without `npm run db:generate` cannot merge.
 - [`docs/01-mvp-plan.md`](docs/01-mvp-plan.md) — the loop, request state machine, pipeline versioning, compliance, milestones
 - [`docs/02-data-model.md`](docs/02-data-model.md) — the target Postgres schema
 - [`docs/03-design-review.md`](docs/03-design-review.md) — sending architecture, access model, monetization, tools, and the build order
+- [`docs/sending-domains.md`](docs/sending-domains.md) — the three reputation pools, the DNS records to create, and why warmup starts now
 - [`design/`](design/) — the Claude Design canvas source (`.dc.html` artboards + `canvas.json`)
 
 ## Shape
@@ -126,9 +139,17 @@ Two rules do most of the work:
 
 ## Stack
 
-Next.js 15 (App Router, server actions) · Claude API for intent extraction ·
-JSON file store.
+Next.js 15 (App Router, server actions) · React 19 · **Drizzle ORM over Postgres** — Neon in
+production, PGlite locally and in tests · NextAuth v5 with `@auth/drizzle-adapter` ·
+nodemailer over ImprovMX SMTP · Claude API for intent extraction · Zod · Vitest, plus a
+Playwright driver at `scripts/e2e.mjs`.
 
-The store is a stand-in for Supabase (Postgres + Auth + RLS + Storage), kept behind
-`lib/store.ts` so the swap is contained. It has no write locking, so it is fine for one
-person walking the flow and not for concurrent use.
+There is no file store and no `lib/store.ts`. Every read goes through `lib/db/loaders.ts`,
+which assembles the `Db` shape the pure domain functions already consume, and every write
+goes through `lib/db/repo.ts`. That indirection is what let the send gate, the pipeline
+logic and the credit ledger move to Postgres without a line of domain logic changing.
+
+Authorization lives in `lib/session.ts` and is called from inside each server action rather
+than from the pages — a server action is a POST endpoint anyone can invoke without ever
+loading the page it sits on, so a route guard alone would look like authorization and
+enforce nothing.

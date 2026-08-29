@@ -3,6 +3,7 @@ import type { Database } from "./db";
 import { db as defaultDb } from "./db";
 import { accounts, authUsers, requests } from "./db/schema";
 import type { Account, Role } from "./types";
+import { logUsage } from "./usage";
 
 /**
  * Bootstraps the first administrator, who can then grant roles from /am/team.
@@ -75,7 +76,13 @@ export async function accountForUser(
     .onConflictDoNothing()
     .returning();
 
-  if (created) return normalize(created);
+  if (created) {
+    // The top of the funnel: an address that has never been here before. Logged
+    // here rather than in the sign-in callback because this is the one place
+    // that knows an account row did not exist a moment ago.
+    await logUsage({ kind: "account_created", accountId: created.id, email }, database);
+    return normalize(created);
+  }
 
   // Another request won the insert.
   const [raced] = await database
