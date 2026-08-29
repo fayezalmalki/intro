@@ -4,9 +4,16 @@ Who to call, what to create, and in what order. This is the operational half of
 [`03-design-review.md` §2](03-design-review.md); that document argues the architecture, this
 one is the list of things to go and do.
 
-**Do these now, in this order.** Reputation is the one part of the system that cannot be
-built in a sprint at the end — a cold domain sending to strangers gets filtered, and the fix
-takes weeks of calendar time no matter how much attention it gets.
+**Status: sending is deferred.** Fayez has parked outbound infrastructure while the product
+works on intro logic, templates, and the approval and review screens — none of which need a
+message to actually leave the building. So nothing below is blocking today. It is written
+down now because reputation is the one part of the system that cannot be built in a sprint
+at the end: a cold domain sending to strangers gets filtered, and the fix costs weeks of
+calendar time no matter how much attention it gets. When outbound is picked back up, start
+at "Pool 2" and read down.
+
+What *is* live is pool 1 — sign-in codes to our own users — and that is enough for
+everything currently being built.
 
 ---
 
@@ -15,13 +22,14 @@ takes weeks of calendar time no matter how much attention it gets.
 > **intro.sa never shares careers.sa's sending domain, and never uses careers.sa's ImprovMX
 > credential.**
 
-Not a preference — the thing that would break. careers.sa's ImprovMX alias carries its own
-sign-in codes. intro.sa's pool 2 sends to people who never signed up, at addresses that are
-sometimes *guessed* (Coresignal returns `guessed_common_pattern` alongside `verified`; see
-`lib/coresignal.ts`). Guessed addresses bounce. A bounce rate built on intro.sa's outreach,
-landing on careers.sa's domain, degrades the deliverability of careers.sa's OTP mail — and
-the failure mode is silent: people simply stop being able to log in to a product that has
-nothing to do with the mail that caused it.
+Not a preference — the thing that would break, and it holds whether or not pool 2 is ever
+built. careers.sa's ImprovMX alias carries its own sign-in codes. intro.sa's pool 2 would
+send to people who never signed up, at addresses that are sometimes *guessed* (Coresignal
+returns `guessed_common_pattern` alongside `verified`; see `lib/coresignal.ts`). Guessed
+addresses bounce. A bounce rate built on intro.sa's outreach, landing on careers.sa's
+domain, degrades the deliverability of careers.sa's OTP mail — and the failure mode is
+silent: people simply stop being able to log in to a product that has nothing to do with the
+mail that caused it.
 
 `lib/mailer.ts` enforces this rather than trusting it: `resolveSender()` refuses to
 authenticate as any alias that is not on `intro.sa`, and derives the `From:` from the
@@ -33,17 +41,29 @@ credential's own domain so a mismatched pair cannot be configured by accident.
 
 | Pool | Domain | Carries | Provider | Status |
 |---|---|---|---|---|
-| **1 — transactional** | `intro.sa` (ImprovMX) | Sign-in codes, receipts, "your unlock is ready" — mail to **our own users** | ImprovMX SMTP relay | **live** |
-| **2 — intro requests** | `intros.intro.sa` | The double opt-in ask sent to a **target who never signed up** | Amazon SES, dedicated subdomain | **not provisioned — blocker for outreach GA** |
-| **3 — the user's own mailbox** | the user's own domain | The user's own cold message, sent as them | Gmail API / MS Graph OAuth | not built (Boardy model, phase 3) |
+| **1 — transactional** | `intro.sa` | Sign-in codes, receipts, "your unlock is ready" — mail to **our own users** | **Resend** (connected), ImprovMX SMTP as fallback | **live** |
+| **2 — intro requests** | a dedicated subdomain, not yet chosen | The double opt-in ask sent to a **target who never signed up** | **open decision** — SES or equivalent | **deferred, and unresolved** |
+| **3 — the user's own mailbox** | the user's own domain | The user's own cold message, sent as them | Gmail API / MS Graph OAuth | not built (Boardy model, later phase) |
 
-They never share a domain, a subdomain, a credential or an ESP account. A complaint on pool
-2 must not be able to take pool 1 down with it, and the only way to guarantee that is
+They never share a domain, a subdomain, a credential or a provider account. A complaint on
+pool 2 must not be able to take pool 1 down with it, and the only way to guarantee that is
 separation at the domain level.
 
 ### Pool 1 — live today
 
-ImprovMX on `intro.sa` is **Active**: MX and SPF verified, two SMTP credentials provisioned.
+**intro.sa is already connected to Resend, and Resend is where pool 1 should go.** It is a
+real sending provider: it handles bounces, exposes complaint feedback, and gives us a
+reputation we can actually see. ImprovMX is a *forwarding relay* — fine as a way to get mail
+out of the door, but it reports almost nothing back, so a delivery problem shows up as
+users saying they never got a code.
+
+What the code does today: `lib/mailer.ts` speaks SMTP to ImprovMX, and that path is
+deliberately **kept, not ripped out**. It works, it is tested, and it is the fallback if
+Resend is unavailable or unconfigured. Moving pool 1's primary path to Resend is a small,
+self-contained change to that one module — the OTP rules in `lib/otp.ts` sit above the
+transport and do not care which one is underneath.
+
+The ImprovMX setup, for the fallback path:
 
 | | |
 |---|---|
@@ -52,29 +72,43 @@ ImprovMX on `intro.sa` is **Active**: MX and SPF verified, two SMTP credentials 
 | Credential A | single-alias, `noreply@intro.sa` |
 | Credential B | **any-alias**, `any-alias-1@intro.sa` — may set `MAIL FROM` to any address on `intro.sa` |
 
-Use **credential B** (`SMTP_USER=any-alias-1@intro.sa`), because pool 1 will need more than
-one mailbox — `noreply@` for codes, something a human answers for receipts — and the
-any-alias credential covers all of them without a second setup. Set `SMTP_FROM` to whichever
-address a given message should come from; anything not on `intro.sa` is ignored and the
-default is used instead.
+Use **credential B** (`SMTP_USER=any-alias-1@intro.sa`), because pool 1 needs more than one
+mailbox — `noreply@` for codes, something a human answers for receipts — and the any-alias
+credential covers all of them without a second setup. Set `SMTP_FROM` to whichever address a
+given message should come from; anything not on `intro.sa` is ignored and the default used
+instead.
 
-Passwords go in the deployment's environment (`SMTP_PASSWORD`), never in the repo.
-`.env.example` carries the names only.
+Credentials go in the deployment's environment (`SMTP_PASSWORD`, and a Resend API key when
+that path lands), never in the repo. `.env.example` carries the names only.
 
-### Pool 2 — not provisioned, and the blocker for outreach
+### Pool 2 — deferred, and genuinely unresolved
 
-**ImprovMX does not cover pool 2, and must not be stretched to.** It is a forwarding and
-relay product for a domain's own mail, not a bulk sender, and it gives you no bounce
-handling, no complaint feedback loop and no reputation you control. Nor do Resend or
-Postmark: an intro request goes to someone who never asked to hear from us, which is
-unsolicited mail under the AUP of every mainstream transactional ESP — Postmark is
-transactional-only by policy, Resend prohibits unsolicited email. Discovering that after
-launch is a suspension, and a suspension on a shared account takes pool 1 with it.
+Fayez has parked this. Nothing below is blocking; it is recorded so the decision is not
+re-litigated from scratch when outbound comes back.
 
-So pool 2 is **Amazon SES on a dedicated subdomain, `intros.intro.sa`**, where we own the
-reputation, set the policy, and are judged on our own bounce and complaint rates. Until it
-exists, outreach cannot go out from intro.sa at all — pool 3 (the user's own mailbox, copy
-and paste for now) is the only route.
+**A subdomain on Resend is not the answer, and this is the trap worth naming.** The obvious
+move is `m.intro.sa` on the Resend account that already exists. A subdomain does buy
+something real — it isolates reputation, so bounces on outreach do not land on the domain
+carrying our sign-in codes — but it does **not** make the mail permitted. An intro request
+goes to someone who never asked to hear from us, and that is unsolicited mail under the
+acceptable-use policy of every mainstream transactional ESP: Resend prohibits it, Postmark
+is transactional-only by policy. Sending it from a subdomain of the same Resend account
+risks a suspension of **the account**, which takes pool 1 down with it — the exact failure
+the pool separation exists to prevent.
+
+ImprovMX is not a candidate either: it is a forwarding relay for a domain's own mail, with
+no bounce handling, no feedback loop and no reputation to own.
+
+So the open decision is a provider that permits this class of mail on terms we can meet —
+**Amazon SES on a dedicated subdomain** is the standing candidate, since you own the
+reputation, set your own policy, and are judged on your actual bounce and complaint rates.
+It needs a written production-access request that a human reads, which is why it has lead
+time even once someone starts.
+
+Until that is settled, intro requests do not go out from intro.sa at all. Pool 3 — the
+user's own mailbox, copy-and-paste for now — is the only route, and it is the better one on
+every axis anyway: the user is the sender, the reputation at risk is theirs, and the message
+lands in a real thread.
 
 ---
 
@@ -85,6 +119,8 @@ provider's console says verified — check the console, not `dig`.
 
 ### Pool 1 — `intro.sa` (done, listed for reference)
 
+ImprovMX, the fallback path:
+
 | Type | Name | Value |
 |---|---|---|
 | MX | `intro.sa` | ImprovMX's two MX hosts, priorities 10 and 20 |
@@ -92,7 +128,23 @@ provider's console says verified — check the console, not `dig`.
 | TXT | `improvmx._domainkey.intro.sa` | the DKIM value from the ImprovMX console |
 | TXT | `_dmarc.intro.sa` | `v=DMARC1; p=none; rua=mailto:dmarc@intro.sa; fo=1` |
 
-### Pool 2 — `intros.intro.sa` (to create)
+Resend, already connected — verify these read as they should in its console before pool 1's
+primary path moves onto it. Two senders on one domain is fine as long as SPF lists both:
+
+| Type | Name | Value |
+|---|---|---|
+| TXT | `resend._domainkey.intro.sa` | the DKIM value from the Resend console |
+| TXT | `intro.sa` | SPF must include **both** senders: `v=spf1 include:spf.improvmx.com include:amazonses.com ~all` — Resend sends over SES infrastructure, so a lone ImprovMX `include` fails SPF on everything Resend sends |
+| MX / TXT | `send.intro.sa` | Resend's custom-return-path records, if that feature is turned on |
+
+One SPF record per domain, always. Two separate `v=spf1` TXT records is a permanent failure,
+not a merge — if a second one exists, fold the includes into the first and delete it.
+
+### Pool 2 — a dedicated subdomain (deferred; do none of this yet)
+
+**Only when the provider decision above is settled.** Written against SES because that is
+the standing candidate, and the subdomain is named `intros.intro.sa` here for concreteness —
+neither is committed to.
 
 1. In SES, verify the **domain identity** `intros.intro.sa` and enable **Easy DKIM**. SES
    gives three CNAMEs.
@@ -118,7 +170,7 @@ per-domain — never raise pool 2's policy because pool 1 looks healthy.
 
 ---
 
-## Warmup — start now, it takes 2–4 weeks
+## Warmup — 2–4 weeks, and it starts the day pool 2's domain is chosen
 
 A new domain has no sending history, and receivers treat "no history" as "unknown, therefore
 suspicious". They form their judgement from volume, consistency and complaint rate over
@@ -126,8 +178,12 @@ suspicious". They form their judgement from volume, consistency and complaint ra
 four weeks is the normal range to reach a few hundred a day on a cold subdomain, longer if
 early complaints have to be lived down.
 
-This is why it is in Phase 0. The day pool 2's first real campaign is ready, the domain
-needs to already be warm; starting warmup then means the launch waits a month.
+Deferred along with the rest of pool 2, with one thing worth remembering when it is picked
+back up: **warmup is the long pole, and it runs in parallel with nothing.** It cannot start
+before the domain exists and it cannot be compressed once it has. The day pool 2's first
+real campaign is ready, the domain needs to already be warm — starting warmup then means the
+launch waits a month. So the order is: decide the provider, verify the domain, start
+warming, and build the campaign while it warms.
 
 The shape of it:
 
@@ -154,15 +210,30 @@ Rules that matter more than the numbers:
 
 ## Needs Fayez
 
-Nothing in this list can be done from the repo — each one needs an account only he holds.
+Nothing here can be done from the repo — each one needs an account only he holds.
 
-1. **SES account and `intros.intro.sa` identity**, the DNS records above, custom MAIL FROM,
-   and the production-access request. Nothing in pool 2 can start until the identity
-   verifies, and the access request is the long pole.
-2. **`dmarc@intro.sa`** as a real mailbox or an aggregate-report service, so the DMARC
-   reports go somewhere someone reads.
-3. **`SMTP_PASSWORD` for `any-alias-1@intro.sa`** in the Vercel environment, plus
+### Now — pool 1, so people can sign in
+
+1. **`SMTP_PASSWORD` for `any-alias-1@intro.sa`** in the Vercel environment, plus
    `SMTP_USER=any-alias-1@intro.sa`. Until it is set, `/api/auth/send-otp` refuses in
-   production rather than pretending to have sent (`lib/mailer.ts`).
-4. **Start the warmup schedule above the day the SES identity verifies**, not the day pool 2
+   production rather than pretending to have sent (`lib/mailer.ts`). This is the shortest
+   path to a working sign-in today.
+2. **Check the SPF record on `intro.sa` lists both senders** before pool 1 moves onto
+   Resend. One record, both includes — see the table above.
+
+### Deferred — pool 2, on Fayez's explicit call
+
+Not blocking anything currently being built. Listed so the lead times are known when it
+comes back:
+
+3. **The provider decision.** Resend is connected and is right for pool 1, but its AUP does
+   not permit cold intro requests, and putting them on a subdomain of the same account risks
+   the account — and therefore pool 1. SES on a dedicated subdomain is the standing
+   alternative. This is the decision everything else in pool 2 waits on.
+4. **Whatever that provider needs**: domain identity, DKIM, custom MAIL FROM, and — for SES
+   — a **production-access request that a human reviews**. That review is the long pole, and
+   it wants a written answer about double opt-in and unsubscribe.
+5. **`dmarc@intro.sa`** as a real mailbox or an aggregate-report service, so the DMARC
+   reports go somewhere someone reads. Worth doing for pool 1 alone.
+6. **Start the warmup schedule the day pool 2's domain verifies**, not the day the campaign
    is code-complete.
