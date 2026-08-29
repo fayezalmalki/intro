@@ -362,6 +362,16 @@ export type CheckoutStatus = "created" | "paid" | "failed" | "expired";
 export interface ExampleCompany {
   name: string;
   website?: string;
+  /**
+   * Where the name came from, and therefore whether it may be shown as fact.
+   *
+   * `coresignal` means a free search actually returned this company. `analysis`
+   * means the model named it from its own knowledge — a claim about a real
+   * company that nobody checked, so the UI renders it as an unverified
+   * suggestion rather than a result. There is no third option: a name with no
+   * provenance does not get displayed.
+   */
+  source?: "coresignal" | "analysis";
 }
 
 /** A fact about the recipient that the draft is allowed to cite. */
