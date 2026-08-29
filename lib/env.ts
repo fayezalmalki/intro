@@ -32,3 +32,21 @@ export function assertDevTools(action: string): void {
  */
 export const gtmFixturesEnabled =
   !isProduction && process.env.INTRO_GTM_FIXTURES !== "off";
+
+/**
+ * Outbound sending, and why it is off.
+ *
+ * Fayez has explicitly parked outbound infrastructure: pool 2 needs
+ * `intros.intro.sa` on SES and pool 3 needs a Google OAuth grant behind a CASA
+ * assessment (docs/sending-domains.md, docs/03-design-review.md §2). Neither
+ * exists yet, so there is nothing that could return a provider message id — and
+ * without one, nothing may be marked sent.
+ *
+ * The flag exists rather than the code being absent so the UI can be honest
+ * about the difference between "not built" and "not switched on", and so the
+ * day the domain is warm is a configuration change and not a rewrite. It
+ * defaults off everywhere, including development: a send path that works on a
+ * laptop and not in production is how unsolicited mail leaves the building by
+ * accident.
+ */
+export const sendingEnabled = process.env.INTRO_SENDING_ENABLED === "on";
