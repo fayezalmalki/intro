@@ -32,4 +32,24 @@ describe("production guards", () => {
     const env = await loadEnv({ NODE_ENV: "development", INTRO_DEV_TOOLS: "off" });
     expect(env.devToolsEnabled).toBe(false);
   });
+
+  /**
+   * The GTM example rows exist so the flow can be walked with no Coresignal
+   * key. A deploy showing hand-written companies as vendor results would be
+   * exactly the fabrication the rest of this codebase is built to avoid.
+   */
+  it("disables the GTM example rows in production", async () => {
+    const env = await loadEnv({ NODE_ENV: "production", INTRO_GTM_FIXTURES: undefined });
+    expect(env.gtmFixturesEnabled).toBe(false);
+  });
+
+  it("keeps them available in development, and lets them be turned off", async () => {
+    expect(
+      (await loadEnv({ NODE_ENV: "development", INTRO_GTM_FIXTURES: undefined }))
+        .gtmFixturesEnabled,
+    ).toBe(true);
+    expect(
+      (await loadEnv({ NODE_ENV: "development", INTRO_GTM_FIXTURES: "off" })).gtmFixturesEnabled,
+    ).toBe(false);
+  });
 });
