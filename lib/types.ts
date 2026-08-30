@@ -27,6 +27,32 @@ export type GateFailure =
   | "near_duplicate"
   | "no_channel";
 
+/**
+ * The moments worth counting, and the whole vocabulary of `usageEvents`.
+ *
+ * A closed union rather than a free string: an ops page that reads events
+ * nobody writes, or misses a kind because it was spelled two ways, measures
+ * nothing. Kept small on purpose — instrument the decision points, not every
+ * click.
+ */
+export type UsageKind =
+  /** Someone asked to be allowed to send — the top of the money funnel. */
+  | "unlock_click"
+  /** A send the gate refused, with the failures in `meta`. */
+  | "send_refused"
+  /** A send the gate allowed. */
+  | "send_allowed"
+  /** An OTP left the building. */
+  | "otp_sent"
+  /** SMTP refused it, classified — the one that means login is broken. */
+  | "otp_send_failed"
+  /** A code was accepted. */
+  | "otp_verified"
+  /** A code was rejected: wrong, expired, or out of attempts. */
+  | "otp_verify_failed"
+  /** First sign-in for an address — an account row now exists. */
+  | "account_created";
+
 export type LedgerReason =
   | "purchase"
   | "grant"

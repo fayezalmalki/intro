@@ -3,13 +3,15 @@ import Google from "next-auth/providers/google";
 import Nodemailer from "next-auth/providers/nodemailer";
 import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
-import { and, eq, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { authConfig } from "../auth.config";
 import { db, resolveDb } from "./db";
 import {
-  authAccounts, authSessions, authUsers, authVerificationTokens, otpCodes,
+  authAccounts, authSessions, authUsers, authVerificationTokens,
 } from "./db/schema";
 import { sendMagicLinkEmail } from "./mailer";
+import { consumeCode } from "./otp";
+import { logUsage } from "./usage";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -67,14 +69,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const code = credentials?.code as string | undefined;
         if (!email || !code) return null;
 
-        const [otp] = await db
-          .select().from(otpCodes)
-          .where(and(eq(otpCodes.email, email), eq(otpCodes.code, code), gt(otpCodes.expiresAt, new Date())))
-          .limit(1);
-        if (!otp) return null;
-
-        // One-time use, consumed before the session exists.
-        await db.delete(otpCodes).where(eq(otpCodes.id, otp.id));
+        // Every rule about codes — hashing, single use, the attempt limiter —
+        // lives in lib/otp.ts, so this provider cannot accidentally hold a
+        // weaker version of any of them.
+        const verdict = await consumeCode(email, code);
+        if (!verdict.ok) {
+          await logUsage({ kind: "otp_verify_failed", email, meta: { reason: verdict.reason } });
+          return null;
+        }
 
         let [user] = await db.select().from(authUsers).where(eq(authUsers.email, email)).limit(1);
         if (!user) {
@@ -83,6 +85,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         } else if (!user.emailVerified) {
           await db.update(authUsers).set({ emailVerified: new Date() }).where(eq(authUsers.id, user.id));
         }
+        await logUsage({ kind: "otp_verified", email });
         return { id: user.id, email: user.email! };
       },
     }),

@@ -430,8 +430,11 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
    gridTemplateColumns outranks the @media rule below and would keep the
    desktop layout on a phone. */
 .tr-team { grid-template-columns: 1fr 190px 190px 260px; }
+/* /am/ops: a feed and two count tables, not the six-column queue row. */
+.tr-ops { grid-template-columns: 160px 200px 220px minmax(0, 1fr); }
+.tr-ops3 { grid-template-columns: minmax(0, 1fr) 110px 110px; }
 @media (max-width: 720px) {
-  .tr-team { grid-template-columns: minmax(0, 1fr); }
+  .tr-team, .tr-ops, .tr-ops3 { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---- dashboard primitives (from the handoff's B2B dashboard) ---- */

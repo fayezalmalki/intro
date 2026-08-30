@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable, text, integer, boolean, timestamp, jsonb, uuid,
   primaryKey, uniqueIndex, index,
@@ -6,7 +7,7 @@ import type { AdapterAccountType } from "next-auth/adapters";
 import type {
   AccountState, Channel, Evidence, Fit, GateFailure, GoalType, ItemStatus,
   LedgerReason, OutreachStatus, PipelineSource, PipelineStatus, RequestStatus,
-  Role, SendPool,
+  Role, SendPool, UsageKind,
 } from "../types";
 
 // ── NextAuth tables — copied from about-sa so the DrizzleAdapter works ──
@@ -45,11 +46,31 @@ export const authVerificationTokens = pgTable("auth_verification_tokens", {
   expires: timestamp("expires", { mode: "date" }).notNull(),
 }, (t) => [primaryKey({ columns: [t.identifier, t.token] })]);
 
+/**
+ * One-time sign-in codes.
+ *
+ * `codeHash` is a sha256 of the code, never the code itself: this table is the
+ * whole credential for an address, and a database dump or a stray log line
+ * that carried live codes would be an account takeover for every address with
+ * one outstanding. Ported from careers.sa `convex/authEmailDb.ts`, which holds
+ * the same four rules: single-use, latest-code-only, at most MAX_ATTEMPTS
+ * wrong guesses per code, at most MAX_SENDS_PER_WINDOW sends per window.
+ *
+ * `attempts`, `sendCount` and `firstSentAt` are what make those last two
+ * enforceable in a serverless runtime: instances share no memory, so an
+ * in-process counter would reset on every cold start and limit nothing.
+ */
 export const otpCodes = pgTable("otp_codes", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull(),
-  code: text("code").notNull(),
+  codeHash: text("code_hash").notNull(),
   expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+  /** Wrong guesses against this code. At the limit the row is destroyed. */
+  attempts: integer("attempts").notNull().default(0),
+  /** Sends inside the window that opened at `firstSentAt`. */
+  sendCount: integer("send_count").notNull().default(1),
+  firstSentAt: timestamp("first_sent_at", { mode: "date" }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 }, (t) => [index("otp_codes_email_idx").on(t.email)]);
 
 // ── Accounts ──────────────────────────────────────────────────
@@ -232,3 +253,79 @@ export const auditEvents = pgTable("audit_events", {
   action: text("action").notNull(),
   detail: text("detail").notNull().default(""),
 }, (t) => [index("audit_entity_idx").on(t.entity)]);
+
+/**
+ * Product instrumentation: one row per moment worth counting.
+ *
+ * Deliberately separate from `auditEvents`, which answers "who changed what"
+ * and is written inside the transaction that made the change. This answers
+ * "how is the funnel doing", is written best-effort outside any transaction,
+ * and must never be able to fail the thing it is measuring — see lib/usage.ts.
+ */
+export const usageEvents = pgTable("usage_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  kind: text("kind").$type<UsageKind>().notNull(),
+  /** Null for events that happen before an account exists — OTP sends, mostly. */
+  accountId: text("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  email: text("email"),
+  /** Small JSON blob; the shape varies per kind and nothing queries inside it. */
+  meta: jsonb("meta").$type<Record<string, unknown>>(),
+  at: timestamp("at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [
+  index("usage_events_kind_at_idx").on(t.kind, t.at),
+  index("usage_events_at_idx").on(t.at),
+]);
+
+/**
+ * Every call to a metered vendor API, and what it cost.
+ *
+ * Two jobs, and the second is why `argsHash` is unique rather than merely
+ * indexed: it is the record of spend for the ops page, and it is the dedupe
+ * key that stops the same paid lookup being bought twice. A Coresignal
+ * employee collect is 20 credits; repeating one because a retry lost its
+ * result is 20 credits of nothing. `response` holds the payload so the second
+ * caller is served from here instead of from the vendor.
+ *
+ * `creditsRemaining` is the `x-credits-remaining` header as of that call — the
+ * only place the balance is observable without spending anything to ask.
+ */
+export const apiCallLog = pgTable("api_call_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  provider: text("provider").notNull(),
+  endpoint: text("endpoint").notNull(),
+  argsHash: text("args_hash").notNull(),
+  creditsSpent: integer("credits_spent").notNull().default(0),
+  creditsRemaining: integer("credits_remaining"),
+  /** The account whose work caused the spend. Null for calls we make for ourselves. */
+  accountId: text("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  response: jsonb("response"),
+  at: timestamp("at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [
+  // Partial on purpose. A purchase must happen once, so paid rows are unique
+  // on their arguments; a search is meant to be repeatable and its results
+  // change, so free rows (credits_spent = 0) are outside the constraint and
+  // accumulate as the call log they are.
+  uniqueIndex("api_call_log_args_idx")
+    .on(t.provider, t.endpoint, t.argsHash)
+    .where(sql`${t.creditsSpent} > 0`),
+  index("api_call_log_at_idx").on(t.at),
+]);
+
+/**
+ * The raw inbound webhook log, and nothing else yet.
+ *
+ * `(provider, eventId)` is unique because every payment provider retries, and
+ * a retry that credits an account twice is free money — the same argument as
+ * `ledger_idempotency_idx`, one layer earlier. Recording the event and acting
+ * on it are separate steps on purpose: the insert is what makes the handler
+ * idempotent, so it has to succeed or conflict before any work is done.
+ */
+export const webhookEvents = pgTable("webhook_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  provider: text("provider").notNull(),
+  eventId: text("event_id").notNull(),
+  payload: jsonb("payload"),
+  receivedAt: timestamp("received_at", { mode: "string" }).notNull().defaultNow(),
+  /** Set when the handler finished with it; null means received but unprocessed. */
+  processedAt: timestamp("processed_at", { mode: "string" }),
+}, (t) => [uniqueIndex("webhook_events_provider_event_idx").on(t.provider, t.eventId)]);

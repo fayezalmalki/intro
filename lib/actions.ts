@@ -7,6 +7,7 @@ import { parseRows } from "./parse";
 import * as repo from "./db/repo";
 import { currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
 import { assertDevTools } from "./env";
+import { logUsage } from "./usage";
 import type { Channel, PipelineSource, Role } from "./types";
 
 const SLA_HOURS = 24;
@@ -128,6 +129,15 @@ export async function markOutreach(
     actor: account.displayName,
   });
 
+  // The gate's verdict, counted. Refusals are the interesting half: which
+  // failure people hit, and how often, is what says whether the gate is
+  // protecting the product or blocking it. /am/ops reads these.
+  await logUsage({
+    kind: result.ok ? "send_allowed" : "send_refused",
+    accountId: account.id,
+    meta: { requestId, reason: result.reason },
+  });
+
   revalidatePath(`/requests/${requestId}`);
   return result;
 }
@@ -140,6 +150,10 @@ export async function devVerifyAndGrant(formData: FormData): Promise<void> {
   assertDevTools("Verifying an account and granting credits");
   const requestId = String(formData.get("requestId"));
   const account = await currentAccount();
+  // The unlock click. Today it is a dev shortcut; when billing exists the
+  // button changes and this event does not, so the funnel stays comparable
+  // across the change.
+  await logUsage({ kind: "unlock_click", accountId: account.id, meta: { requestId, via: "dev" } });
   await repo.verifyAndGrant(account.id, DEV_GRANT);
   revalidatePath(`/requests/${requestId}`);
 }
@@ -206,6 +220,14 @@ export async function verifyAccount(formData: FormData): Promise<void> {
     ref: `admin-grant:${Number.isFinite(grants) ? grants : 0}`,
     actor: admin.displayName,
   });
+
+  if (result.ok) {
+    await logUsage({
+      kind: "unlock_click",
+      accountId: targetAccountId,
+      meta: { via: "admin", granted: result.granted },
+    });
+  }
 
   revalidatePath("/am/team");
   if (!result.ok) redirect(`/am/team?refused=${result.reason}`);
