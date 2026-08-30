@@ -43,46 +43,30 @@ export const PROVIDER = "coresignal";
 /**
  * What each endpoint costs, in vendor credits.
  *
- * Zero means genuinely free — confirmed by `x-credits-remaining` not moving
- * across a call. The three search endpoints are the free ones, and they are
- * where the work belongs.
+ * Defined in lib/coresignal.types.costs.ts and re-exported here. The price of a
+ * collect has to be readable by the pure spend planner and by the button that
+ * has to say "80 credits" before anyone presses it, and neither of those should
+ * have to import the module that carries the API key.
  */
-export const CREDIT_COST = {
-  "company_base/search/filter": 0,
-  "company_multi_source/search/es_dsl": 0,
-  "employee_multi_source/search/es_dsl": 0,
-  "company_clean/collect": 10,
-  "company_multi_source/enrich": 20,
-  /** The ONLY source of primary_professional_email. */
-  "employee_multi_source/collect": 20,
-  "jobs/record": 1,
-  "posts/record": 1,
-} as const;
-
-export type Endpoint = keyof typeof CREDIT_COST;
+export { CREDIT_COST } from "./coresignal.types.costs";
+export type { Endpoint } from "./coresignal.types.costs";
+import { CREDIT_COST } from "./coresignal.types.costs";
+import type { Endpoint } from "./coresignal.types.costs";
 
 /**
  * How the vendor arrived at an address, and therefore how far it may be
- * trusted. Only `verified` means the mailbox was checked; the rest are
- * inference, and `guessed_common_pattern` is a guess in the literal sense.
+ * trusted. Defined in lib/coresignal.types.ts and re-exported here: this
+ * module is `server-only`, and the status is stored on a row and rendered in
+ * a client component, so the union has to be reachable without the API key.
  *
  * This matters more here than it would elsewhere: intro.sa sends to people who
  * never asked to hear from us, so a bounce is not an inconvenience, it is
  * reputation damage on a domain that also carries our login mail. See
  * docs/sending-domains.md.
  */
-export type EmailStatus =
-  | "verified"
-  | "matched_email"
-  | "matched_pattern"
-  | "guessed_common_pattern";
-
-export const EMAIL_STATUSES: readonly EmailStatus[] = [
-  "verified",
-  "matched_email",
-  "matched_pattern",
-  "guessed_common_pattern",
-];
+export type { EmailStatus } from "./coresignal.types";
+export { EMAIL_STATUSES, EMAIL_STATUS_LABEL, isUsableEmail } from "./coresignal.types";
+import type { EmailStatus } from "./coresignal.types";
 
 /** Only the fields we actually read; the vendor returns a great deal more. */
 export interface EmployeeRecord {

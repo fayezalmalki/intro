@@ -51,7 +51,17 @@ export type UsageKind =
   /** A code was rejected: wrong, expired, or out of attempts. */
   | "otp_verify_failed"
   /** First sign-in for an address — an account row now exists. */
-  | "account_created";
+  | "account_created"
+  /** A website was submitted to the GTM flow — the top of the self-serve funnel. */
+  | "gtm_run_started"
+  /** A run step failed and asked the user to correct it by hand. */
+  | "gtm_step_failed"
+  /** Paid enrichment was confirmed, with the credit count in `meta`. */
+  | "collect_confirmed"
+  /** A checkout was created — the paywall was reached and accepted. */
+  | "checkout_started"
+  /** A checkout was settled by a provider webhook. */
+  | "checkout_paid";
 
 export type LedgerReason =
   | "purchase"
@@ -274,4 +284,100 @@ export interface Db {
   suppressions: Suppression[];
   sendAttempts: SendAttempt[];
   audit: AuditEvent[];
+}
+
+// ── GTM flow ──────────────────────────────────────────────────
+//
+// The self-serve path: a website goes in, and segments, companies, decision
+// makers and an Arabic opener come out. Deliberately its own vocabulary rather
+// than reusing `requests`/`pipelines`: that loop is account-manager work with
+// an SLA and an evidence gate, this one is unattended and vendor-sourced, and
+// collapsing the two would put a 24-hour SLA on a screen nobody is waiting on.
+
+/** The visible steps of a run, in order. The rail on /gtm renders exactly this. */
+export type GtmStepId =
+  | "profile"
+  | "competitors"
+  | "segments"
+  | "companies"
+  | "people"
+  | "drafts";
+
+export const GTM_STEPS: readonly GtmStepId[] = [
+  "profile",
+  "competitors",
+  "segments",
+  "companies",
+  "people",
+  "drafts",
+];
+
+/**
+ * Four states, and `failed` is the one that earns its keep: a step that cannot
+ * complete says what failed and offers the manual correction, rather than
+ * spinning. Nothing here is ever "done" without the row it claims to produce.
+ */
+export type GtmStepState = "pending" | "running" | "done" | "failed";
+
+export interface GtmStep {
+  id: GtmStepId;
+  state: GtmStepState;
+  /** What it produced, in one line, when it succeeded. */
+  note?: string;
+  /** What went wrong, in one line, when it did not. Shown to the user. */
+  error?: string;
+  at?: string;
+}
+
+export type GtmRunStatus = "running" | "ready" | "failed";
+
+/** How a company profile was arrived at. `manual` means a person typed it. */
+export type ProfileSource = "claude" | "html" | "manual";
+
+/**
+ * Where a segment's company count came from.
+ *
+ * `unavailable` is a first-class value, not an error state: without a
+ * Coresignal key there is no honest number, and a count we cannot source from
+ * a real query must not be rendered at all. See lib/gtm/counts.ts.
+ */
+export type CountSource = "coresignal" | "unavailable";
+
+export type SegmentOrigin = "ai" | "rules" | "user";
+
+/** The three openers the composer can write. */
+export type DraftTemplate = "direct" | "warm_intro" | "partnership";
+
+/**
+ * `sent` is reachable only from a send path that returned a real provider
+ * message id — the database holds that with a CHECK constraint, so no code
+ * path, present or future, can mark a draft sent without one.
+ */
+export type DraftStatus = "prepared" | "approved" | "sent" | "rejected";
+
+export type DraftLang = "ar" | "en";
+
+export type CheckoutStatus = "created" | "paid" | "failed" | "expired";
+
+export interface ExampleCompany {
+  name: string;
+  website?: string;
+  /**
+   * Where the name came from, and therefore whether it may be shown as fact.
+   *
+   * `coresignal` means a free search actually returned this company. `analysis`
+   * means the model named it from its own knowledge — a claim about a real
+   * company that nobody checked, so the UI renders it as an unverified
+   * suggestion rather than a result. There is no third option: a name with no
+   * provenance does not get displayed.
+   */
+  source?: "coresignal" | "analysis";
+}
+
+/** A fact about the recipient that the draft is allowed to cite. */
+export interface DraftSpecific {
+  /** The claim, in the draft's language. */
+  text: string;
+  /** Where it came from — a field name, never a guess. */
+  field: string;
 }

@@ -31,4 +31,21 @@ describe("isProtected", () => {
   it("leaves sign-out open, so a stale session can always be cleared", () => {
     expect(isProtected("/signout")).toBe(false);
   });
+
+  it("protects the GTM flow", () => {
+    // A run belongs to an account from the moment the website is submitted,
+    // and everything under it is that account's data — including rows it paid
+    // vendor credits for.
+    expect(isProtected("/gtm")).toBe(true);
+    expect(isProtected("/gtm/abc")).toBe(true);
+    expect(isProtected("/gtm/abc/review")).toBe(true);
+    expect(isProtected("/gtm/pay/test")).toBe(true);
+  });
+
+  it("leaves the worked examples open", () => {
+    // It renders the composer over hand-written fixtures and reads nothing
+    // from the database, so there is no account data on it — and it is the one
+    // page that shows a stranger what the drafts actually read like.
+    expect(isProtected("/examples")).toBe(false);
+  });
 });

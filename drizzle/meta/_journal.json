@@ -36,6 +36,20 @@
       "when": 1788035039929,
       "tag": "0004_hashed_otp_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788036452611,
+      "tag": "0005_gtm_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788036892830,
+      "tag": "0006_gtm_english_variants",
+      "breakpoints": true
     }
   ]
 }
