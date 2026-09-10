@@ -271,3 +271,38 @@ export async function sendMagicLinkEmail(to: string, url: string): Promise<void>
     `رابط الدخول إلى Intro: ${url}`,
   );
 }
+
+/**
+ * Tells whoever runs this that a scheduled job died.
+ *
+ * Legitimately pool 1: this is mail to our own operators, in the same class as
+ * a sign-in code, and it never goes to anyone outside `ADMIN_EMAILS`. It is
+ * here because a job that silently stops looks exactly like a job with nothing
+ * to do, which is how a broken thing survives for months — the Radar sweep can
+ * report an empty week honestly, and an empty week must not be indistinguishable
+ * from a dead cron.
+ *
+ * Failure to send an alert is swallowed on purpose: the caller is already in a
+ * failure path, and a throw here would replace a useful error with a useless one.
+ */
+export async function sendOpsAlertEmail(subject: string, detail: string): Promise<void> {
+  const admins = (process.env.ADMIN_EMAILS ?? "")
+    .split(",").map((e) => e.trim()).filter(Boolean);
+  if (!admins.length) {
+    console.error(`[ops] ${subject} — no ADMIN_EMAILS set, so nobody was told\n${detail}`);
+    return;
+  }
+  const body = `<p style="color:#686868;line-height:1.8">${escapeHtml(detail)}</p>`;
+  for (const to of admins) {
+    try {
+      await send(to, `[Intro] ${subject}`, layout(subject, body), `${subject}\n\n${detail}`);
+    } catch (error) {
+      console.error("[ops] alert mail failed", error);
+    }
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+}

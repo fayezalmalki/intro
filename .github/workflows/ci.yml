@@ -71,6 +71,10 @@ jobs:
           npm run dev &
           npx wait-on http://localhost:3000 --timeout 120000
           node scripts/e2e.mjs "$RUNNER_TEMP/shots"
+          # The Radar loop: review desk, publish, public issue in both
+          # languages, subscribe, the token routes, and that the cron endpoint
+          # refuses an unauthenticated call.
+          node scripts/radar-walk.mjs "$RUNNER_TEMP/shots/radar"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
