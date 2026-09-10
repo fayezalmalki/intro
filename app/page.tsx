@@ -5,50 +5,232 @@ import { auth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 /**
- * The public landing, rebuilt to the B2B artboard in the design handoff.
- *
- * Deliberately unauthenticated, and deliberately a server component: every
- * piece of state the artboard carries — the language toggle, the chip picker —
- * is expressible as a link or a static control here, so the page ships no
- * JavaScript and still works with none.
+ * The one address a concierge enquiry reaches. It is the only place the address
+ * appears, so changing it here changes it everywhere. Door 2 of the page is
+ * nothing but a mailto, deliberately: the first retainer clients are handled
+ * by a person and an inbox, not by a table nobody has built yet.
  */
-export default async function LandingPage() {
+const CONCIERGE_EMAIL = "fm@mvp.sa";
+
+type Lang = "ar" | "en";
+
+/**
+ * Both languages, one structure.
+ *
+ * The EN toggle used to be a disabled label because there was no second content
+ * tree behind it. There is one now, and it lives here rather than in two page
+ * components so a copy change cannot land in one language and silently skip the
+ * other. The page reads `?lang=en` on the server and renders the matching tree,
+ * so the toggle stays a <Link> and the landing still ships no JavaScript.
+ */
+const COPY = {
+  ar: {
+    dir: "rtl" as const,
+    nav: { solutions: "حالات الاستخدام", how: "كيف يشتغل", mine: "طلباتي", signin: "تسجيل الدخول", start: "ابدأ الآن", newReq: "طلب جديد" },
+    pill: "من الرياض · للسوق السعودي",
+    h1: "اوصل لصاحب القرار — باسمه، وليش الحين.",
+    sub: "قل لنا وش تحتاج. نرجع لك بأشخاص محددين في السوق السعودي، كل واحد ومعه سبب موثّق بمصدر، ورسالة أولى مكتوبة له — وطريق توصله فيه: مباشر، أو تعارف بموافقته.",
+    placeholder: "مثال: أبي أوصل لمسؤولي الابتكار في البنوك السعودية",
+    cta: "ابدأ ←",
+    checks: ["أسباب، مو قوائم", "تعارف بموافقة الطرفين", "حد يومي ١٠ رسائل"],
+    coverage: "تغطيتنا القطاعية",
+    povEyebrow: "وجهة نظرنا",
+    povTitle: "ليش التواصل البارد ما يشتغل هنا.",
+    pov: [
+      { t: "الرسالة الباردة تفشل لأنها موجّهة لمسمّى وظيفي، مو لإنسان.", b: "١–٢٪ نسبة رد. المشكلة مو في الصياغة — المشكلة إنك ترسل لـ«مدير التقنية» بدل ما ترسل لشخص تعرف وش يشتغل عليه هذا الربع." },
+      { t: "قواعد البيانات العالمية ما تعرف هذا السوق.", b: "مسميات ناقصة، شركات قديمة، وأسماء عربية ما تنحل صح. اللي ينفع هنا ينبني بالبحث — شخص شخص." },
+      { t: "القائمة مو المنتج. السبب هو المنتج.", b: "أي أحد يعطيك ألف اسم. إحنا نعطيك عشرين، وكل اسم معه مصدر بتاريخ يشرح ليش هو وليش الحين. والصف اللي ما عنده دليل ما ينشر." },
+      { t: "الموافقة تراكم، والكمية تحرق.", b: "حد يومي ثابت، ورسالة وحدة للشخص الواحد، وقائمة استبعاد محترمة عبر كل العملاء. سمعتك هي الأصل الوحيد اللي ما ينشرى مرة ثانية." },
+    ],
+    howEyebrow: "كيف يشتغل",
+    howTitle: "خمس مخرجات، في كل قطاع.",
+    how: [
+      { t: "الخريطة", b: "مين يقرر فعليًا في هذا القطاع، ومين يأثر عليه. الهيكل التنظيمي يكذب عادةً عن اللي يهم." },
+      { t: "العشرون المسمّون", b: "أشخاص حقيقيون، كل واحد ومعه دليل بمصدر وتاريخ." },
+      { t: "السبب", b: "ليش هو، وليش الحين — بصياغة تقدر ترسلها زي ما هي." },
+      { t: "الرسالة الأولى", b: "مكتوبة لكل شخص على حدة، عربي أو إنجليزي. مو نص واحد يتوزّع." },
+      { t: "الطريق", b: "مباشر، أو تعارف بموافقة الطرفين، أو عبر شريك داخل الحساب أصلًا." },
+    ],
+    useEyebrow: "حالات الاستخدام",
+    useTitle: "محرك واحد. ست طرق تدخل فيه.",
+    concierge: {
+      eyebrow: "الخدمة المدارة",
+      title: "تبي فريق، مو قائمة؟",
+      body: "بعض الشركات ما تحتاج اسم واحد — تحتاج وظيفة كاملة لتطوير الأعمال ما وظّفتها بعد. نشتغل معك بالشهر: الخريطة، والأسماء، والاجتماعات، وتقرير أسبوعي.",
+      mail: "راسلنا",
+      file: "أو ابدأ طلبًا الحين",
+      seed: "أبي أدخل السوق السعودي وأحتاج فريق يفتح لي أول ٢٠ اجتماع مع أصحاب القرار في قطاعي.",
+      note: "نرد خلال يوم عمل واحد.",
+    },
+    ctaTitle: "جرّبه على هدفك أنت.",
+    ctaBody: "جِب هدفًا واحدًا حقيقيًا — حساب تبي تدخله، سوق تقرأه، أو دور ما قدرت تعبّيه. نشغّله قدامك مباشرة.",
+    ctaChecks: ["جولة ٣٠ دقيقة على طلبك", "بالعربي أو بالإنجليزي", "بدعوة فقط خلال الإطلاق"],
+    ctaPick: "وش تحتاج؟",
+    ctaStart: "ابدأ طلبك ←",
+    footTag: "مبني في الرياض. Intro يلقى الأشخاص اللي يحركون شغلك ويفتح الباب — بموافقتهم.",
+    footCols: ["المنتج", "حالات الاستخدام", "الشركة"],
+  },
+  en: {
+    dir: "ltr" as const,
+    nav: { solutions: "Use cases", how: "How it works", mine: "My requests", signin: "Sign in", start: "Get started", newReq: "New request" },
+    pill: "From Riyadh · Built for Saudi",
+    h1: "Reach the person who decides — by name, and why now.",
+    sub: "Tell us what you need. You get named people in the Saudi market, each carrying sourced evidence, a first message written for them, and a way in: direct, or a consented introduction.",
+    placeholder: "e.g. I need to reach innovation leads at Saudi banks",
+    cta: "Start →",
+    checks: ["Reasons, not lists", "Consented introductions", "A hard daily cap of 10"],
+    coverage: "Sector coverage",
+    povEyebrow: "Our perspective",
+    povTitle: "Why cold outreach doesn't work here.",
+    pov: [
+      { t: "Cold outreach fails because it is addressed to a job title, not a person.", b: "A 1–2% reply rate is not a copywriting problem. It is what happens when you write to “the Head of IT” instead of to someone whose actual quarter you understand." },
+      { t: "The global data layer does not know this market.", b: "Thin titles, stale companies, Arabic names that never resolve. What works here is built by research, one person at a time." },
+      { t: "A list is not the product. The reason is.", b: "Anyone can hand you a thousand names. You get twenty, each carrying a dated source explaining why them and why now. A row with no evidence never ships." },
+      { t: "Consent compounds. Volume burns.", b: "A fixed daily cap, one message per person, and a suppression list honoured across every client. Your reputation is the one asset you cannot buy back." },
+    ],
+    howEyebrow: "How it works",
+    howTitle: "Five outputs, in every sector.",
+    how: [
+      { t: "The map", b: "Who actually decides in this sector, and who moves them. The org chart usually lies about which one matters." },
+      { t: "The named twenty", b: "Real people, each with dated, sourced evidence." },
+      { t: "The reason", b: "Why them, why now — in a form you can send as it stands." },
+      { t: "The opener", b: "Written per person, in Arabic or English. Never one body fanned out." },
+      { t: "The path", b: "Direct, a consented introduction, or through a partner already inside the account." },
+    ],
+    useEyebrow: "Use cases",
+    useTitle: "One engine. Six ways in.",
+    concierge: {
+      eyebrow: "Managed service",
+      title: "Need a team, not a list?",
+      body: "Some companies don't need one name — they need an entire go-to-market function they haven't hired yet. We work monthly: the map, the names, the meetings, and a weekly report.",
+      mail: "Email us",
+      file: "Or start a request now",
+      seed: "We are entering the Saudi market and need a team to open our first 20 meetings with decision-makers in our sector.",
+      note: "We reply within one business day. The request form is in Arabic — email is the faster route in English.",
+    },
+    ctaTitle: "Try it on your own goal.",
+    ctaBody: "Bring one real objective — an account you want inside, a market you need to read, or a role you couldn't fill. We'll run it in front of you.",
+    ctaChecks: ["A 30-minute walkthrough of your request", "In Arabic or English", "Invite-only during launch"],
+    ctaPick: "What do you need?",
+    ctaStart: "Start your request →",
+    footTag: "Built in Riyadh. Intro finds the people who move your business and opens the door — with their consent.",
+    footCols: ["Product", "Use cases", "Company"],
+  },
+};
+
+const GOALS = {
+  ar: [
+    { label: "أبحث عن عملاء", seed: "أبي أبيع منصة مدفوعات للبنوك — مين المسؤول عن Open Banking؟" },
+    { label: "أبحث عن شريك", seed: "أبي أوصل للشخص المسؤول عن الشراكات في شركات التأمين." },
+    { label: "أبحث عن موظف قيادي", seed: "أدور وظيفة قيادية في الـ Product في شركات تقنية سعودية." },
+  ],
+  en: [
+    { label: "Looking for customers", seed: "أبي أبيع منصة مدفوعات للبنوك — مين المسؤول عن Open Banking؟" },
+    { label: "Looking for a partner", seed: "أبي أوصل للشخص المسؤول عن الشراكات في شركات التأمين." },
+    { label: "Looking for a leader to hire", seed: "أدور وظيفة قيادية في الـ Product في شركات تقنية سعودية." },
+  ],
+};
+
+const SECTORS = {
+  ar: ["البنوك والتقنية المالية", "التأمين", "القطاع العام والمشاريع الكبرى", "الطاقة واللوجستيات", "الصحة", "تقنية المؤسسات"],
+  en: ["Banking & fintech", "Insurance", "Public sector & giga-projects", "Energy & logistics", "Health", "Enterprise tech"],
+};
+
+/** The six products as use cases. `lead` marks the one the page argues hardest for. */
+const USE_CASES = {
+  ar: [
+    { n: "01", label: "دخول السوق", title: "أول ٢٠ اجتماع لك في السعودية", body: "عندك رخصة ومقر إقليمي، وما عندك شبكة. نبني لك الخريطة والأسماء والاجتماعات خلال ٩٠ يوم — قبل ما توظّف فريقًا كاملاً.", pain: "ستة أشهر قبل أول صفقة", lead: true },
+    { n: "02", label: "المال المنظّم", title: "البنوك والتقنية المالية والتأمين", body: "لجنة الشراء في البنك السعودي أربعة أشخاص، وأدوات البيانات العالمية ما تعرف ولا واحد فيهم. القطاع محدود — نغطيه كامل.", pain: "تبيع لمسمّى، مو للجنة", lead: false },
+    { n: "03", label: "القطاع العام", title: "اعرف صاحب البرنامج قبل الكراسة", body: "لما تشوف المنافسة منشورة، القرار غالبًا انتهى. نوصلك لمالك البرنامج والمقيّم الفني ومسؤول المحتوى المحلي مبكرًا.", pain: "تعرف بالمنافسة بعد فوات الوقت", lead: false },
+    { n: "04", label: "القنوات والشركاء", title: "ثلاثة مكاملين، مو مئتين", body: "إذا ما تقدر تبيع مباشر، تحتاج الشريك اللي داخل الحساب أصلًا — مصنّف بشغل نُفّذ فعلاً، مو بصفحة شركاء.", pain: "شراكات على الورق", lead: false },
+    { n: "05", label: "بناء الفريق", title: "اللي سوّى الشغل ما يقدّم على إعلانك", body: "نحدد الممارسين اللي بنوا نفس المسار في شركات مشابهة، ونرتب تعارفًا بموافقتهم. وصول، مو وساطة توظيف.", pain: "٢٥٪ عمولة مقابل سيرة ذاتية", lead: false },
+    { n: "06", label: "الرادار", title: "إشارة تسمّي لك شخصًا", body: "تغييرات قيادية، برامج جديدة، تنظيمات، ميزانيات — مربوطة بأشخاص تقدر توصلهم. موجز شهري لكل قطاع.", pain: "تحليل ما ينتهي باسم", lead: false },
+  ],
+  en: [
+    { n: "01", label: "Market entry", title: "Your first 20 meetings in Saudi", body: "You have the licence and the regional HQ. You don't have the network. We build the map, the names and the meetings in 90 days — before you hire a full team.", pain: "Six months to a first deal", lead: true },
+    { n: "02", label: "Regulated money", title: "Banks, fintech and insurance", body: "A buying committee at a Saudi bank is four people, and the global tools know none of them. The universe is small enough to cover completely.", pain: "Selling to a title, not a committee", lead: false },
+    { n: "03", label: "Public sector", title: "Know the programme owner before the RFP", body: "By the time a tender is published, the decision is usually made. We name the programme owner, the technical evaluator and the local-content stakeholder early.", pain: "Hearing about it too late", lead: false },
+    { n: "04", label: "Channel & partners", title: "Three integrators, not two hundred", body: "If you can't sell direct, you need the partner already inside the account — ranked by work actually delivered, not by a partner-page listing.", pain: "Paper partnerships", lead: false },
+    { n: "05", label: "Building the team", title: "The person who did the work isn't answering your job post", body: "We identify practitioners who built this exact motion at comparable companies and arrange a consented introduction. Access, not placement.", pain: "25% for a forwarded CV", lead: false },
+    { n: "06", label: "Radar", title: "Signal that names a person", body: "Leadership moves, new programmes, regulation, budgets — tied to people you can actually reach. A monthly brief per sector.", pain: "Analysis that never names anyone", lead: false },
+  ],
+};
+
+const MATCHES = {
+  ar: {
+    req: "البيع لشركات التأمين السعودية",
+    status: "جارٍ المطابقة",
+    rows: [
+      { title: "مدير الشراكات الرقمية", why: "أطلق برنامج توزيع في الربع الثاني", fit: "توافق قوي", pending: false },
+      { title: "نائب رئيس الابتكار", why: "يملك ميزانية التجارب مع المزودين", fit: "توافق قوي", pending: false },
+      { title: "مدير التأمين المصرفي", why: "متاح للتعارف عبر Intro", fit: "عبر Intro", pending: false },
+      { title: "الرئيس التنفيذي للتوزيع", why: "قيد البحث", fit: "جارٍ", pending: true },
+    ],
+  },
+  en: {
+    req: "Selling into Saudi insurers",
+    status: "Matching",
+    rows: [
+      { title: "Head of Digital Partnerships", why: "Launched a distribution programme in Q2", fit: "Strong fit", pending: false },
+      { title: "VP of Innovation", why: "Owns the vendor pilot budget", fit: "Strong fit", pending: false },
+      { title: "Bancassurance Director", why: "Open to an introduction via Intro", fit: "Via Intro", pending: false },
+      { title: "Chief Distribution Officer", why: "Being researched", fit: "In progress", pending: true },
+    ],
+  },
+};
+
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ lang?: string }>;
+}) {
   const session = await auth();
   const signedIn = Boolean(session?.user);
+  const { lang: raw } = await searchParams;
+  const lang: Lang = raw === "en" ? "en" : "ar";
+  const t = COPY[lang];
+  const goals = GOALS[lang];
+  const other = lang === "ar" ? "/?lang=en" : "/";
 
   return (
-    <div className="landing">
+    /* dir and lang sit here, not on <html>: the root layout is shared with every
+       signed-in screen, and none of those have an English tree. The stylesheet
+       uses no physical left/right properties, so the whole landing mirrors from
+       this one attribute. */
+    <div className="landing" dir={t.dir} lang={lang}>
       <header className="nav">
         <div className="row g16 wrapx" style={{ gap: 48 }}>
-          <Link href="/" className="logo">
+          <Link href={lang === "ar" ? "/" : "/?lang=en"} className="logo">
             <Wordmark />
           </Link>
           <nav className="nav-links">
-            <a href="#directions">الحلول</a>
-            <a href="#product">المنتج</a>
-            {signedIn && <Link href="/requests">طلباتي</Link>}
+            <a href="#use-cases">{t.nav.solutions}</a>
+            <a href="#how">{t.nav.how}</a>
+            {signedIn && <Link href="/requests">{t.nav.mine}</Link>}
           </nav>
         </div>
         <div className="row g16 wrapx">
-          {/* Arabic is the product. English is shown as a destination that
-              exists in the brand, not as a control that would do nothing —
-              a live toggle with no second content tree behind it is worse
-              than one that says plainly where it stands. */}
-          <div className="seg" aria-label="لغة الواجهة">
-            {/* .lat sits on the Latin label only. On the wrapper it would put
-                Space Grotesk — which has no Arabic glyphs — on «عربي» too. */}
-            <span className="lat" aria-disabled="true" title="النسخة الإنجليزية قريبًا">
-              EN
-            </span>
-            <span className="on" aria-current="true">عربي</span>
+          {/* A real toggle now: a link to the same page in the other language.
+              No JavaScript, and no state for the next screen to be told about. */}
+          <div className="seg" aria-label={lang === "ar" ? "لغة الواجهة" : "Interface language"}>
+            {lang === "en" ? (
+              <span className="lat on" aria-current="true">EN</span>
+            ) : (
+              <Link href={other} className="lat">EN</Link>
+            )}
+            {lang === "ar" ? (
+              <span className="on" aria-current="true">عربي</span>
+            ) : (
+              <Link href={other}>عربي</Link>
+            )}
           </div>
           {!signedIn && (
             <Link href="/login" className="sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>
-              تسجيل الدخول
+              {t.nav.signin}
             </Link>
           )}
           <Link href="/new" className="btn btn-primary btn-sm">
-            {signedIn ? "طلب جديد" : "ابدأ الآن"}
+            {signedIn ? t.nav.newReq : t.nav.start}
           </Link>
         </div>
       </header>
@@ -56,148 +238,143 @@ export default async function LandingPage() {
       <div className="landing-wrap">
         <section className="hero">
           <div className="stack g20">
-            <span className="pill-accent">من الرياض · عربي أولاً</span>
-            <h1>اوصل للأشخاص اللي يحركون شغلك.</h1>
-            <p>
-              قل لـ Intro وش تحتاج — عميل، شريك، أو موظف قيادي. يلقى لك الأشخاص المناسبين
-              في السوق السعودي، يشرح ليش كل واحد منهم مهم، ويفتح الباب: مباشرة أو عبر
-              تعارف بموافقة الطرفين.
-            </p>
+            <span className="pill-accent">{t.pill}</span>
+            <h1>{t.h1}</h1>
+            <p>{t.sub}</p>
 
-            {/* The artboard puts two buttons here. This is a form instead, and
-                that is not a liberty: it GETs to /new?q=…, and middleware.ts
-                carries pathname + search into `next`, so a sentence typed by a
-                signed-out visitor survives the sign-in detour and arrives
-                prefilled. Replacing it with a CTA would quietly delete the
-                product's front door. */}
+            {/* Door 1, unchanged. It GETs to /new?q=… and middleware.ts carries
+                pathname + search into `next`, so a sentence typed by a signed-out
+                visitor survives the sign-in detour and arrives prefilled. */}
             <form action="/new" method="get" className="hero-form">
-              <input
-                type="text"
-                name="q"
-                aria-label="مين ودك توصل له؟"
-                placeholder="مثال: أبي أوصل لمسؤولي الابتكار في البنوك السعودية"
-              />
-              <button type="submit" className="btn-primary">
-                ابدأ ←
-              </button>
+              <input type="text" name="q" aria-label={t.placeholder} placeholder={t.placeholder} />
+              <button type="submit" className="btn-primary">{t.cta}</button>
             </form>
 
             <div className="row g10 wrapx">
-              {GOALS.map((goal) => (
-                <Link
-                  key={goal.label}
-                  href={`/new?q=${encodeURIComponent(goal.seed)}`}
-                  className="btn btn-sm"
-                >
+              {goals.map((goal) => (
+                <Link key={goal.label} href={`/new?q=${encodeURIComponent(goal.seed)}`} className="btn btn-sm">
                   {goal.label}
                 </Link>
               ))}
             </div>
 
             <div className="checks">
-              {["أسباب، مو قوائم", "تعارف بموافقة الطرفين", "حد يومي ١٠ رسائل"].map((c) => (
-                <span key={c}>✓ {c}</span>
-              ))}
+              {t.checks.map((c) => (<span key={c}>✓ {c}</span>))}
             </div>
           </div>
 
-          <MatchingPanel />
+          <MatchingPanel lang={lang} />
         </section>
       </div>
 
+      {/* Sectors we cover — not customers we have. The previous wording
+          («مستخدم للوصول إلى» — "used to reach") implied a client base. */}
       <section className="strip">
         <div className="landing-wrap strip-inner">
-          <span className="eyebrow" style={{ flex: "none" }}>
-            مستخدم للوصول إلى
-          </span>
-          {SECTORS.map((sector) => (
-            <span className="sm muted" key={sector}>
-              {sector}
-            </span>
-          ))}
+          <span className="eyebrow" style={{ flex: "none" }}>{t.coverage}</span>
+          {SECTORS[lang].map((s) => (<span className="sm muted" key={s}>{s}</span>))}
         </div>
       </section>
 
-      <section className="section landing-wrap" id="directions">
+      <section className="section landing-wrap" id="perspective">
         <div className="stack g8" style={{ marginBottom: 44 }}>
-          <span className="eyebrow">ثلاث طرق للدخول</span>
-          <h2 style={{ fontSize: "var(--text-3xl)" }}>محرك واحد. ثلاث مشاكل يحلها.</h2>
+          <span className="eyebrow">{t.povEyebrow}</span>
+          <h2 style={{ fontSize: "var(--text-3xl)" }}>{t.povTitle}</h2>
         </div>
-        <div className="dir-grid">
-          {DIRECTIONS.map((d) => (
-            <div className="dir-cell stack g12" key={d.n}>
-              <span className="dir-kicker">
-                <span className="lat">{d.n}</span> — {d.label}
-              </span>
-              <strong style={{ fontSize: "var(--text-lg)" }}>{d.title}</strong>
-              <p className="sm muted">{d.body}</p>
-              <span className="dir-pain">الوجع: {d.pain}</span>
+        <div className="pov-grid">
+          {t.pov.map((p, i) => (
+            <div className="pov-cell stack g10" key={p.t}>
+              <span className="pov-n lat">{String(i + 1).padStart(2, "0")}</span>
+              <strong style={{ fontSize: "var(--text-lg)", lineHeight: 1.5 }}>{p.t}</strong>
+              <p className="sm muted">{p.b}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="on-ink section" id="product">
+      <section className="on-ink section" id="how">
         <div className="landing-wrap dark-grid">
           <div className="stack g16">
-            <span className="eyebrow">داخل المنتج</span>
-            <h2 style={{ fontSize: "var(--text-3xl)" }}>سبب، مو كومة جهات اتصال.</h2>
-            <p className="muted">
-              كل ترشيح شخص ومعه قضية: ليش هو، وليش الحين، وكيف تبدأ. وإذا كان متاحًا
-              للتعارف، Intro يسأله أولًا — عشان ما تحرق الحساب برسالة باردة.
-            </p>
-            <div className="stack g10">
-              {PROOFS.map((proof) => (
-                <span className="row g10 sm" key={proof}>
-                  <span className="tick" style={{ width: 20, height: 20 }}>
-                    ✓
-                  </span>
-                  <span className="muted">{proof}</span>
-                </span>
-              ))}
-            </div>
+            <span className="eyebrow">{t.howEyebrow}</span>
+            <h2 style={{ fontSize: "var(--text-3xl)" }}>{t.howTitle}</h2>
+            <p className="muted">{t.sub}</p>
           </div>
-
-          <MatchBrief />
+          <div className="spine">
+            {t.how.map((s, i) => (
+              <div className="spine-row" key={s.t}>
+                <span className="spine-n lat">{i + 1}</span>
+                <span className="stack g4">
+                  <strong>{s.t}</strong>
+                  <span className="sm muted">{s.b}</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="cta-band">
+      <section className="section landing-wrap" id="use-cases">
+        <div className="stack g8" style={{ marginBottom: 44 }}>
+          <span className="eyebrow">{t.useEyebrow}</span>
+          <h2 style={{ fontSize: "var(--text-3xl)" }}>{t.useTitle}</h2>
+        </div>
+        <div className="dir-grid">
+          {USE_CASES[lang].map((u) => (
+            <div className={`dir-cell stack g12${u.lead ? " lead" : ""}`} key={u.n}>
+              <span className="dir-kicker">
+                <span className="lat">{u.n}</span> — {u.label}
+              </span>
+              <strong style={{ fontSize: "var(--text-lg)" }}>{u.title}</strong>
+              <p className="sm muted">{u.body}</p>
+              <span className="dir-pain">{lang === "ar" ? "الوجع: " : "The pain: "}{u.pain}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Door 2. A mailto and a seeded request — no new route, no new table.
+          In English the mail route is listed first: everything past /new is
+          Arabic-only, so a person is the faster path for an English visitor. */}
+      <section className="cta-band" id="concierge">
         <div className="landing-wrap cta-grid">
           <div className="stack g16">
-            <h2 style={{ fontSize: "var(--text-3xl)" }}>جرّبه على هدفك أنت.</h2>
-            <p className="muted">
-              جِب هدفًا واحدًا حقيقيًا — حساب تبي تدخله، سوق تقرأه، أو دور ما قدرت
-              تعبّيه. نشغّله قدامك مباشرة.
-            </p>
+            <span className="eyebrow">{t.concierge.eyebrow}</span>
+            <h2 style={{ fontSize: "var(--text-3xl)" }}>{t.concierge.title}</h2>
+            <p className="muted">{t.concierge.body}</p>
+          </div>
+          <div className="card stack g16">
+            <a href={`mailto:${CONCIERGE_EMAIL}`} className="btn btn-primary" style={{ width: "100%" }}>
+              {t.concierge.mail}
+            </a>
+            <Link href={`/new?q=${encodeURIComponent(t.concierge.seed)}`} className="btn" style={{ width: "100%" }}>
+              {t.concierge.file}
+            </Link>
+            <span className="sm dim">{t.concierge.note}</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="section landing-wrap">
+        <div className="cta-grid">
+          <div className="stack g16">
+            <h2 style={{ fontSize: "var(--text-3xl)" }}>{t.ctaTitle}</h2>
+            <p className="muted">{t.ctaBody}</p>
             <div className="stack g8 sm muted">
-              {["جولة ٣٠ دقيقة على طلبك", "بالعربي أو بالإنجليزي", "بدعوة فقط خلال الإطلاق"].map((c) => (
-                <span key={c}>✓ {c}</span>
-              ))}
+              {t.ctaChecks.map((c) => (<span key={c}>✓ {c}</span>))}
             </div>
           </div>
-
           <div className="card stack g16">
-            <span className="eyebrow">وش تحتاج؟</span>
-            {/* Links, not a client-side picker. Each chip carries a seed
-                sentence into /new through the same ?q= mechanic as the hero,
-                so choosing one starts a real request rather than setting a
-                state the next screen would have to be told about. */}
+            <span className="eyebrow">{t.ctaPick}</span>
             <div className="row g8 wrapx">
-              {GOALS.map((goal) => (
-                <Link
-                  key={goal.label}
-                  href={`/new?q=${encodeURIComponent(goal.seed)}`}
-                  className="btn btn-sm"
-                >
+              {goals.map((goal) => (
+                <Link key={goal.label} href={`/new?q=${encodeURIComponent(goal.seed)}`} className="btn btn-sm">
                   {goal.label}
                 </Link>
               ))}
             </div>
             <Link href="/new" className="btn btn-primary" style={{ width: "100%" }}>
-              ابدأ طلبك ←
+              {t.ctaStart}
             </Link>
-            <span className="sm dim">نرد خلال يوم عمل واحد.</span>
           </div>
         </div>
       </section>
@@ -207,23 +384,25 @@ export default async function LandingPage() {
           <div className="foot-grid">
             <div className="stack g14">
               <Wordmark on="ink" size="lg" />
-              <p className="sm" style={{ maxWidth: "40ch" }}>
-                مبني في الرياض. Intro يلقى الأشخاص اللي يحركون شغلك ويفتح الباب —
-                بموافقتهم.
-              </p>
+              <p className="sm" style={{ maxWidth: "40ch" }}>{t.footTag}</p>
             </div>
-            {FOOTER.map((col) => (
-              <div className="stack g10" key={col.title}>
-                <span className="eyebrow" style={{ color: "var(--on-dark-2)" }}>
-                  {col.title}
-                </span>
-                {col.links.map((l) => (
-                  <Link href={l.href} key={l.label}>
-                    {l.label}
-                  </Link>
-                ))}
-              </div>
-            ))}
+            <div className="stack g10">
+              <span className="eyebrow" style={{ color: "var(--on-dark-2)" }}>{t.footCols[0]}</span>
+              <Link href="/requests">{t.nav.mine}</Link>
+              <Link href="/new">{t.nav.newReq}</Link>
+            </div>
+            <div className="stack g10">
+              <span className="eyebrow" style={{ color: "var(--on-dark-2)" }}>{t.footCols[1]}</span>
+              {USE_CASES[lang].slice(0, 3).map((u) => (
+                <a href="#use-cases" key={u.n}>{u.label}</a>
+              ))}
+            </div>
+            <div className="stack g10">
+              <span className="eyebrow" style={{ color: "var(--on-dark-2)" }}>{t.footCols[2]}</span>
+              <Link href="/login">{t.nav.signin}</Link>
+              <a href={`mailto:${CONCIERGE_EMAIL}`}>{t.concierge.mail}</a>
+              <Link href={other}>{lang === "ar" ? "English" : "عربي"}</Link>
+            </div>
           </div>
           <div className="foot-legal">
             <span>© {new Date().getFullYear()} Intro</span>
@@ -240,149 +419,29 @@ export default async function LandingPage() {
  * shows the product's actual claim (a reason attached to every name) before any
  * copy argues for it. Static: this is a picture of the product, not the product.
  */
-function MatchingPanel() {
+function MatchingPanel({ lang }: { lang: Lang }) {
+  const m = MATCHES[lang];
   return (
-    <div className="panel" aria-label="مثال على قائمة ترشيحات">
+    <div className="panel" aria-label={lang === "ar" ? "مثال على قائمة ترشيحات" : "Example candidate list"}>
       <div className="panel-head">
         <span className="sm">
-          <span className="dim">طلب · </span>
-          <strong>البيع لشركات التأمين السعودية</strong>
+          <span className="dim">{lang === "ar" ? "طلب · " : "Request · "}</span>
+          <strong>{m.req}</strong>
         </span>
-        <span className="badge accent">جارٍ المطابقة</span>
+        <span className="badge accent">{m.status}</span>
       </div>
-      {MATCHES.map((m) => (
-        <div className="panel-row" key={m.title}>
-          <span className={`tick${m.pending ? " idle" : ""}`}>{m.pending ? "٤" : "✓"}</span>
+      {m.rows.map((r) => (
+        <div className="panel-row" key={r.title}>
+          <span className={`tick${r.pending ? " idle" : ""}`}>{r.pending ? "?" : "✓"}</span>
           <span className="stack g4 grow">
-            <strong className="sm">{m.title}</strong>
-            <span className="xs muted">{m.why}</span>
+            <strong className="sm">{r.title}</strong>
+            <span className="xs muted">{r.why}</span>
           </span>
-          <span className="xs" style={{ color: m.pending ? "var(--ink-3)" : "var(--accent)" }}>
-            {m.fit}
+          <span className="xs" style={{ color: r.pending ? "var(--ink-3)" : "var(--accent)" }}>
+            {r.fit}
           </span>
         </div>
       ))}
-      <div className="panel-foot">
-        <span className="xs muted">٨ من ١٠ — كل ترشيح معه سبب</span>
-        <span className="xs" style={{ color: "var(--accent)", fontWeight: 600 }}>
-          راجع الترشيحات ←
-        </span>
-      </div>
     </div>
   );
 }
-
-/** The dark section's match brief, on the raised ink surface. */
-function MatchBrief() {
-  return (
-    <div className="card stack g14">
-      <div className="row between g12 wrapx">
-        <span className="eyebrow lat">MATCH BRIEF · R-1204</span>
-        <span className="xs" style={{ color: "var(--on-dark-2)" }}>
-          حُدّث قبل ساعتين
-        </span>
-      </div>
-      <div className="row between g12 wrapx">
-        <strong style={{ fontSize: "var(--text-lg)" }}>مدير الشراكات الرقمية</strong>
-        <span className="badge accent">توافق قوي</span>
-      </div>
-      <span className="sm" style={{ color: "var(--on-dark-2)" }}>
-        شركة تأمين وطنية · الرياض · متاح للتعارف
-      </span>
-      <div className="stack" style={{ marginTop: 4 }}>
-        {SCORES.map((s) => (
-          <div className="brief-row" key={s.label}>
-            <span className="sm" style={{ color: "var(--on-dark)" }}>
-              {s.label}
-            </span>
-            <span className={`badge ${s.tone}`}>{s.verdict}</span>
-          </div>
-        ))}
-      </div>
-      <div className="row g10 wrapx" style={{ marginTop: 4 }}>
-        <button type="button" className="btn btn-primary btn-sm">
-          تواصل مباشرة
-        </button>
-        <button type="button" className="btn btn-sm">
-          اطلب تعارف
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const GOALS = [
-  { label: "أبحث عن عملاء", seed: "أبي أبيع منصة مدفوعات للبنوك — مين المسؤول عن Open Banking؟" },
-  { label: "أبحث عن شريك", seed: "أبي أوصل للشخص المسؤول عن الشراكات في شركات التأمين." },
-  { label: "أبحث عن موظف قيادي", seed: "أدور وظيفة قيادية في الـ Product في شركات تقنية سعودية." },
-];
-
-const SECTORS = ["البنوك والتقنية المالية", "التأمين", "التجزئة واللوجستيات", "القطاع الحكومي", "الصحة", "تقنية المؤسسات"];
-
-const MATCHES = [
-  { title: "مدير الشراكات الرقمية", why: "أطلق برنامج توزيع في الربع الثاني", fit: "توافق قوي", pending: false },
-  { title: "نائب رئيس الابتكار", why: "يملك ميزانية التجارب مع المزودين", fit: "توافق قوي", pending: false },
-  { title: "مدير التأمين المصرفي", why: "متاح للتعارف عبر Intro", fit: "عبر Intro", pending: false },
-  { title: "الرئيس التنفيذي للتوزيع", why: "قيد البحث", fit: "جارٍ", pending: true },
-];
-
-const DIRECTIONS = [
-  {
-    n: "01",
-    label: "مبيعات وشراكات",
-    title: "مسارات دافئة للحسابات",
-    body: "التواصل البارد يجيب رد بنسبة ١–٢٪. Intro يلقى صاحب القرار الحقيقي في كل حساب، يقول لك ليش الحين هو الوقت المناسب، ويقدر يسأله أولًا — عشان يبدأ الحديث دافئًا.",
-    pain: "خط مبيعات مبني على الرش والدعاء",
-  },
-  {
-    n: "02",
-    label: "قراءة السوق",
-    title: "اعرف مين يتحرك، أول",
-    body: "تغييرات القيادة، ميزانيات جديدة، توسّع، موجات توظيف — نتابعها في السوق السعودي ونربطها بطلباتك المفتوحة. الإشارة ما تنفع إلا إذا سمّت لك شخصًا تقدر توصله.",
-    pain: "تسمع بالصفقة بعد ما تُقفل",
-  },
-  {
-    n: "03",
-    label: "وصول للقيادات",
-    title: "اوصل للممارسين مباشرة",
-    body: "أفضل التعيينات والمستشارين ما يقدّمون على وظائف. Intro يحدد مين اللي فعلًا سوّى الشغل، ويرتب تعارفًا بموافقته — بدون عمولة وكالة ولا رسالة LinkedIn باردة.",
-    pain: "٢٥٪ عمولة مقابل سيرة ذاتية مُحوّلة",
-  },
-];
-
-const PROOFS = [
-  "الدور والشركة والتوقيت — كل واحد مقيَّم لكل ترشيح",
-  "رسالة أولى مكتوبة ومبنية على إشارات حقيقية",
-  "مسار تعارف بموافقة الطرفين لما المباشر ما ينفع",
-];
-
-const SCORES = [
-  { label: "الدور — يملك ميزانية التوزيع عبر الشركاء", verdict: "قوي", tone: "accent" },
-  { label: "الشركة — أعلنت توجهًا للقنوات الرقمية", verdict: "قوي", tone: "accent" },
-  { label: "التوقيت — البرنامج انطلق والمزودون لم يُختاروا", verdict: "تحرّك الآن", tone: "warn" },
-];
-
-const FOOTER = [
-  {
-    title: "المنتج",
-    links: [
-      { label: "طلباتي", href: "/requests" },
-      { label: "طلب جديد", href: "/new" },
-    ],
-  },
-  {
-    title: "الحلول",
-    links: [
-      { label: "مبيعات وشراكات", href: "#directions" },
-      { label: "قراءة السوق", href: "#directions" },
-      { label: "وصول للقيادات", href: "#directions" },
-    ],
-  },
-  {
-    title: "الشركة",
-    links: [
-      { label: "تسجيل الدخول", href: "/login" },
-      { label: "الرياض", href: "#product" },
-    ],
-  },
-];
