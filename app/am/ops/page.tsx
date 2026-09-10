@@ -23,6 +23,11 @@ const KIND_LABEL: Record<UsageKind, string> = {
   collect_confirmed: "شراء إثراء مؤكّد",
   checkout_started: "بدء دفع",
   checkout_paid: "دفعة مكتملة",
+  radar_run_ok: "مسح الرادار",
+  radar_run_failed: "تعثّر مسح الرادار",
+  radar_signal_resolved: "إشارة معتمدة",
+  radar_issue_published: "نشر موجز",
+  radar_subscribe: "اشتراك في الرادار",
 };
 
 /**

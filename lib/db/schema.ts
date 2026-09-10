@@ -9,7 +9,8 @@ import type {
   DraftStatus, DraftTemplate, Evidence, ExampleCompany, Fit, GateFailure,
   GoalType, GtmRunStatus, GtmStep, ItemStatus, LedgerReason, OutreachStatus,
   PipelineSource, PipelineStatus, ProfileSource, RequestStatus, Role,
-  SegmentOrigin, SendPool, UsageKind,
+  RadarChangeKind, RadarIssueStatus, RadarRunStatus, RadarSignalStatus,
+  RadarSubscriberStatus, SegmentOrigin, SendPool, UsageKind,
 } from "../types";
 import type { EmailStatus } from "../coresignal.types";
 
@@ -567,3 +568,167 @@ export const checkouts = pgTable("checkouts", {
   uniqueIndex("checkouts_provider_ref_idx").on(t.provider, t.providerRef),
   index("checkouts_account_idx").on(t.accountId),
 ]);
+
+// ── Radar ──────────────────────────────────────────────────────────────────
+//
+// The sector briefing. Six clusters are a code constant (lib/radar/clusters.ts)
+// rather than a table: a cluster is taxonomy, not user data, and the landing
+// page renders the same six from the same source. Rows below carry the slug.
+
+/**
+ * The company universe a cluster is watched through.
+ *
+ * `coresignalId` is nullable on purpose and filled by a **free** company
+ * search on first sweep. Seeding it would bake a vendor identifier into the
+ * repo that nobody would ever re-check, and §8 of the design review is
+ * explicit about how much that vendor's Saudi coverage can be trusted.
+ */
+export const radarCompanies = pgTable("radar_companies", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  clusterSlug: text("cluster_slug").notNull(),
+  name: text("name").notNull(),
+  website: text("website").notNull(),
+  coresignalId: integer("coresignal_id"),
+  /** Set false to stop watching without losing the baseline history. */
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("radar_companies_site_idx").on(t.clusterSlug, t.website),
+  index("radar_companies_cluster_idx").on(t.clusterSlug),
+]);
+
+/**
+ * Last sweep's employee ids for a company — the entire memory the free diff
+ * needs, and deliberately nothing more.
+ *
+ * These are opaque vendor ids. No name, title or address is stored here, so a
+ * baseline is not personal data in any useful sense and carries no PDPL weight
+ * of its own. Names are bought only for approved rows and live on the signal.
+ *
+ * `queryHash` pins the question the ids answered. A diff across two different
+ * questions is meaningless, so a changed hash starts a new baseline instead of
+ * silently comparing apples to pears.
+ */
+export const radarBaselines = pgTable("radar_baselines", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  companyId: text("company_id").notNull().references(() => radarCompanies.id, { onDelete: "cascade" }),
+  queryHash: text("query_hash").notNull(),
+  employeeIds: jsonb("employee_ids").$type<number[]>().notNull().default([]),
+  capturedAt: timestamp("captured_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("radar_baselines_company_idx").on(t.companyId)]);
+
+/**
+ * One detected seat change.
+ *
+ * A row is born knowing only a vendor id. The name, title and evidence arrive
+ * when an account manager approves it and the resolve step pays for them —
+ * which is why the two CHECK constraints below exist. They are the evidence
+ * gate, in the database rather than in a code path that could be forgotten:
+ * **an approved or published signal must carry a name and at least one piece
+ * of evidence.** `docs/01-mvp-plan.md` §4 makes the same rule for pipelines.
+ */
+export const radarSignals = pgTable("radar_signals", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  clusterSlug: text("cluster_slug").notNull(),
+  companyId: text("company_id").notNull().references(() => radarCompanies.id, { onDelete: "cascade" }),
+  coresignalEmployeeId: integer("coresignal_employee_id").notNull(),
+  kind: text("kind").$type<RadarChangeKind>().notNull(),
+  status: text("status").$type<RadarSignalStatus>().notNull().default("detected"),
+  /** Bought on approval. Null while the row is still just an id. */
+  personName: text("person_name"),
+  personTitle: text("person_title"),
+  evidence: jsonb("evidence").$type<Evidence[]>().notNull().default([]),
+  /** The editor's line for the issue, written over the resolved facts. */
+  noteAr: text("note_ar").notNull().default(""),
+  noteEn: text("note_en").notNull().default(""),
+  creditsSpent: integer("credits_spent").notNull().default(0),
+  issueId: text("issue_id"),
+  detectedAt: timestamp("detected_at", { mode: "string" }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { mode: "string" }),
+}, (t) => [
+  // Makes a re-run of the sweep idempotent: the same change cannot be filed twice.
+  uniqueIndex("radar_signals_change_idx").on(t.companyId, t.coresignalEmployeeId, t.kind),
+  index("radar_signals_cluster_status_idx").on(t.clusterSlug, t.status),
+  check(
+    "radar_signals_approved_needs_name",
+    sql`${t.status} in ('detected','removed') or ${t.personName} is not null`,
+  ),
+  check(
+    "radar_signals_approved_needs_evidence",
+    sql`${t.status} in ('detected','removed') or jsonb_array_length(${t.evidence}) > 0`,
+  ),
+]);
+
+/**
+ * A published briefing for one cluster. Immutable once published, like a
+ * pipeline version: an issue that can be edited after the fact is not a record
+ * of what was said.
+ */
+export const radarIssues = pgTable("radar_issues", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  clusterSlug: text("cluster_slug").notNull(),
+  number: integer("number").notNull(),
+  status: text("status").$type<RadarIssueStatus>().notNull().default("draft"),
+  titleAr: text("title_ar").notNull().default(""),
+  introAr: text("intro_ar").notNull().default(""),
+  titleEn: text("title_en").notNull().default(""),
+  introEn: text("intro_en").notNull().default(""),
+  publishedAt: timestamp("published_at", { mode: "string" }),
+  /** Set when the broadcast actually left; null while the flag is off. */
+  broadcastAt: timestamp("broadcast_at", { mode: "string" }),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("radar_issues_number_idx").on(t.clusterSlug, t.number),
+  check(
+    "radar_issues_published_needs_date",
+    sql`${t.status} <> 'published' or ${t.publishedAt} is not null`,
+  ),
+]);
+
+/**
+ * Someone who asked for the briefing.
+ *
+ * `pending` until they click the link in the confirmation mail. There is no
+ * other route to `confirmed`, and the CHECK below is what makes that true even
+ * if a future code path forgets — a list that can be written to directly is a
+ * list that will eventually be written to from a spreadsheet someone bought.
+ */
+export const radarSubscribers = pgTable("radar_subscribers", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text("email").notNull(),
+  clusters: jsonb("clusters").$type<string[]>().notNull().default([]),
+  status: text("status").$type<RadarSubscriberStatus>().notNull().default("pending"),
+  /** Single-use for confirming; also the unsubscribe key afterwards. */
+  token: text("token").notNull(),
+  lang: text("lang").notNull().default("ar"),
+  confirmedAt: timestamp("confirmed_at", { mode: "string" }),
+  unsubscribedAt: timestamp("unsubscribed_at", { mode: "string" }),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("radar_subscribers_email_idx").on(t.email),
+  uniqueIndex("radar_subscribers_token_idx").on(t.token),
+  check(
+    "radar_subscribers_confirmed_needs_date",
+    sql`${t.status} <> 'confirmed' or ${t.confirmedAt} is not null`,
+  ),
+]);
+
+/**
+ * One sweep, recorded whether or not it worked.
+ *
+ * This table exists because of the failure mode that kills scheduled work: a
+ * job that silently stops looks exactly like a job with nothing to report. A
+ * quiet week and a dead cron are indistinguishable from the outside, so every
+ * run writes a row, and `skips` records which companies were refused a diff
+ * and why — see the guards in lib/radar/detect.ts.
+ */
+export const radarRuns = pgTable("radar_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  status: text("status").$type<RadarRunStatus>().notNull().default("running"),
+  companiesChecked: integer("companies_checked").notNull().default(0),
+  signalsDetected: integer("signals_detected").notNull().default(0),
+  skips: jsonb("skips").$type<{ company: string; reason: string }[]>().notNull().default([]),
+  error: text("error"),
+  startedAt: timestamp("started_at", { mode: "string" }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { mode: "string" }),
+}, (t) => [index("radar_runs_started_idx").on(t.startedAt)]);

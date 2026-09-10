@@ -50,6 +50,13 @@
       "when": 1788036892830,
       "tag": "0006_gtm_english_variants",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789064293919,
+      "tag": "0007_radar",
+      "breakpoints": true
     }
   ]
 }
