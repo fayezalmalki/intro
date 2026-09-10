@@ -377,7 +377,12 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
 .strip { background: var(--fill); border-block: 1px solid var(--rule); padding: 26px 0; }
 .strip-inner { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
 
-.section { padding: 88px 0; }
+/* padding-block, not the `88px 0` shorthand: three landing sections carry both
+   `.section` and `.landing-wrap`, and the shorthand's implicit `0` reset the
+   wrap's 56px side padding — this rule sits later in the file, so it won.
+   Above 1180px the wrap's max-width hid it; between 720 and 1180 the text ran
+   edge to edge with no gutter at all. */
+.section { padding-block: 88px; }
 .dir-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
 .dir-cell { border-top: 2px solid var(--ink); padding-top: 20px; }
 .dir-kicker {
@@ -422,7 +427,7 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
   .hero { padding: 44px 0 52px; }
   .hero h1 { font-size: var(--text-3xl); line-height: 1.35; }
   .hero p { font-size: var(--text-base); }
-  .section, .cta-band { padding: 52px 0; }
+  .section, .cta-band { padding-block: 52px; }
   .foot-grid { grid-template-columns: minmax(0, 1fr); gap: 22px; }
 }
 
