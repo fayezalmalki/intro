@@ -709,3 +709,56 @@ textarea:focus, input:focus { outline: 2px solid var(--accent-line); outline-off
    would outrank the phone breakpoint and keep the desktop tracks at 390px. */
 .tr-gtm { grid-template-columns: minmax(0, 1fr) 200px 130px 120px; }
 @media (max-width: 720px) { .tr-gtm { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* ---- landing: English tree, perspective and steps ---- */
+
+/* The landing is the only surface with a Latin content tree, so Space Grotesk
+   and the handoff's negative tracking finally apply where they were designed to
+   — see the note on `.lat` above for why neither is ever set on body. Scoped to
+   [dir="ltr"] on the landing root: no signed-in screen has an English tree, and
+   none of them should change because this rule exists. */
+.landing[dir="ltr"] {
+  font-family: var(--font-latin), system-ui, sans-serif;
+}
+.landing[dir="ltr"] h1,
+.landing[dir="ltr"] h2,
+.landing[dir="ltr"] .hero h1 {
+  letter-spacing: -0.03em;
+}
+/* The segmented control holds one Latin and one Arabic label. Only the Latin
+   one may carry Space Grotesk — it has no Arabic glyphs. */
+.landing .seg a { color: var(--muted); }
+.landing .seg a:hover { color: var(--ink); }
+
+/* Our perspective: four propositions, two across. Numbered rather than bulleted
+   because they are an argument in order, not a feature list. */
+.pov-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 56px; }
+.pov-cell { border-top: 1px solid var(--line); padding-top: 18px; }
+.pov-n {
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.08em; color: var(--accent);
+}
+
+/* The five outputs, on ink beside the section heading. */
+.spine { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.spine-row {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 15px 0; border-bottom: 1px solid var(--ink-line);
+}
+.spine-row:last-child { border-bottom: none; }
+.spine-n {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  background: var(--ink-raised); border: 1px solid var(--ink-line);
+  color: var(--accent-on-dark);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-xs); font-weight: 600;
+}
+
+/* The use case the page argues hardest for. The rule is the accent's only job
+   here — marking state — so the cell gets a heavier top rule, not a fill. */
+.dir-cell.lead { border-top-color: var(--accent); }
+.dir-cell.lead .dir-pain { border-color: var(--accent-line); background: var(--accent-wash); color: var(--accent); }
+
+@media (max-width: 900px) {
+  .pov-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+}
