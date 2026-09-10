@@ -5,12 +5,12 @@ import { auth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 /**
- * The one address a concierge enquiry reaches. Confirm or replace this single
- * constant — it is the only place the address appears, and door 2 of the page
- * is nothing but a mailto, deliberately: the first retainer clients are handled
+ * The one address a concierge enquiry reaches. It is the only place the address
+ * appears, so changing it here changes it everywhere. Door 2 of the page is
+ * nothing but a mailto, deliberately: the first retainer clients are handled
  * by a person and an inbox, not by a table nobody has built yet.
  */
-const CONCIERGE_EMAIL = "hello@intro.sa";
+const CONCIERGE_EMAIL = "fm@mvp.sa";
 
 type Lang = "ar" | "en";
 
