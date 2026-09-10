@@ -61,7 +61,17 @@ export type UsageKind =
   /** A checkout was created — the paywall was reached and accepted. */
   | "checkout_started"
   /** A checkout was settled by a provider webhook. */
-  | "checkout_paid";
+  | "checkout_paid"
+  /** A Radar sweep finished, with counts in `meta`. */
+  | "radar_run_ok"
+  /** A Radar sweep threw. The one that means the briefing quietly stopped. */
+  | "radar_run_failed"
+  /** A detected change was approved and a name bought, credits in `meta`. */
+  | "radar_signal_resolved"
+  /** An issue was published to its public page. */
+  | "radar_issue_published"
+  /** Someone asked for the briefing; `meta` says whether it was confirmed. */
+  | "radar_subscribe";
 
 export type LedgerReason =
   | "purchase"
@@ -381,3 +391,23 @@ export interface DraftSpecific {
   /** Where it came from — a field name, never a guess. */
   field: string;
 }
+
+// ── Radar ──────────────────────────────────────────────────────────────────
+
+/** Which way a seat moved. */
+export type RadarChangeKind = "arrival" | "departure";
+
+/**
+ * A signal's life. `detected` costs nothing and carries no name — only a
+ * vendor id — because detection runs on free search. `approved` is the moment
+ * an account manager decides it is worth a name, which is the moment credits
+ * are spent. `removed` is a judgement that it is not.
+ */
+export type RadarSignalStatus = "detected" | "approved" | "removed" | "published";
+
+export type RadarIssueStatus = "draft" | "published";
+
+/** `pending` until the address proves it asked. There is no other route in. */
+export type RadarSubscriberStatus = "pending" | "confirmed" | "unsubscribed";
+
+export type RadarRunStatus = "running" | "ok" | "failed";

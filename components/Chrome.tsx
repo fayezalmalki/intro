@@ -28,7 +28,7 @@ export function Console({
   account,
   children,
 }: {
-  on?: "queue" | "team" | "ops";
+  on?: "queue" | "team" | "ops" | "radar";
   account: Account;
   children: React.ReactNode;
 }) {
@@ -47,6 +47,11 @@ export function Console({
               already living in this console. */}
           <Link href="/am/ops" className={on === "ops" ? "on" : ""}>
             التشغيل
+          </Link>
+          {/* The briefing's review desk. Detection is automatic and free; every
+              name on a published page passed through a person here. */}
+          <Link href="/am/radar" className={on === "radar" ? "on" : ""}>
+            الرادار
           </Link>
           {/* Only admins can change roles, so only admins are shown the door. */}
           {account.role === "admin" && (
