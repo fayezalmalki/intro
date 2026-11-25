@@ -1,7 +1,5 @@
 {
   "git": {
-    "deploymentEnabled": {
-      "claude/cloudflare-platform": false
-    }
+    "deploymentEnabled": false
   }
 }

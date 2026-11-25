@@ -234,12 +234,15 @@ function Row({ k, v }: { k: string; v: string }) {
 }
 
 /**
- * A request that reached the queue but has no pipeline yet: the requester
- * opened it and has not confirmed the extracted brief. There is nothing for an
+ * A request that reached the queue but has no pipeline yet: either the
+ * requester has not confirmed the extracted brief, or they have and live
+ * sourcing (worker/request-workflow.ts) has not written v1 yet. There is nothing for an
  * account manager to review, but the row is still real work — someone stalled
  * mid-request, and chasing them is exactly what a concierge service does.
  */
 function AwaitingConfirmation({ account, request }: { account: Account; request: IntroRequest }) {
+  // Confirmed with no pipeline yet: RequestWorkflow is still sourcing.
+  const sourcing = Boolean(request.confirmedAt);
   return (
     <Console on="queue" account={account}>
       <div className="wrap">
@@ -248,7 +251,7 @@ function AwaitingConfirmation({ account, request }: { account: Account; request:
             <Link href="/am" className="sm dim">
               الطابور /
             </Link>
-            <h2>طلب لم يُأكَّد بعد</h2>
+            <h2>{sourcing ? "جارٍ البحث عن الأشخاص" : "طلب لم يُأكَّد بعد"}</h2>
           </div>
 
           <div className="card stack g14">
@@ -262,10 +265,17 @@ function AwaitingConfirmation({ account, request }: { account: Account; request:
                 <span className="sm muted">{request.brief.summaryAr}</span>
               </div>
             )}
-            <div className="note">
-              مقدّم الطلب ما أكّد الفهم بعد، وعشان كذا ما انبنت قائمة. القائمة تُبنى تلقائيًا أول
-              ما يأكّد — أو تواصل معه إذا وقف عند هذي الخطوة.
-            </div>
+            {sourcing ? (
+              <div className="note">
+                مقدّم الطلب أكّد الفهم، والنظام يبحث الآن عن الشركات والأشخاص ويجمع الأدلة. تظهر
+                المسودة هنا للمراجعة خلال دقائق.
+              </div>
+            ) : (
+              <div className="note">
+                مقدّم الطلب ما أكّد الفهم بعد، وعشان كذا ما انبنت قائمة. القائمة تُبنى تلقائيًا أول
+                ما يأكّد — أو تواصل معه إذا وقف عند هذي الخطوة.
+              </div>
+            )}
           </div>
 
           <div className="row">

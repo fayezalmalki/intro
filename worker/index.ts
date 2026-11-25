@@ -1,14 +1,15 @@
 import vinext from "vinext/server/fetch-handler";
 
 export { AccountGate } from "./account-gate";
+export { RequestWorkflow } from "./request-workflow";
 
 /** Hosts that redirect to the apex (see cloudflare.config.ts `domains`). */
 const ALIASES = new Set(["www.intro.sa", "app.intro.sa"]);
 
 /**
- * The Worker entry. HTTP goes to vinext (the Next.js app); Durable Object
- * classes are re-exported here so the runtime can find them. Later phases add
- * the email, queue and scheduled handlers alongside `fetch`.
+ * The Worker entry. HTTP goes to vinext (the Next.js app); Durable Object and
+ * Workflow classes are re-exported here so the runtime can find them. Later
+ * phases add the email, queue and scheduled handlers alongside `fetch`.
  */
 export default {
   fetch(request, env, ctx) {
