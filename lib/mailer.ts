@@ -1,32 +1,26 @@
-import nodemailer from "nodemailer";
+import { env } from "cloudflare:workers";
 
 /**
  * Pool 1 of the three sending pools in docs/03-design-review.md: mail to our
- * own users, and nothing else. Intro requests to third parties go out on a
- * separate domain with a separate provider, so a complaint on outreach can
- * never take login mail down with it.
+ * own users, and nothing else. Outreach to third parties goes out on a
+ * separate sending domain, so a complaint on outreach can never take login
+ * mail down with it.
+ *
+ * Sent through Cloudflare Email Service (the EMAIL send_email binding).
  */
-const FROM = "Intro <noreply@intro.sa>";
+const FROM = { name: "Intro", email: "noreply@intro.sa" };
 
-function transport() {
-  if (!process.env.SMTP_PASSWORD) return null;
-  return nodemailer.createTransport({
-    host: "smtp.improvmx.com",
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    auth: { user: "noreply@intro.sa", pass: process.env.SMTP_PASSWORD },
-  });
-}
-
-/** In development without SMTP configured, the code is logged instead. */
+/**
+ * Without the binding (unit tests, or local dev with email disabled) the
+ * message is logged instead, so the sign-in code is still visible.
+ */
 async function send(to: string, subject: string, html: string, text: string): Promise<void> {
-  const mail = transport();
+  const mail = (env as unknown as { EMAIL?: SendEmail }).EMAIL;
   if (!mail) {
     console.log(`[mailer] ${subject} → ${to}\n${text}`);
     return;
   }
-  await mail.sendMail({ from: FROM, to, subject, html, text });
+  await mail.send({ from: FROM, to, subject, html, text });
 }
 
 function layout(heading: string, body: string): string {
@@ -50,19 +44,5 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
        <p style="color:#A3A3A0;font-size:13px">إذا ما طلبت هذا الرمز، تجاهل هذا الإيميل.</p>`,
     ),
     `رمز الدخول إلى Intro: ${code}\nصالح لعشر دقائق.`,
-  );
-}
-
-export async function sendMagicLinkEmail(to: string, url: string): Promise<void> {
-  await send(
-    to,
-    "رابط الدخول إلى Intro",
-    layout(
-      "رابط الدخول",
-      `<p style="color:#686868;line-height:1.8">اضغط الزر لتسجيل الدخول. الرابط صالح لمرة واحدة.</p>
-       <p style="margin:20px 0"><a href="${url}" style="display:inline-block;background:#4F6B4C;color:#fff;text-decoration:none;border-radius:7px;padding:11px 20px">ادخل إلى Intro</a></p>
-       <p style="color:#A3A3A0;font-size:13px">إذا ما طلبت هذا الرابط، تجاهل هذا الإيميل.</p>`,
-    ),
-    `رابط الدخول إلى Intro: ${url}`,
   );
 }

@@ -1,15 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { authClient } from "@/lib/auth-client";
 
-type Providers = { google: boolean; magicLink: boolean };
-
-const DEV = process.env.NODE_ENV === "development";
+type Providers = { google: boolean };
 
 export function LoginForm({ target, providers }: { target: string; providers: Providers }) {
   const [email, setEmail] = useState("");
-  const [stage, setStage] = useState<"email" | "code" | "sent">("email");
+  const [stage, setStage] = useState<"email" | "code">("email");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,14 +18,13 @@ export function LoginForm({ target, providers }: { target: string; providers: Pr
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+      const { error: failure } = await authClient.emailOtp.sendVerificationOtp({
+        email: email.trim().toLowerCase(),
+        type: "sign-in",
       });
-      if (response.status === 429) {
+      if (failure?.status === 429) {
         setError("أرسلنا رمزًا قبل شوي. انتظر دقيقة وحاول مرة ثانية.");
-      } else if (!response.ok) {
+      } else if (failure) {
         setError("ما قدرنا نرسل الرمز. تأكد من البريد وحاول مرة ثانية.");
       } else {
         setStage("code");
@@ -42,44 +39,13 @@ export function LoginForm({ target, providers }: { target: string; providers: Pr
   async function submitCode() {
     setBusy(true);
     setError(null);
-    // redirect:false so a wrong code re-renders this form with a message,
-    // instead of throwing the visitor onto NextAuth's own error page.
-    const result = await signIn("email-otp", {
-      email: email.trim(),
-      code: code.trim(),
-      redirect: false,
+    const { error: failure } = await authClient.signIn.emailOtp({
+      email: email.trim().toLowerCase(),
+      otp: code.trim(),
     });
     setBusy(false);
-    if (result?.error) setError("الرمز غير صحيح أو انتهت صلاحيته.");
+    if (failure) setError("الرمز غير صحيح أو انتهت صلاحيته.");
     else window.location.href = target;
-  }
-
-  async function sendMagicLink() {
-    setBusy(true);
-    setError(null);
-    const result = await signIn("nodemailer", {
-      email: email.trim(),
-      redirect: false,
-      callbackUrl: target,
-    });
-    setBusy(false);
-    if (result?.error) setError("ما قدرنا نرسل الرابط. حاول مرة ثانية.");
-    else setStage("sent");
-  }
-
-  if (stage === "sent") {
-    return (
-      <div className="card stack g10">
-        <strong>أرسلنا لك رابط الدخول.</strong>
-        <span className="sm muted">
-          افتح الرابط من بريد <span className="lat">{email.trim()}</span> عشان تكمّل. الرابط صالح
-          لمدة ٢٤ ساعة.
-        </span>
-        <button className="btn btn-ghost btn-sm" onClick={() => setStage("email")}>
-          استخدم بريدًا آخر
-        </button>
-      </div>
-    );
   }
 
   return (
@@ -90,7 +56,7 @@ export function LoginForm({ target, providers }: { target: string; providers: Pr
             className="btn btn-strong"
             style={{ width: "100%" }}
             disabled={busy}
-            onClick={() => signIn("google", { callbackUrl: target })}
+            onClick={() => void authClient.signIn.social({ provider: "google", callbackURL: target })}
           >
             <GoogleMark />
             المتابعة بحساب Google
@@ -127,15 +93,6 @@ export function LoginForm({ target, providers }: { target: string; providers: Pr
           >
             {busy ? "لحظة…" : "أرسل لي رمزًا"}
           </button>
-          {providers.magicLink && (
-            <button
-              className="btn btn-ghost btn-sm"
-              disabled={!valid || busy}
-              onClick={() => void sendMagicLink()}
-            >
-              أو أرسل رابط دخول بدل الرمز
-            </button>
-          )}
         </div>
       ) : (
         <div className="stack g10">
@@ -180,15 +137,6 @@ export function LoginForm({ target, providers }: { target: string; providers: Pr
 
       {error && <div className="alert">{error}</div>}
 
-      {DEV && (
-        <button
-          className="btn btn-ghost btn-sm"
-          disabled={!valid || busy}
-          onClick={() => signIn("dev-email", { email: email.trim(), callbackUrl: target })}
-        >
-          دخول تطويري (بدون رمز)
-        </button>
-      )}
     </div>
   );
 }

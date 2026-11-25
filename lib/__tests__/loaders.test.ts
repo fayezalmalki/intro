@@ -26,7 +26,7 @@ describe("loaders", () => {
     await reset(db);
 
     const mkAccount = async (email: string, name: string) => {
-      const [u] = await db.insert(authUsers).values({ email }).returning();
+      const [u] = await db.insert(authUsers).values({ email, name: "test" }).returning();
       const [a] = await db
         .insert(accounts)
         .values({ userId: u.id, displayName: name, initial: name[0], email, state: "verified" })

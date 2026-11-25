@@ -1,1 +1,0 @@
-ALTER TABLE "accounts" ADD COLUMN "role" text DEFAULT 'requester' NOT NULL;

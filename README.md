@@ -8,20 +8,20 @@ Arabic-first (RTL), Saudi market.
 
 ```bash
 npm install
-cp .env.example .env.local     # already points at the local database
-sh scripts/pg-start.sh         # Postgres, nothing to install
-npm run db:reset               # apply the schema and seed
-npm run dev                    # http://localhost:3000
+cp .dev.vars.example .dev.vars   # set BETTER_AUTH_SECRET (openssl rand -hex 32) and ADMIN_EMAILS
+npm run dev                      # http://localhost:3000 — Next.js on vinext, inside workerd
+npm run db:local -- --seed       # in a second terminal: apply migrations + demo data to local D1
 ```
 
-No API keys, no database to provision. `scripts/db-local.mjs` serves PGlite — Postgres
-compiled to WASM — over the real Postgres wire protocol, so local development runs the
-same driver path as Neon rather than a stand-in. `npm run db:reset` returns it to a
+Everything runs locally in the Workers runtime: D1, the AccountGate Durable Object and
+Cloudflare Email Service (simulated — sign-in codes are written to
+`.cloudflare/tmp/email/` and logged in the dev server output). No Cloudflare account is
+needed to develop. `npm run db:local -- --reset --seed` returns the local database to a
 known state.
 
-Set `ANTHROPIC_API_KEY` to have Claude extract the intent brief. Without one the app
-falls back to a deterministic keyword extractor, so every screen still works — the
-confirm screen shows which was used.
+Set `ANTHROPIC_API_KEY` in `.dev.vars` to have Claude extract the intent brief. Without
+one the app falls back to a deterministic keyword extractor, so every screen still works —
+the confirm screen shows which was used.
 
 ## Walk the loop
 
@@ -61,37 +61,36 @@ scores around 0.25 and passes. `lib/__tests__/similarity.probe.test.ts` pins tha
 |---|---|
 | Intake + Claude intent extraction + confirm | working |
 | AM queue with SLA | working |
-| AI-drafted pipeline, evidence-gated approval | working |
+| AI-drafted pipeline, evidence-gated approval | working — sourcing is still seeded (real sourcing is Phase 2) |
 | Offline attach — CSV, pasted rows/LinkedIn URLs, predefined list | working |
 | Pipeline versioning with outreach carry-forward | working |
-| Account states (observer / verified / managed) | working — no real auth behind them yet |
-| Send gate: suppression, cooldown, daily cap, credits, near-duplicate | working, 24 unit tests |
+| Auth — email OTP + Google (Better Auth), roles, account states | working |
+| Send gate: suppression, 90-day cross-account cooldown, daily cap, credits, near-duplicate | working — serialised per account in the AccountGate Durable Object |
 | Credit ledger (append-only, balance as a projection) | working |
-| Outreach — recorded as state transitions through the gate | no email sending yet |
-| Replies, inbox, double opt-in delivery | not built |
-| Auth, roles, RLS | not built — `lib/session.ts` is the stand-in |
+| Sign-in email | working — Cloudflare Email Service |
+| Outreach email, replies, intros, reminders | not built — Phase 4 |
 | Billing / PSP | not built — "فعّل الإرسال" is a dev grant of 5 credits |
+
+The rebuild plan, phase by phase: [`docs/plans/2026-11-25-intro-cloudflare-rebuild.md`](docs/plans/2026-11-25-intro-cloudflare-rebuild.md).
 
 ## Deploying
 
-**Not deployable yet, on purpose.** State still lives in a JSON file, and a
-serverless filesystem loses writes between requests — so `lib/env.ts` refuses to
-start the store when `NODE_ENV=production` without a `DATABASE_URL`. A request
-that looked accepted and then vanished is worse than a boot failure.
+Cloudflare Workers, deployed with `npm run deploy` (`vinext-cloudflare deploy`).
+`cloudflare.config.ts` is the source of truth for the Worker and its bindings.
 
-What clearing that takes:
+1. `npx cf auth login` (CI: `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
+2. Set the Worker secrets declared in `cloudflare.config.ts`: `BETTER_AUTH_SECRET`,
+   `BETTER_AUTH_URL`, `ADMIN_EMAILS`, and optionally `ANTHROPIC_API_KEY`,
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+3. Onboard `intro.sa` to Cloudflare Email Service so `noreply@intro.sa` can send.
+4. `npm run deploy`. The first deploy provisions the `intro-db` D1 database.
+5. Put its id in `D1_DATABASE_ID`, then `npm run db:migrate:remote` and
+   `npm run db:seed:remote` — or let the Migrate workflow do it on merge to `main`.
+6. Check `https://<host>/api/health`: it names whatever is still missing.
 
-1. A Neon `DATABASE_URL`, then `npm run db:migrate` as an explicit deploy step —
-   never from `build`, where a preview deploy sharing the URL would run DDL
-   against production.
-2. Porting `lib/store.ts` reads and writes onto `lib/db/scoped.ts`.
-3. Real auth, replacing `lib/session.ts`.
-
-The development-only account shortcuts (verify + grant credits) are disabled
-whenever `NODE_ENV=production`, and `lib/__tests__/env.test.ts` holds that.
-
-Copy `.env.example` to `.env.local` to run locally. No variable is required for
-the local flow.
+Migrations are never applied from a build. The development-only account shortcuts
+(verify + grant credits) are disabled whenever `NODE_ENV=production`, and
+`lib/__tests__/env.test.ts` holds that.
 
 ## Release flow
 
@@ -106,7 +105,8 @@ edit without `npm run db:generate` cannot merge.
 
 - [`docs/00-demo-review.md`](docs/00-demo-review.md) — review of the original `introsademo.html` prototype, extracted design tokens, and the gaps this MVP closes
 - [`docs/01-mvp-plan.md`](docs/01-mvp-plan.md) — the loop, request state machine, pipeline versioning, compliance, milestones
-- [`docs/02-data-model.md`](docs/02-data-model.md) — the target Postgres schema
+- [`docs/02-data-model.md`](docs/02-data-model.md) — the original data model (Postgres era; `lib/db/schema.ts` is current)
+- [`docs/plans/`](docs/plans/) — approved plans, with [`CHANGELOG.md`](docs/plans/CHANGELOG.md)
 - [`docs/03-design-review.md`](docs/03-design-review.md) — sending architecture, access model, monetization, tools, and the build order
 - [`design/`](design/) — the Claude Design canvas source (`.dc.html` artboards + `canvas.json`)
 
@@ -126,9 +126,12 @@ Two rules do most of the work:
 
 ## Stack
 
-Next.js 15 (App Router, server actions) · Claude API for intent extraction ·
-JSON file store.
+Next.js App Router on **vinext** (Vite) · **Cloudflare Workers** · **D1** via Drizzle ·
+a per-account **Durable Object** for the send/credit path · **Better Auth** (email OTP,
+Google) · **Cloudflare Email Service** · Claude API for intent extraction · tests in
+workerd via `@cloudflare/vitest-plugin`.
 
-The store is a stand-in for Supabase (Postgres + Auth + RLS + Storage), kept behind
-`lib/store.ts` so the swap is contained. It has no write locking, so it is fine for one
-person walking the flow and not for concurrent use.
+D1 has no interactive transactions: multi-write operations commit with `db.batch()`
+(atomic), conditions that must hold at write time live in the write's own `WHERE`, and the
+one read-decide-write path that moves money runs in the account's AccountGate Durable
+Object. See `lib/db/repo.ts`.

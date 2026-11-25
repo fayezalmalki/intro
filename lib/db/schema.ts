@@ -1,147 +1,189 @@
+import { sql } from "drizzle-orm";
 import {
-  pgTable, text, integer, boolean, timestamp, jsonb, uuid,
-  primaryKey, uniqueIndex, index,
-} from "drizzle-orm/pg-core";
-import type { AdapterAccountType } from "next-auth/adapters";
+  sqliteTable, text, integer, primaryKey, uniqueIndex, index,
+} from "drizzle-orm/sqlite-core";
 import type {
   AccountState, Channel, Evidence, Fit, GateFailure, GoalType, ItemStatus,
   LedgerReason, OutreachStatus, PipelineSource, PipelineStatus, RequestStatus,
   Role, SendPool,
 } from "../types";
 
-// ── NextAuth tables — copied from about-sa so the DrizzleAdapter works ──
+/**
+ * D1 (SQLite). Conventions:
+ * - ids are text, generated in JS with crypto.randomUUID().
+ * - domain timestamps are ISO-8601 text (`2026-11-25T17:00:00.000Z`), so string
+ *   comparison is chronological and a UTC date prefix is `slice(0, 10)`.
+ * - Better Auth tables store dates as integer milliseconds, which its Drizzle
+ *   adapter expects.
+ * - JSON columns are text with mode "json".
+ */
 
-export const authUsers = pgTable("auth_users", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  name: text("name"),
-  email: text("email").unique(),
-  emailVerified: timestamp("email_verified", { mode: "date" }),
+const id = () => text("id").primaryKey().$defaultFn(() => crypto.randomUUID());
+const now = () => new Date().toISOString();
+const isoNow = (name: string) => text(name).notNull().$defaultFn(now);
+const ms = (name: string) => integer(name, { mode: "timestamp_ms" });
+const bool = (name: string) => integer(name, { mode: "boolean" });
+
+// ── Better Auth ───────────────────────────────────────────────
+
+export const authUsers = sqliteTable("auth_users", {
+  id: id(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: bool("email_verified").notNull().default(false),
   image: text("image"),
+  createdAt: ms("created_at").notNull().$defaultFn(() => new Date()),
+  updatedAt: ms("updated_at").notNull().$defaultFn(() => new Date()),
 });
 
-export const authAccounts = pgTable("auth_accounts", {
+export const authSessions = sqliteTable("auth_sessions", {
+  id: id(),
   userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
-  type: text("type").$type<AdapterAccountType>().notNull(),
-  provider: text("provider").notNull(),
-  providerAccountId: text("provider_account_id").notNull(),
-  refresh_token: text("refresh_token"),
-  access_token: text("access_token"),
-  expires_at: integer("expires_at"),
-  token_type: text("token_type"),
+  token: text("token").notNull().unique(),
+  expiresAt: ms("expires_at").notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: ms("created_at").notNull().$defaultFn(() => new Date()),
+  updatedAt: ms("updated_at").notNull().$defaultFn(() => new Date()),
+}, (t) => [index("auth_sessions_user_idx").on(t.userId)]);
+
+export const authAccounts = sqliteTable("auth_accounts", {
+  id: id(),
+  userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: ms("access_token_expires_at"),
+  refreshTokenExpiresAt: ms("refresh_token_expires_at"),
   scope: text("scope"),
-  id_token: text("id_token"),
-  session_state: text("session_state"),
-}, (t) => [primaryKey({ columns: [t.provider, t.providerAccountId] })]);
+  password: text("password"),
+  createdAt: ms("created_at").notNull().$defaultFn(() => new Date()),
+  updatedAt: ms("updated_at").notNull().$defaultFn(() => new Date()),
+}, (t) => [index("auth_accounts_user_idx").on(t.userId)]);
 
-export const authSessions = pgTable("auth_sessions", {
-  sessionToken: text("session_token").primaryKey(),
-  userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
-  expires: timestamp("expires", { mode: "date" }).notNull(),
-});
-
-export const authVerificationTokens = pgTable("auth_verification_tokens", {
+export const authVerifications = sqliteTable("auth_verifications", {
+  id: id(),
   identifier: text("identifier").notNull(),
-  token: text("token").notNull(),
-  expires: timestamp("expires", { mode: "date" }).notNull(),
-}, (t) => [primaryKey({ columns: [t.identifier, t.token] })]);
+  value: text("value").notNull(),
+  expiresAt: ms("expires_at").notNull(),
+  createdAt: ms("created_at").notNull().$defaultFn(() => new Date()),
+  updatedAt: ms("updated_at").notNull().$defaultFn(() => new Date()),
+}, (t) => [index("auth_verifications_identifier_idx").on(t.identifier)]);
 
-export const otpCodes = pgTable("otp_codes", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull(),
-  code: text("code").notNull(),
-  expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
-}, (t) => [index("otp_codes_email_idx").on(t.email)]);
+/** Better Auth's database-backed rate limiter (Worker isolates share no memory). */
+export const authRateLimits = sqliteTable("auth_rate_limits", {
+  id: id(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});
 
 // ── Accounts ──────────────────────────────────────────────────
 
-export const accounts = pgTable("accounts", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const accounts = sqliteTable("accounts", {
+  id: id(),
   userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   displayName: text("display_name").notNull(),
   initial: text("initial").notNull(),
   email: text("email").notNull(),
   role: text("role").$type<Role>().notNull().default("requester"),
   state: text("state").$type<AccountState>().notNull().default("observer"),
-  verifiedAt: timestamp("verified_at", { mode: "string" }),
+  verifiedAt: text("verified_at"),
   dailyCap: integer("daily_cap").notNull().default(10),
-  frozenAt: timestamp("frozen_at", { mode: "string" }),
+  frozenAt: text("frozen_at"),
   frozenReason: text("frozen_reason"),
   assignedAm: text("assigned_am"),
-  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  createdAt: isoNow("created_at"),
 }, (t) => [uniqueIndex("accounts_user_id_idx").on(t.userId)]);
 
 // ── People graph ──────────────────────────────────────────────
 
-export const people = pgTable("people", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const people = sqliteTable("people", {
+  id: id(),
   latin: text("latin").notNull(),
   firstAr: text("first_ar").notNull(),
   title: text("title").notNull(),
   company: text("company").notNull(),
+  companyDomain: text("company_domain"),
   geo: text("geo").notNull(),
-  industries: jsonb("industries").$type<string[]>().notNull().default([]),
+  industries: text("industries", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
   seniority: text("seniority").notNull(),
   linkedinUrl: text("linkedin_url"),
+  // Bought only once a requester approves the person (PDPL: minimum data).
   email: text("email"),
-  emailVerified: boolean("email_verified").notNull().default(false),
-  openToIntros: boolean("open_to_intros").notNull().default(false),
-  source: text("source").$type<"seed" | "ai" | "am" | "import">().notNull(),
+  emailVerified: bool("email_verified").notNull().default(false),
+  openToIntros: bool("open_to_intros").notNull().default(false),
+  source: text("source").$type<"seed" | "ai" | "am" | "import" | "provider">().notNull(),
+  // Which data provider answered (treg `_treg.served_by`), for provenance.
+  servedBy: text("served_by"),
+  updatedAt: isoNow("updated_at"),
 }, (t) => [
   uniqueIndex("people_linkedin_idx").on(t.linkedinUrl),
   index("people_email_idx").on(t.email),
+  index("people_company_domain_idx").on(t.companyDomain),
 ]);
 
-export const peopleLists = pgTable("people_lists", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const peopleLists = sqliteTable("people_lists", {
+  id: id(),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
 });
 
-export const listMembers = pgTable("list_members", {
+export const listMembers = sqliteTable("list_members", {
   listId: text("list_id").notNull().references(() => peopleLists.id, { onDelete: "cascade" }),
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
 }, (t) => [primaryKey({ columns: [t.listId, t.personId] })]);
 
 // ── Requests and pipelines ────────────────────────────────────
 
-export const requests = pgTable("requests", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const requests = sqliteTable("requests", {
+  id: id(),
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
   requesterName: text("requester_name").notNull(),
   requesterInitial: text("requester_initial").notNull(),
   rawText: text("raw_text").notNull(),
   status: text("status").$type<RequestStatus>().notNull(),
   goalType: text("goal_type").$type<GoalType>(),
-  brief: jsonb("brief"),
-  confirmedAt: timestamp("confirmed_at", { mode: "string" }),
+  // The predefined use case the request started from, if any (src/content/use-cases.ts).
+  useCase: text("use_case"),
+  sectors: text("sectors", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  brief: text("brief", { mode: "json" }),
+  confirmedAt: text("confirmed_at"),
   // Nullable: a request is unassigned until an account manager claims it.
   assignedAm: text("assigned_am"),
-  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
-  dueAt: timestamp("due_at", { mode: "string" }).notNull(),
+  // Running sourcing spend in micro-USD (sum of treg X-Treg-Cost-Micro).
+  sourcingCostMicro: integer("sourcing_cost_micro").notNull().default(0),
+  workflowId: text("workflow_id"),
+  createdAt: isoNow("created_at"),
+  dueAt: text("due_at").notNull(),
 }, (t) => [index("requests_account_idx").on(t.accountId)]);
 
-export const pipelines = pgTable("pipelines", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const pipelines = sqliteTable("pipelines", {
+  id: id(),
   requestId: text("request_id").notNull().references(() => requests.id, { onDelete: "cascade" }),
   version: integer("version").notNull(),
   source: text("source").$type<PipelineSource>().notNull(),
   status: text("status").$type<PipelineStatus>().notNull(),
   createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
-  publishedAt: timestamp("published_at", { mode: "string" }),
+  createdAt: isoNow("created_at"),
+  publishedAt: text("published_at"),
   note: text("note"),
 }, (t) => [
   uniqueIndex("pipelines_request_version_idx").on(t.requestId, t.version),
   index("pipelines_request_status_idx").on(t.requestId, t.status),
+  // At most one published pipeline per request (docs/02-data-model.md).
+  uniqueIndex("pipelines_one_published_idx").on(t.requestId).where(sql`status = 'published'`),
 ]);
 
-export const pipelineItems = pgTable("pipeline_items", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const pipelineItems = sqliteTable("pipeline_items", {
+  id: id(),
   pipelineId: text("pipeline_id").notNull().references(() => pipelines.id, { onDelete: "cascade" }),
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
   rank: integer("rank").notNull(),
   fit: text("fit").$type<Fit>().notNull(),
-  thin: boolean("thin").notNull().default(false),
+  thin: bool("thin").notNull().default(false),
   why: text("why").notNull(),
   whyNow: text("why_now").notNull(),
   roleRelevance: text("role_relevance").notNull(),
@@ -153,7 +195,7 @@ export const pipelineItems = pgTable("pipeline_items", {
   channel: text("channel").$type<Channel>().notNull(),
   status: text("status").$type<ItemStatus>().notNull(),
   amNote: text("am_note"),
-  evidence: jsonb("evidence").$type<Evidence[]>().notNull().default([]),
+  evidence: text("evidence", { mode: "json" }).$type<Evidence[]>().notNull().default(sql`'[]'`),
   generatedBy: text("generated_by").$type<"ai" | "am">().notNull(),
 }, (t) => [index("pipeline_items_pipeline_idx").on(t.pipelineId)]);
 
@@ -163,16 +205,16 @@ export const pipelineItems = pgTable("pipeline_items", {
  * Keyed by (request, person) rather than by pipeline item, so a sent message
  * or an open intro survives a pipeline being replaced.
  */
-export const outreach = pgTable("outreach", {
+export const outreach = sqliteTable("outreach", {
   requestId: text("request_id").notNull().references(() => requests.id, { onDelete: "cascade" }),
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
   channel: text("channel").$type<Channel>().notNull(),
   status: text("status").$type<OutreachStatus>().notNull(),
-  updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
+  updatedAt: isoNow("updated_at"),
 }, (t) => [primaryKey({ columns: [t.requestId, t.personId] })]);
 
-export const sendAttempts = pgTable("send_attempts", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const sendAttempts = sqliteTable("send_attempts", {
+  id: id(),
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
   requestId: text("request_id").notNull().references(() => requests.id, { onDelete: "cascade" }),
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
@@ -181,9 +223,9 @@ export const sendAttempts = pgTable("send_attempts", {
   body: text("body").notNull(),
   variantHash: text("variant_hash").notNull(),
   result: text("result").$type<"allowed" | "refused">().notNull(),
-  gateFailures: jsonb("gate_failures").$type<GateFailure[]>().notNull().default([]),
+  gateFailures: text("gate_failures", { mode: "json" }).$type<GateFailure[]>().notNull().default(sql`'[]'`),
   providerMessageId: text("provider_message_id"),
-  at: timestamp("at", { mode: "string" }).notNull().defaultNow(),
+  at: isoNow("at"),
 }, (t) => [
   index("send_attempts_account_at_idx").on(t.accountId, t.at),
   index("send_attempts_person_idx").on(t.personId),
@@ -193,11 +235,11 @@ export const sendAttempts = pgTable("send_attempts", {
  * A target who opts out is out everywhere. Hashed so the suppression list is
  * not itself a usable mailing list.
  */
-export const suppressions = pgTable("suppressions", {
+export const suppressions = sqliteTable("suppressions", {
   emailHash: text("email_hash").primaryKey(),
   reason: text("reason").$type<"unsubscribed" | "complained" | "bounced" | "manual">().notNull(),
   source: text("source").notNull(),
-  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  createdAt: isoNow("created_at"),
 });
 
 // ── Money ─────────────────────────────────────────────────────
@@ -206,17 +248,17 @@ export const suppressions = pgTable("suppressions", {
  * Append-only. Balance is a projection, never a column.
  *
  * The unique index on (account_id, reason, ref) is what makes credit grants
- * idempotent: a retried StreamPay webhook carrying the same invoice id as
- * `ref` writes nothing the second time. Without it, a provider retry is free
- * money — see docs/03-design-review.md.
+ * idempotent: a retried payment webhook carrying the same invoice id as `ref`
+ * writes nothing the second time. SQLite, like Postgres, treats NULLs as
+ * distinct, so entries without a ref never collide.
  */
-export const ledger = pgTable("ledger", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+export const ledger = sqliteTable("ledger", {
+  id: id(),
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
   delta: integer("delta").notNull(),
   reason: text("reason").$type<LedgerReason>().notNull(),
   ref: text("ref"),
-  at: timestamp("at", { mode: "string" }).notNull().defaultNow(),
+  at: isoNow("at"),
 }, (t) => [
   uniqueIndex("ledger_idempotency_idx").on(t.accountId, t.reason, t.ref),
   index("ledger_account_idx").on(t.accountId),
@@ -224,9 +266,9 @@ export const ledger = pgTable("ledger", {
 
 // ── Audit ─────────────────────────────────────────────────────
 
-export const auditEvents = pgTable("audit_events", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  at: timestamp("at", { mode: "string" }).notNull().defaultNow(),
+export const auditEvents = sqliteTable("audit_events", {
+  id: id(),
+  at: isoNow("at"),
   actor: text("actor").notNull(),
   entity: text("entity").notNull(),
   action: text("action").notNull(),

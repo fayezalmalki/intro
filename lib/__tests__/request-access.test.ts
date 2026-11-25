@@ -19,8 +19,19 @@ import type { Account, Role } from "../types";
  */
 let signedIn = "";
 
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+
 vi.mock("../auth", () => ({
-  auth: async () => (signedIn ? { user: { email: signedIn } } : null),
+  // currentAccount() reads the Better Auth session user; tests set who is signed in.
+  // Resolves the real user row by email, as Better Auth's session would.
+  getSessionUser: async () => {
+    if (!signedIn) return null;
+    const { testDb } = await import("../db/testing");
+    const { eq } = await import("drizzle-orm");
+    const { authUsers: users } = await import("../db/schema");
+    const [user] = await (await testDb()).select().from(users).where(eq(users.email, signedIn)).limit(1);
+    return user ?? null;
+  },
 }));
 
 describe("request access", () => {
@@ -28,7 +39,7 @@ describe("request access", () => {
   const id: Record<string, string> = {};
 
   const mkAccount = async (email: string, role: Role) => {
-    const [u] = await db.insert(authUsers).values({ email }).returning();
+    const [u] = await db.insert(authUsers).values({ email, name: "test" }).returning();
     const [a] = await db
       .insert(accounts)
       .values({

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
+import { sendThroughGate } from "./send";
 import { currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
 import { assertDevTools } from "./env";
 import type { Channel, PipelineSource, Role } from "./types";
@@ -106,8 +107,9 @@ export interface SendResult {
 
 /**
  * The only path to an outreach record. Everything runs through canSend() inside
- * a transaction that locks the account row, so no provider is ever reached
- * without an allowed verdict and no two sends can spend the same credit.
+ * the account's AccountGate Durable Object, which processes one send per
+ * account at a time — so no provider is ever reached without an allowed
+ * verdict and no two sends can spend the same credit.
  */
 export async function markOutreach(
   _prev: SendResult | undefined,
@@ -119,7 +121,7 @@ export async function markOutreach(
   // account attached to another account's request.
   const account = await requireRequestOwner(requestId, "send on this request");
 
-  const result = await repo.recordSend({
+  const result = await sendThroughGate({
     accountId: account.id,
     requestId,
     personId: String(formData.get("personId")),

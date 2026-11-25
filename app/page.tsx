@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/Chrome";
-import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { getSessionUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,7 @@ export const dynamic = "force-dynamic";
  * JavaScript and still works with none.
  */
 export default async function LandingPage() {
-  const session = await auth();
-  const signedIn = Boolean(session?.user);
+  const signedIn = Boolean(await getSessionUser(await headers()));
 
   return (
     <div className="landing">

@@ -1,4 +1,6 @@
+import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import type { AccountGate } from "../../worker/account-gate";
 import { eq } from "drizzle-orm";
 import { reset, testDb } from "../db/testing";
 import * as repo from "../db/repo";
@@ -27,7 +29,7 @@ describe("repository writes", () => {
     db = await testDb();
     await reset(db);
 
-    const [user] = await db.insert(authUsers).values({ email: "f@x.sa" }).returning();
+    const [user] = await db.insert(authUsers).values({ email: "f@x.sa", name: "test" }).returning();
     const [account] = await db.insert(accounts).values({
       userId: user.id, displayName: "فيصل", initial: "F", email: "f@x.sa", state: "verified",
     }).returning();
@@ -192,6 +194,11 @@ describe("repository writes", () => {
      * The reason recordSend locks the account row. Without FOR UPDATE both
      * sends read a balance of one and both spend it.
      */
+    /**
+     * The money race. Concurrency control lives in the per-account AccountGate
+     * Durable Object (worker/account-gate.ts), which replaced Postgres'
+     * SELECT … FOR UPDATE — so this goes through the real DO, as the app does.
+     */
     it("lets only one of two concurrent sends spend the last credit", async () => {
       await db.delete(ledger);
       await db.insert(ledger).values({ accountId, delta: 1, reason: "grant", ref: "one" });
@@ -210,12 +217,17 @@ describe("repository writes", () => {
         evidence: [{ url: "u", title: "t", source: "s", date: "d", assertedBy: "ai" }],
       });
 
+      const gates = (env as unknown as { ACCOUNT_GATE: DurableObjectNamespace<AccountGate> }).ACCOUNT_GATE;
+      const gate = gates.get(gates.idFromName(accountId));
       const results = await Promise.all([
-        send("رسالة أولى تخص نورة وتذكر توسع فريق المنتج بعد الجولة."),
-        repo.recordSend({
+        gate.send({
+          accountId, requestId, personId, channel: "email", actor: "فيصل",
+          body: "رسالة أولى تخص نورة وتذكر توسع فريق المنتج بعد الجولة.",
+        }),
+        gate.send({
           accountId, requestId, personId: second.id, channel: "email", actor: "فيصل",
           body: "رسالة ثانية مختلفة تمامًا تخص ليان ودورها القادم في التأمين.",
-        }, db),
+        }),
       ]);
 
       expect(results.filter((r) => r.ok)).toHaveLength(1);
