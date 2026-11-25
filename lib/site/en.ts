@@ -99,6 +99,28 @@ export const en: Dictionary = {
     lead: "Decision makers across",
     items: ["Banking", "Insurance", "Fintech", "Healthcare", "Retail", "Government", "Real estate", "Logistics", "Telecom", "Energy"],
   },
+  search: {
+    box: {
+      label: "Who do you need to reach?",
+      modes: { companies: "Companies", people: "People" },
+      placeholder: { companies: "e.g. insurers expanding into digital claims", people: "e.g. heads of procurement at private hospitals" },
+      market: "Market",
+      submit: "Search",
+      note: "Free to search. Sign in with your email — no password.",
+    },
+    ways: {
+      chip: "Ways to search",
+      heading: "Four ways in. One answer: who to talk to.",
+      body: "Search by sector, by role, by name or by news — in Saudi and across the Gulf. Every result is a real person you can save, verify and reach.",
+      items: [
+        { mode: "companies", icon: "building", title: "Companies by sector", body: "Map a market: every insurer, hospital group or retailer — then open their decision makers in one click.", examples: [{ label: "Saudi insurers", href: "/search?mode=companies&market=SA&sector=Insurance&role=Chief&run=1&lang=en" }, { label: "Hospital groups in the UAE", href: "/search?mode=companies&market=AE&sector=Hospital+%26+Health+Care&role=Head&run=1&lang=en" }, { label: "Fintechs in Saudi", href: "/search?mode=companies&market=SA&sector=Financial+Services&role=Chief&run=1&lang=en" }] },
+        { mode: "people", icon: "users", title: "People by role", body: "Name the role, or describe who you need in a sentence. We match titles, seniority and market.", examples: [{ label: "Procurement heads, Riyadh", href: "/search?mode=people&market=SA&describe=Heads+of+procurement+at+large+companies+in+Riyadh&run=1&lang=en" }, { label: "Chief digital officers, Gulf banks", href: "/search?mode=people&market=AE&describe=Chief+digital+officers+at+Gulf+banks&run=1&lang=en" }, { label: "Engineering managers, Saudi tech", href: "/search?mode=people&market=SA&describe=Engineering+managers+at+Saudi+tech+companies&run=1&lang=en" }] },
+        { mode: "person", icon: "user-search", title: "One specific person", body: "Have a name? Find their current role and company, then verify their work email.", examples: [{ label: "Look up a name", href: "/search?mode=person&lang=en" }] },
+        { mode: "news", icon: "file-text", title: "News & buying signals", body: "Tenders, funding, expansions and new hires — the reason to write this week, not next quarter.", examples: [{ label: "Insurance tenders in Saudi", href: "/search?mode=news&market=SA&topic=insurance+tender&run=1&lang=en" }, { label: "Healthcare expansion, Riyadh", href: "/search?mode=news&market=SA&topic=new+hospital+Riyadh&run=1&lang=en" }] },
+      ],
+      markets: "Saudi Arabia · UAE · Qatar · Kuwait · Bahrain · Oman · Egypt · Jordan",
+    },
+  },
   demo: {
     chip: "How it works",
     heading: "Say what you need. Meet who can make it happen.",

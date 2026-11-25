@@ -98,7 +98,7 @@ export function Nav({ t, signedIn }: { t: Dictionary; signedIn: boolean }) {
     <header className="relative z-20 bg-white">
       <Container className="flex h-[76px] items-center justify-between">
         <a href={home} aria-label={n.home} className="rounded-md">
-          <Wordmark />
+          <Wordmark lang={t.locale} />
         </a>
 
         <NavMenus

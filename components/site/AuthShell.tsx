@@ -39,7 +39,7 @@ export function AuthShell({
   return (
     <div lang={lang} dir={rtl ? "rtl" : "ltr"} data-dir={rtl ? "rtl" : "ltr"} className={`site ${geist.variable} ${interTight.variable} min-h-dvh bg-surface-3`}>
       <header className="mx-auto flex h-[72px] w-full max-w-[1152px] items-center justify-between px-4 sm:px-6">
-        <a href={rtl ? "/ar" : "/"} aria-label="intro.sa"><Wordmark /></a>
+        <a href={rtl ? "/ar" : "/"} aria-label="intro.sa"><Wordmark lang={lang} /></a>
         <a href={switchHref} lang={rtl ? "en" : "ar"} className={cx("text-[14px] font-medium text-muted hover:text-ink", rtl ? "font-latin" : "font-ar")}>
           {rtl ? "English" : "العربية"}
         </a>

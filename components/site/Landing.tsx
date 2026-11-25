@@ -3,7 +3,7 @@ import type { Dictionary } from "@/lib/site/types";
 import { Demo } from "./Demo";
 import { Hero } from "./Hero";
 import { Nav } from "./Nav";
-import { Faq, Footer, Invitation, Limits, Pricing, Principles, Sectors, Statement, Stories, UseCases } from "./Sections";
+import { Faq, Footer, Invitation, Limits, Pricing, Principles, Sectors, Statement, Stories, UseCases, Ways } from "./Sections";
 import "../../app/site.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
@@ -27,6 +27,7 @@ export function Landing({ t, signedIn }: { t: Dictionary; signedIn: boolean }) {
       <main id="main">
         <Hero t={t} />
         <Sectors t={t} />
+        <Ways t={t} />
         <Demo t={t} />
         <Statement t={t} />
         <UseCases t={t} />

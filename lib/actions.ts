@@ -65,6 +65,10 @@ export async function confirmBrief(formData: FormData): Promise<void> {
     }
   } else {
     await repo.confirmBrief(requestId, summary || undefined);
+    // Without live sourcing the draft is written inline; publish it for
+    // self-serve accounts the same way the workflow does.
+    const account = await currentAccount();
+    if (account.state !== "managed") await repo.autoPublishLatestDraft(requestId, "AI");
   }
 
   revalidatePath("/am");
@@ -263,6 +267,7 @@ export async function completeOnboarding(formData: FormData): Promise<void> {
     redirect(`/welcome?next=${encodeURIComponent(next)}&missing=1${locale === "en" ? "&lang=en" : ""}`);
   }
   const useCase = String(formData.get("useCase") ?? "");
+  await repo.grantWelcomeCredits(account.id);
   await repo.completeOnboarding({
     accountId: account.id,
     name,

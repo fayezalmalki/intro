@@ -3,8 +3,8 @@ import type { BatchItem } from "drizzle-orm/batch";
 import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
-  accounts, auditEvents, ledger, listMembers, outreach, people, pipelineItems,
-  pipelines, requests, sendAttempts,
+  accounts, auditEvents, leads, ledger, listMembers, outreach, people, pipelineItems,
+  pipelines, requests, searchLog, sendAttempts,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
@@ -686,4 +686,170 @@ export async function requestActivation(
     audit(database, account.displayName, input.accountId, "account.activation_requested", input.companyWebsite),
   ]);
   return { ok: true, first };
+}
+
+
+// ── Search and leads ──────────────────────────────────────────
+
+export async function logSearch(
+  input: { accountId: string; kind: "companies" | "people" | "person" | "news" | "email"; query: Record<string, unknown>; results: number; costMicro: number; servedBy?: string },
+  database: Database = defaultDb,
+): Promise<void> {
+  await database.insert(searchLog).values({ ...input, servedBy: input.servedBy ?? null });
+}
+
+/** Searches run and micro-USD spent by an account since UTC midnight. */
+export async function searchUsageToday(accountId: string, database: Database = defaultDb): Promise<{ count: number; costMicro: number }> {
+  const since = `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
+  const [row] = await database
+    .select({ count: sql<number>`count(*)`, costMicro: sql<number>`coalesce(sum(${searchLog.costMicro}), 0)` })
+    .from(searchLog)
+    .where(and(eq(searchLog.accountId, accountId), sql`${searchLog.createdAt} >= ${since}`));
+  return { count: Number(row?.count ?? 0), costMicro: Number(row?.costMicro ?? 0) };
+}
+
+export interface LeadPerson {
+  name: string;
+  title: string;
+  company: string;
+  companyDomain?: string;
+  linkedinUrl?: string;
+  location?: string;
+  servedBy?: string;
+  industries?: string[];
+  seniority: string;
+}
+
+/**
+ * Saves a person from search as a lead: the person is upserted by LinkedIn
+ * URL (one row however many accounts save them), the lead is unique per
+ * account and person. Returns the lead id, new or existing.
+ */
+export async function saveLead(
+  input: { accountId: string; person: LeadPerson; market?: string; source?: "search" | "request" },
+  database: Database = defaultDb,
+): Promise<string> {
+  const p = input.person;
+  let personId: string | undefined;
+  if (p.linkedinUrl) {
+    const [known] = await database.select({ id: people.id }).from(people).where(eq(people.linkedinUrl, p.linkedinUrl)).limit(1);
+    personId = known?.id;
+  }
+  const fields = {
+    latin: p.name, firstAr: p.name.split(/\s+/)[0] ?? p.name, title: p.title, company: p.company,
+    companyDomain: p.companyDomain ?? null, geo: p.location ?? "", industries: p.industries ?? [],
+    seniority: p.seniority, linkedinUrl: p.linkedinUrl ?? null, source: "provider" as const,
+    servedBy: p.servedBy ?? null, updatedAt: nowIso(),
+  };
+  const statements: Stmt[] = [];
+  if (personId) {
+    statements.push(database.update(people).set(fields).where(eq(people.id, personId)));
+  } else {
+    personId = crypto.randomUUID();
+    statements.push(database.insert(people).values({ id: personId, ...fields }));
+  }
+  statements.push(
+    database.insert(leads)
+      .values({ accountId: input.accountId, personId, source: input.source ?? "search", market: input.market ?? null })
+      .onConflictDoNothing(),
+  );
+  await commit(database, statements);
+  const [lead] = await database.select({ id: leads.id }).from(leads)
+    .where(and(eq(leads.accountId, input.accountId), eq(leads.personId, personId))).limit(1);
+  return lead!.id;
+}
+
+export type LeadRow = typeof leads.$inferSelect & { person: typeof people.$inferSelect };
+
+export async function listLeads(accountId: string, database: Database = defaultDb): Promise<LeadRow[]> {
+  const rows = await database.select().from(leads).innerJoin(people, eq(leads.personId, people.id))
+    .where(eq(leads.accountId, accountId)).orderBy(sql`${leads.createdAt} desc`);
+  return rows.map((r) => ({ ...r.leads, person: r.people }));
+}
+
+export async function getLead(accountId: string, leadId: string, database: Database = defaultDb): Promise<LeadRow | null> {
+  const [r] = await database.select().from(leads).innerJoin(people, eq(leads.personId, people.id))
+    .where(and(eq(leads.id, leadId), eq(leads.accountId, accountId))).limit(1);
+  return r ? { ...r.leads, person: r.people } : null;
+}
+
+export async function saveLeadSignals(leadId: string, signals: NonNullable<typeof leads.$inferSelect["signals"]>, database: Database = defaultDb) {
+  await database.update(leads).set({ signals }).where(eq(leads.id, leadId));
+}
+
+/**
+ * Reserves the credit for revealing a lead's email. Runs inside the
+ * AccountGate Durable Object (one call per account at a time), so two reveals
+ * can never both spend the last credit. Revealing the same person again is
+ * free: the ledger ref is the person, and ledger_idempotency_idx holds it.
+ */
+export async function reserveReveal(
+  input: { accountId: string; personId: string },
+  database: Database = defaultDb,
+): Promise<{ ok: true; charged: boolean } | { ok: false; reason: "insufficient_credits" }> {
+  const ref = `reveal:${input.personId}`;
+  const [already] = await database.select({ id: ledger.id }).from(ledger)
+    .where(and(eq(ledger.accountId, input.accountId), eq(ledger.reason, "reveal"), eq(ledger.ref, ref))).limit(1);
+  if (already) return { ok: true, charged: false };
+  const [bal] = await database.select({ balance: sql<number>`coalesce(sum(${ledger.delta}), 0)` })
+    .from(ledger).where(eq(ledger.accountId, input.accountId));
+  if (Number(bal?.balance ?? 0) < 1) return { ok: false, reason: "insufficient_credits" };
+  await database.insert(ledger).values({ accountId: input.accountId, delta: -1, reason: "reveal", ref }).onConflictDoNothing();
+  return { ok: true, charged: true };
+}
+
+/** Records what the reveal found, and refunds the credit when nothing usable was. */
+export async function recordReveal(
+  input: { accountId: string; leadId: string; personId: string; email: string | null; status: "valid" | "risky" | "invalid" | "not_found" },
+  database: Database = defaultDb,
+): Promise<void> {
+  const usable = input.email && input.status !== "invalid";
+  const statements: Stmt[] = [
+    database.update(leads).set({ email: usable ? input.email : null, emailStatus: input.status, revealedAt: nowIso() })
+      .where(and(eq(leads.id, input.leadId), eq(leads.accountId, input.accountId))),
+    audit(database, input.accountId, input.leadId, "lead.revealed", input.status),
+  ];
+  if (usable) {
+    statements.push(database.update(people).set({ email: input.email, emailVerified: input.status === "valid" }).where(eq(people.id, input.personId)));
+  } else {
+    statements.push(database.insert(ledger)
+      .values({ accountId: input.accountId, delta: 1, reason: "refund_reveal", ref: `reveal:${input.personId}` })
+      .onConflictDoNothing());
+  }
+  await commit(database, statements);
+}
+
+/** A few free reveals on finishing onboarding, so search pays off on day one. */
+export const WELCOME_CREDITS = 3;
+export async function grantWelcomeCredits(accountId: string, database: Database = defaultDb): Promise<void> {
+  await database.insert(ledger)
+    .values({ accountId, delta: WELCOME_CREDITS, reason: "grant", ref: "welcome" })
+    .onConflictDoNothing();
+}
+
+export async function creditBalance(accountId: string, database: Database = defaultDb): Promise<number> {
+  const [bal] = await database.select({ balance: sql<number>`coalesce(sum(${ledger.delta}), 0)` })
+    .from(ledger).where(eq(ledger.accountId, accountId));
+  return Number(bal?.balance ?? 0);
+}
+
+/**
+ * Self-serve accounts don't wait for an account manager: every row backed by
+ * a source is approved and the pipeline is published straight away. Rows
+ * without evidence stay out, as they would in review. Managed accounts keep
+ * the review step (the caller decides).
+ */
+export async function autoPublish(pipelineId: string, actor: string, database: Database = defaultDb): Promise<string | null> {
+  const items = await database.select().from(pipelineItems).where(eq(pipelineItems.pipelineId, pipelineId));
+  const backed = items.filter((i) => (i.evidence ?? []).length > 0).map((i) => i.id);
+  if (backed.length === 0) return null;
+  await database.update(pipelineItems).set({ status: "approved" }).where(inArray(pipelineItems.id, backed));
+  return publishPipeline(pipelineId, actor, database);
+}
+
+export async function autoPublishLatestDraft(requestId: string, actor: string, database: Database = defaultDb): Promise<string | null> {
+  const [draft] = await database.select({ id: pipelines.id }).from(pipelines)
+    .where(and(eq(pipelines.requestId, requestId), eq(pipelines.status, "draft")))
+    .orderBy(sql`${pipelines.version} desc`).limit(1);
+  return draft ? autoPublish(draft.id, actor, database) : null;
 }

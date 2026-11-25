@@ -76,12 +76,19 @@ export function Mark({ className }: { className?: string }) {
   );
 }
 
-export function Wordmark({ className }: { className?: string }) {
+/**
+ * The traced intro wordmark — the same mark as the dashboard (public/logo).
+ * Arabic pages carry «انترو», English pages «Intro»; the language decides,
+ * not the layout direction.
+ */
+export function Wordmark({ className, lang = "en", tone = "ink" }: { className?: string; lang?: "ar" | "en"; tone?: "ink" | "paper" }) {
   return (
-    <span className={cx("flex items-center gap-2", className)} dir="ltr">
-      <Mark />
-      <span className="font-latin text-[25px] leading-none font-semibold tracking-[-0.9px] text-brand">intro.sa</span>
-    </span>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/logo/intro-${lang}-${tone}.svg`}
+      alt={lang === "ar" ? "انترو" : "Intro"}
+      className={cx("block w-auto shrink-0", lang === "ar" ? "h-[34px]" : "h-[26px]", className)}
+    />
   );
 }
 

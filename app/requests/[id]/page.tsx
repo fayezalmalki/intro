@@ -175,10 +175,11 @@ function Sourcing({
   summary: string;
   am?: string;
 }) {
+  const managed = account.state === "managed";
   const steps = [
     { label: "الطلب", done: true },
     { label: "الفهم", done: true },
-    { label: "التجهيز", done: true },
+    { label: "البحث", done: true },
     { label: "النتائج", done: false },
   ];
   return (
@@ -198,25 +199,43 @@ function Sourcing({
             ))}
           </div>
 
-          <div className="stack g12">
-            <h1>فريقنا يجهّز قائمتك.</h1>
-            <p className="muted">
-              فهمنا طلبك وبدأنا نبني القائمة. عادةً تجهز خلال {ar(24)} ساعة، ونرسل لك إشعارًا أول ما تصير جاهزة.
-            </p>
-          </div>
-
-          <div className="card row g12">
-            <div className="avatar lg">{am ? am.charAt(0) : "؟"}</div>
-            <div className="grow stack g4">
-              {/* A request waits unassigned until an account manager claims it,
-                  so this says so rather than naming someone who has not. */}
-              <strong className="sm">{am ? `${am} تشتغل على طلبك` : "طلبك في الطابور"}</strong>
-              <span className="sm muted">
-                {am ? "مدير حسابك" : "بيتواصل معك مدير حسابك قريبًا"}
-              </span>
-            </div>
-            <span className="pill ok">قيد التجهيز</span>
-          </div>
+          {managed ? (
+            <>
+              <div className="stack g12">
+                <h1>مدير حسابك يراجع قائمتك.</h1>
+                <p className="muted">
+                  جهّزنا المطابقات، ومدير حسابك يراجعها قبل ما توصلك. عادةً خلال يوم عمل، ونرسل لك إشعارًا أول ما تجهز.
+                </p>
+              </div>
+              <div className="card row g12">
+                <div className="avatar lg">{am ? am.charAt(0) : "؟"}</div>
+                <div className="grow stack g4">
+                  <strong className="sm">{am ? `${am} تراجع طلبك` : "طلبك عند فريق الحسابات"}</strong>
+                  <span className="sm muted">{am ? "مدير حسابك" : "يستلمه مدير حسابك قريبًا"}</span>
+                </div>
+                <span className="pill ok">قيد المراجعة</span>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Self-serve: sourcing runs live and publishes itself, usually
+                  within a minute. The page refreshes until results land. */}
+              <meta httpEquiv="refresh" content="6" />
+              <div className="stack g12">
+                <h1>نبحث الآن عن الأشخاص المناسبين…</h1>
+                <p className="muted">
+                  نحدد الجهات، ونلقى صاحب القرار في كل وحدة، ونتحقق من الأخبار. تظهر النتائج هنا تلقائيًا، وعادةً خلال دقيقة.
+                </p>
+              </div>
+              <div className="card row between g12">
+                <div className="stack g4">
+                  <strong className="sm">ما تبي تنتظر؟</strong>
+                  <span className="sm muted">ابحث مباشرة عن الجهات وأصحاب القرار، واكشف بريدهم الموثّق.</span>
+                </div>
+                <Link href={`/search?mode=people&describe=${encodeURIComponent(requestText)}&run=1`} className="btn btn-strong btn-sm">ابحث الآن</Link>
+              </div>
+            </>
+          )}
 
           <div className="card stack g12">
             <span className="eyebrow">طلبك</span>

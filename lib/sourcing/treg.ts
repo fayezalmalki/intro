@@ -33,7 +33,7 @@ export class TregProvider implements SourcingProvider {
   private async call<T>(
     tool: string, body: Record<string, unknown>, options: CallOptions,
     extra: Record<string, string> = {},
-  ): Promise<{ output: T; costMicro: number; servedBy: string }> {
+  ): Promise<{ output: T; costMicro: number; servedBy: string; verification?: { verdict?: string } }> {
     const response = await this.fetcher(`${BASE}/${tool}`, {
       method: "POST",
       headers: {
@@ -47,21 +47,24 @@ export class TregProvider implements SourcingProvider {
     });
     const costMicro = Number(response.headers.get("x-treg-cost-micro") ?? 0) || 0;
     if (!response.ok) throw new TregError(response.status, tool, await response.text());
-    const json = (await response.json()) as { output?: T; _treg?: { served_by?: string } };
+    const json = (await response.json()) as { output?: T; _treg?: { served_by?: string; verification?: { verdict?: string } } };
     return {
       output: (json.output ?? {}) as T,
       costMicro,
+      verification: json._treg?.verification,
       servedBy: json._treg?.served_by ?? response.headers.get("x-treg-served-by") ?? "treg",
     };
   }
 
   async findCompanies(
-    query: { industry?: string; q?: string; country: string; limit: number },
+    query: { industry?: string; q?: string; name?: string; country: string; limit: number },
     options: CallOptions,
   ): Promise<Priced<Company[]>> {
-    const body = query.industry
-      ? { industry: query.industry, country: query.country, limit: query.limit }
-      : { q: query.q, country: query.country, limit: query.limit };
+    const body = query.name
+      ? { name: query.name, country: query.country, limit: query.limit }
+      : query.industry
+        ? { industry: query.industry, country: query.country, limit: query.limit }
+        : { q: query.q, country: query.country, limit: query.limit };
     const r = await this.call<{ companies?: RawCompany[] }>("treg.companies.search", body, options);
     const companies = (r.output.companies ?? [])
       .filter((c) => !c.country || c.country.toUpperCase() === query.country)
@@ -74,19 +77,39 @@ export class TregProvider implements SourcingProvider {
     query: { companyDomain: string; title: string; country: string; limit: number },
     options: CallOptions,
   ): Promise<Priced<FoundPerson[]>> {
-    const r = await this.call<{ people?: RawPerson[] }>(
-      "treg.people.search",
-      { company_domain: query.companyDomain, title: query.title, country: query.country, limit: query.limit },
-      options,
-      { "x-treg-route-strict-filters": "1" },
-    );
+    return this.searchPeople(query, options);
+  }
+
+  /**
+   * People by any identity treg routes on: a company domain (+ title), a
+   * free-text description (q, semantic), or one person's name. A structured
+   * search is strict about the market, so no provider can ignore it; a
+   * semantic one carries the market in its text and location instead.
+   */
+  async searchPeople(
+    query: {
+      companyDomain?: string; title?: string; q?: string; fullName?: string;
+      keywords?: string[]; country?: string; location?: string; limit: number;
+    },
+    options: CallOptions,
+  ): Promise<Priced<FoundPerson[]>> {
+    const body: Record<string, unknown> = { limit: query.limit };
+    if (query.companyDomain) body.company_domain = query.companyDomain;
+    if (query.title) body.title = query.title;
+    if (query.q) body.q = query.q;
+    if (query.fullName) body.full_name = query.fullName;
+    if (query.keywords?.length) body.keywords = query.keywords;
+    if (query.country) body.country = query.country;
+    if (query.location) body.location = query.location;
+    const strict: Record<string, string> = !query.q && query.country ? { "x-treg-route-strict-filters": "1" } : {};
+    const r = await this.call<{ people?: RawPerson[] }>("treg.people.search", body, options, strict);
     const people = (r.output.people ?? [])
       .filter((p) => p.name && p.title)
       .map((p) => ({
         name: p.name!.trim(),
         title: p.title!.trim(),
         company: p.company ?? "",
-        companyDomain: p.company_domain ?? query.companyDomain,
+        companyDomain: p.company_domain ?? query.companyDomain ?? "",
         profileUrl: cleanUrl(p.profile_url ?? p.linkedin_url),
         location: p.location,
         servedBy: r.servedBy,
@@ -110,6 +133,39 @@ export class TregProvider implements SourcingProvider {
       }));
     return { value: signals, costMicro: r.costMicro };
   }
+
+  /**
+   * A person's work email, checked in the same call (X-Treg-Route-Verify).
+   * Strict domain match: an address at a former employer is not this lead's.
+   * Misses are free; a hit and its check are billed.
+   */
+  async findEmail(
+    query: { fullName: string; domain?: string; linkedinUrl?: string },
+    options: CallOptions,
+  ): Promise<Priced<{ email: string | null; verdict: EmailVerdict; servedBy: string }>> {
+    const body: Record<string, unknown> = { full_name: query.fullName };
+    if (query.domain) body.domain = query.domain;
+    if (query.linkedinUrl) body.linkedin_url = query.linkedinUrl;
+    const r = await this.call<{ email?: string | null }>("treg.people.email.find", body, options, {
+      "x-treg-route-verify": "true",
+      ...(query.domain ? { "x-treg-route-domain-match": "strict" } : {}),
+    });
+    const email = typeof r.output.email === "string" && r.output.email.includes("@") ? r.output.email.toLowerCase() : null;
+    return {
+      value: { email, verdict: email ? verdictOf(r.verification) : "not_found", servedBy: r.servedBy },
+      costMicro: r.costMicro,
+    };
+  }
+}
+
+export type EmailVerdict = "valid" | "risky" | "invalid" | "not_found";
+
+/** treg's verification verdict, folded to the four states a lead shows. */
+export function verdictOf(v?: { verdict?: string }): EmailVerdict {
+  const verdict = (v?.verdict ?? "").toLowerCase();
+  if (/invalid|undeliverable|bad/.test(verdict)) return "invalid";
+  if (/^valid|deliverable|ok|safe/.test(verdict)) return "valid";
+  return "risky";
 }
 
 interface RawCompany {

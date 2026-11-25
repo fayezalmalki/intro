@@ -1,8 +1,8 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { dbFrom } from "../lib/db";
-import { writeSourcedPipeline, type SourcedPerson } from "../lib/db/repo";
-import { requests } from "../lib/db/schema";
+import { autoPublish, writeSourcedPipeline, type SourcedPerson } from "../lib/db/repo";
+import { accounts, requests } from "../lib/db/schema";
 import { runSourcing, type Step } from "../lib/sourcing/run";
 import { TregProvider } from "../lib/sourcing/treg";
 import { seniorityOf } from "../lib/sourcing/vocabulary";
@@ -34,7 +34,8 @@ export class RequestWorkflow extends WorkflowEntrypoint<WorkflowEnv, RequestWork
     const request = await step.do("load request", async () => {
       const [row] = await database.select().from(requests).where(eq(requests.id, requestId)).limit(1);
       if (!row?.brief) return null;
-      return { brief: row.brief as Brief, rawText: row.rawText, sectors: row.sectors ?? [] };
+      const [owner] = await database.select({ state: accounts.state }).from(accounts).where(eq(accounts.id, row.accountId)).limit(1);
+      return { brief: row.brief as Brief, rawText: row.rawText, sectors: row.sectors ?? [], managed: owner?.state === "managed" };
     });
     if (!request) return { skipped: "no request or brief" };
 
@@ -44,7 +45,7 @@ export class RequestWorkflow extends WorkflowEntrypoint<WorkflowEnv, RequestWork
         fn as () => Promise<never>);
 
     const result = await runSourcing(
-      { requestId, ...request },
+      { requestId, brief: request.brief, rawText: request.rawText, sectors: request.sectors },
       { provider: new TregProvider(this.env.TREG_TOKEN), anthropicKey: this.env.ANTHROPIC_API_KEY },
       durable,
     );
@@ -74,6 +75,11 @@ export class RequestWorkflow extends WorkflowEntrypoint<WorkflowEnv, RequestWork
         createdBy: result.scoredBy === "claude" ? "AI · Claude" : "AI",
       }, database));
 
-    return { pipelineId, rows: result.items.length, spentMicro: result.spentMicro, scoredBy: result.scoredBy };
+    // Self-serve: the requester sees results now. Managed: their AM reviews first.
+    const published = !request.managed && pipelineId
+      ? await step.do("publish", () => autoPublish(pipelineId, "AI", database))
+      : null;
+
+    return { pipelineId, published: Boolean(published), rows: result.items.length, spentMicro: result.spentMicro, scoredBy: result.scoredBy };
   }
 }
