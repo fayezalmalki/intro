@@ -80,6 +80,17 @@ export interface Dictionary {
     };
   };
   sectors: { lead: string; items: string[] };
+  /** The hero search box and the "ways to search" section (→ /search). */
+  search: {
+    box: { label: string; modes: { companies: string; people: string }; placeholder: { companies: string; people: string }; market: string; submit: string; note: string };
+    ways: {
+      chip: string;
+      heading: string;
+      body: string;
+      items: { mode: "companies" | "people" | "person" | "news"; icon: IconKey; title: string; body: string; examples: { label: string; href: string }[] }[];
+      markets: string;
+    };
+  };
   demo: {
     chip: string;
     heading: string;

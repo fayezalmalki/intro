@@ -1,4 +1,5 @@
 import type { Dictionary } from "@/lib/site/types";
+import { MARKETS } from "@/lib/search/markets";
 import { Container, Contour, Icon, PillLink, cx, isLatin } from "./ui";
 
 export function Hero({ t }: { t: Dictionary }) {
@@ -27,7 +28,8 @@ export function Hero({ t }: { t: Dictionary }) {
               <Icon name="play" size={12} flip />
             </PillLink>
           </div>
-          <ul className="flex flex-wrap justify-center gap-x-5 gap-y-2 pt-2">
+          <HeroSearch t={t} />
+          <ul className="flex flex-wrap justify-center gap-x-5 gap-y-2 pt-1">
             {h.proof.map((p) => (
               <li key={p.label} className="flex items-center gap-[7px] text-[13.5px] text-muted">
                 <Icon name={p.icon} className="text-brand" />
@@ -103,5 +105,44 @@ export function Hero({ t }: { t: Dictionary }) {
         </Container>
       </div>
     </section>
+  );
+}
+
+/**
+ * Search from the landing. A plain GET to /search: signed-out visitors go
+ * through sign-in and onboarding with the query carried, and the search runs
+ * the moment they arrive. No client JavaScript.
+ */
+function HeroSearch({ t }: { t: Dictionary }) {
+  const b = t.search.box;
+  return (
+    <form action="/search" method="get" className="mt-3 flex w-full max-w-[720px] flex-col gap-2.5 rounded-[22px] bg-white p-2.5 text-start shadow-[0_24px_60px_-28px_#1416134d] outline outline-1 -outline-offset-1 outline-line">
+      <input type="hidden" name="lang" value={t.locale} />
+      <input type="hidden" name="run" value="1" />
+      <div className="flex flex-wrap items-center gap-2 px-1.5 pt-1">
+        <span className="text-[12.5px] font-medium text-subtle">{b.label}</span>
+        <span className="flex-1" />
+        {(["companies", "people"] as const).map((m, i) => (
+          <label key={m} className="cursor-pointer rounded-full px-3 py-1 text-[12.5px] font-medium text-ink-2 outline outline-1 -outline-offset-1 outline-line has-[:checked]:bg-mint has-[:checked]:text-brand has-[:checked]:outline-brand/40">
+            <input type="radio" name="mode" value={m} defaultChecked={i === 0} className="sr-only" />
+            {b.modes[m]}
+          </label>
+        ))}
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <label className="flex h-12 flex-1 items-center gap-2.5 rounded-[14px] bg-surface-2 px-3.5">
+          <Icon name="search" className="text-subtle" />
+          <input name="q" required dir="auto" placeholder={b.placeholder.companies} aria-label={b.label} className="min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-subtle" />
+        </label>
+        <select name="market" aria-label={b.market} defaultValue="SA" className="h-12 rounded-[14px] bg-surface-2 px-3 text-[14px] text-ink outline-none">
+          {(Object.keys(MARKETS) as (keyof typeof MARKETS)[]).map((m) => <option key={m} value={m}>{MARKETS[m][t.locale]}</option>)}
+        </select>
+        <button type="submit" className="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-[14px] bg-brand px-5 text-[15px] font-medium text-white hover:bg-brand-2">
+          {b.submit}
+          <Icon name="arrow-right" size={15} flip />
+        </button>
+      </div>
+      <p className="px-1.5 pb-0.5 text-[12px] text-subtle">{b.note}</p>
+    </form>
   );
 }

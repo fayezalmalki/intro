@@ -33,7 +33,10 @@ export type LedgerReason =
   | "send"
   | "refund_bounce"
   | "refund_suppressed"
-  | "bonus_accept";
+  | "bonus_accept"
+  // Revealing a lead's email (lib/search), and its refund when none is found.
+  | "reveal"
+  | "refund_reveal";
 
 export type RequestStatus =
   | "intent_review"

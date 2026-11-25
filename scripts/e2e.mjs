@@ -103,62 +103,25 @@ const summary = await page.locator("textarea[name=summaryAr]").inputValue();
 step("brief summary", summary);
 await shot("02-confirm");
 await Promise.all([page.waitForURL(/\/requests\/[^/]+$/), page.click("button.btn-primary")]);
-step("confirmed → requester sees", (await page.locator("h1").innerText()).trim());
+step("confirmed → requester sees", (await page.locator("h1, h2").first().innerText()).trim());
 await shot("03-sourcing");
 
 const requestId = page.url().split("/").pop();
 
+// 3. self-serve: no account-manager wait — v1 publishes itself, with only
+//    the rows a source backs (the evidence gate still holds, automatically).
+const published = page.locator(".narrow > .card").filter({ has: page.locator(".lat") });
+await published.first().waitFor();
+step("v1 published without waiting", `${await published.count()} evidence-backed people`);
+await shot("04-self-serve-v1");
+
 as("manager");
-// 3. AM queue
-await page.goto(`${BASE}/am`, { waitUntil: "networkidle" });
-const queueRows = await page.locator(".tr:not(.head)").count();
-step("AM queue rows", String(queueRows));
-await shot("04-queue");
-
-// 4. review
-await page.click(`a[href="/am/requests/${requestId}"]`);
-await page.waitForLoadState("networkidle");
-// `networkidle` can settle before streamed server content paints — in dev mode
-// the route compiles on demand, so wait for a real row rather than a quiet
-// network before counting anything.
-await page.locator(".grow > .card .lat").first().waitFor();
-await shot("05-review");
-
-// approve every approvable row, one at a time, waiting for each to settle
-const rows = page.locator(".grow > .card").filter({ has: page.locator(".lat") });
-const rowCount = await rows.count();
-const blockedRows = await page.locator(".alert").count();
-let approvedCount = 0;
-for (let i = 0; i < rowCount; i++) {
-  const btn = rows.nth(i).getByRole("button", { name: "اعتمد", exact: true });
-  if (!(await btn.count()) || (await btn.isDisabled())) continue;
-  await btn.click();
-  await rows.nth(i).getByRole("button", { name: "✓ معتمد", exact: true }).waitFor();
-  approvedCount++;
-}
-step("rows in draft", String(rowCount));
-step("rows blocked for missing evidence", String(blockedRows));
-step("rows approved", String(approvedCount));
-step("rows left unapproved (evidence gate)", String(rowCount - approvedCount));
-const barText = await page.locator("form.card .muted").innerText();
-step("publish bar", barText.trim());
-await shot("06-approved");
-
-// the derived pipeline view — every stage of the journey on one page
-await page.click(`a[href="/am/requests/${requestId}/pipeline"]`);
+// 4. the AM still sees the whole journey
+await page.goto(`${BASE}/am/requests/${requestId}/pipeline`, { waitUntil: "networkidle" });
 await page.locator(".mid .card").first().waitFor();
-const stages = await page.locator(".mid .card strong").allInnerTexts();
-step("pipeline stages", stages.join(" → "));
+step("pipeline stages", (await page.locator(".mid .card strong").allInnerTexts()).join(" → "));
 step("stage states", (await page.locator(".mid .card .chip").allInnerTexts()).join(", "));
 await shot("06b-pipeline");
-await page.goBack();
-await page.locator(".grow > .card .lat").first().waitFor();
-
-// 5. publish v1
-await page.click('form.card button.btn-primary');
-await page.waitForURL(/\/published$/);
-step("published v1", (await page.locator("h1").innerText()).trim());
-await shot("07-published-v1");
 
 as("requester");
 // 6. requester sees v1 — but the account is an observer, so the gate holds
@@ -230,6 +193,32 @@ step("attached + published v3 from pasted rows", (await page.locator("h1").inner
 const versions = await page.locator(".card .dot").count();
 step("version history entries", String(versions));
 await shot("13-published-v3");
+
+as("requester");
+// 10. instant search: a use-case preset runs on arrival (offline provider in dev)
+await page.goto(`${BASE}/search?preset=sell&lang=en`, { waitUntil: "networkidle" });
+const companyRows = page.locator("main li").filter({ has: page.getByRole("button", { name: "Decision makers" }) });
+await companyRows.first().waitFor();
+step("search preset ran", `${await companyRows.count()} companies`);
+await shot("14-search-companies");
+
+await companyRows.first().getByRole("button", { name: "Decision makers" }).click();
+const revealBtn = page.getByRole("button", { name: "Reveal email" }).first();
+await revealBtn.waitFor();
+step("decision makers listed", String(await page.getByRole("button", { name: "Reveal email" }).count()));
+await revealBtn.click();
+const revealed = page.locator("main li span.font-latin").filter({ hasText: "@" }).first();
+await revealed.waitFor();
+step("email revealed", await revealed.innerText());
+await shot("15-search-revealed");
+
+// 11. the lead page: email, news, a drafted opener
+await page.getByRole("link", { name: "Open lead" }).first().click();
+await page.waitForURL(/\/leads\/[^/?]+/);
+await page.getByRole("button", { name: "Find recent news" }).click();
+await page.locator("main section a[target=_blank]").first().waitFor();
+step("lead page", `${await page.locator("main section a[target=_blank]").count()} news items · opener ${(await page.locator("textarea").inputValue()).length} chars`);
+await shot("16-lead");
 
 await browser.close();
 

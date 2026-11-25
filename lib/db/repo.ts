@@ -3,14 +3,14 @@ import type { BatchItem } from "drizzle-orm/batch";
 import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
-  accounts, auditEvents, ledger, listMembers, outreach, people, pipelineItems,
-  pipelines, requests, sendAttempts,
+  accounts, auditEvents, leads, ledger, listMembers, outreach, people, pipelineItems,
+  pipelines, requests, searchLog, sendAttempts,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
 import { loadRequestContext } from "./loaders";
 import type {
-  Account, Brief, Channel, Db, ItemStatus, PipelineSource, RequestStatus, Role,
+  Account, Brief, Channel, Db, ItemStatus, PipelineItem, PipelineSource, RequestStatus, Role,
 } from "../types";
 
 /**
@@ -123,6 +123,139 @@ export async function confirmBrief(
   statements.push(audit(database, request.requesterName, requestId, "brief.confirmed",
     `مسودة آلية بـ${drafted.length} أشخاص`));
   await commit(database, statements);
+}
+
+/**
+ * Confirms the brief for live sourcing: the request moves to `in_sourcing`
+ * with no pipeline yet, and RequestWorkflow (worker/request-workflow.ts)
+ * writes v1 when it finishes. Returns whether sourcing should be (re)started:
+ * true for a fresh confirm or a confirmed request still without a pipeline.
+ */
+export async function confirmBriefForSourcing(
+  requestId: string,
+  summaryAr: string | undefined,
+  database: Database = defaultDb,
+): Promise<boolean> {
+  const [request] = await database.select().from(requests).where(eq(requests.id, requestId)).limit(1);
+  if (!request?.brief) return false;
+  if (request.status === "in_sourcing") {
+    // Confirmed before, but the workflow may never have started (the start
+    // failed after this commit). Starting again is safe: the instance id is
+    // the request id. Once a pipeline exists there is nothing to start.
+    const [pipeline] = await database.select({ id: pipelines.id }).from(pipelines)
+      .where(eq(pipelines.requestId, requestId)).limit(1);
+    return !pipeline;
+  }
+  if (request.status !== "intent_review") return false;
+
+  const brief = request.brief as Brief;
+  if (summaryAr) brief.summaryAr = summaryAr;
+  await commit(database, [
+    database.update(requests).set({
+      brief,
+      status: "in_sourcing" as RequestStatus,
+      confirmedAt: nowIso(),
+      workflowId: requestId,
+    }).where(and(eq(requests.id, requestId), eq(requests.status, "intent_review"))),
+    audit(database, request.requesterName, requestId, "brief.confirmed", "بدأ البحث عن الأشخاص"),
+  ]);
+  return true;
+}
+
+export interface SourcedPerson {
+  key: string;
+  name: string;
+  title: string;
+  company: string;
+  companyDomain: string;
+  industries: string[];
+  seniority: string;
+  linkedinUrl?: string;
+  servedBy: string;
+}
+
+export type SourcedRow = Omit<PipelineItem, "id" | "personId"> & { candidateKey: string };
+
+/**
+ * Writes what RequestWorkflow sourced: the people (upserted by LinkedIn URL,
+ * so a person found by two requests is one row), pipeline v1 and its rows,
+ * and the request's sourcing spend — in one atomic batch.
+ *
+ * Idempotent: if v1 already exists (a workflow step retried after a commit
+ * whose acknowledgement was lost) it returns that pipeline and writes nothing.
+ */
+export async function writeSourcedPipeline(
+  input: {
+    requestId: string;
+    people: SourcedPerson[];
+    rows: SourcedRow[];
+    spentMicro: number;
+    note?: string;
+    createdBy: string;
+  },
+  database: Database = defaultDb,
+): Promise<string | null> {
+  const [request] = await database.select().from(requests).where(eq(requests.id, input.requestId)).limit(1);
+  if (!request) return null;
+  const [existing] = await database.select().from(pipelines)
+    .where(and(eq(pipelines.requestId, input.requestId), eq(pipelines.version, 1))).limit(1);
+  if (existing) return existing.id;
+
+  const urls = input.people.map((p) => p.linkedinUrl).filter((u): u is string => !!u);
+  const known = urls.length
+    ? await database.select({ id: people.id, linkedinUrl: people.linkedinUrl }).from(people)
+        .where(inArray(people.linkedinUrl, urls))
+    : [];
+  const idByUrl = new Map(known.map((k) => [k.linkedinUrl, k.id]));
+
+  const statements: Stmt[] = [];
+  const idByKey = new Map<string, string>();
+  for (const p of input.people) {
+    const fields = {
+      latin: p.name,
+      // No Arabic name from the provider; the opener greets by the first name as written.
+      firstAr: p.name.split(/\s+/)[0] ?? p.name,
+      title: p.title,
+      company: p.company,
+      companyDomain: p.companyDomain,
+      geo: "السعودية",
+      industries: p.industries,
+      seniority: p.seniority,
+      linkedinUrl: p.linkedinUrl,
+      source: "provider" as const,
+      servedBy: p.servedBy,
+      updatedAt: nowIso(),
+    };
+    const knownId = p.linkedinUrl ? idByUrl.get(p.linkedinUrl) : undefined;
+    if (knownId) {
+      // Refresh what the provider says now; keep anything a person or AM set
+      // (email, verification, open-to-intros) untouched.
+      statements.push(database.update(people).set(fields).where(eq(people.id, knownId)));
+      idByKey.set(p.key, knownId);
+    } else {
+      const id = crypto.randomUUID();
+      statements.push(database.insert(people).values({ id, ...fields }));
+      idByKey.set(p.key, id);
+    }
+  }
+
+  const pipelineId = crypto.randomUUID();
+  statements.push(database.insert(pipelines).values({
+    id: pipelineId, requestId: input.requestId, version: 1, source: "ai_generated",
+    status: "draft", createdBy: input.createdBy, note: input.note,
+  }));
+  for (const { candidateKey, ...row } of input.rows) {
+    const personId = idByKey.get(candidateKey);
+    if (!personId) continue;
+    statements.push(database.insert(pipelineItems).values({ ...row, personId, pipelineId }));
+  }
+  statements.push(
+    database.update(requests).set({ sourcingCostMicro: input.spentMicro }).where(eq(requests.id, input.requestId)),
+    audit(database, input.createdBy, input.requestId, "pipeline.sourced",
+      `${input.rows.length} أشخاص · ${(input.spentMicro / 1_000_000).toFixed(4)}$`),
+  );
+  await commit(database, statements);
+  return pipelineId;
 }
 
 export async function setItemStatus(
@@ -553,4 +686,170 @@ export async function requestActivation(
     audit(database, account.displayName, input.accountId, "account.activation_requested", input.companyWebsite),
   ]);
   return { ok: true, first };
+}
+
+
+// ── Search and leads ──────────────────────────────────────────
+
+export async function logSearch(
+  input: { accountId: string; kind: "companies" | "people" | "person" | "news" | "email"; query: Record<string, unknown>; results: number; costMicro: number; servedBy?: string },
+  database: Database = defaultDb,
+): Promise<void> {
+  await database.insert(searchLog).values({ ...input, servedBy: input.servedBy ?? null });
+}
+
+/** Searches run and micro-USD spent by an account since UTC midnight. */
+export async function searchUsageToday(accountId: string, database: Database = defaultDb): Promise<{ count: number; costMicro: number }> {
+  const since = `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
+  const [row] = await database
+    .select({ count: sql<number>`count(*)`, costMicro: sql<number>`coalesce(sum(${searchLog.costMicro}), 0)` })
+    .from(searchLog)
+    .where(and(eq(searchLog.accountId, accountId), sql`${searchLog.createdAt} >= ${since}`));
+  return { count: Number(row?.count ?? 0), costMicro: Number(row?.costMicro ?? 0) };
+}
+
+export interface LeadPerson {
+  name: string;
+  title: string;
+  company: string;
+  companyDomain?: string;
+  linkedinUrl?: string;
+  location?: string;
+  servedBy?: string;
+  industries?: string[];
+  seniority: string;
+}
+
+/**
+ * Saves a person from search as a lead: the person is upserted by LinkedIn
+ * URL (one row however many accounts save them), the lead is unique per
+ * account and person. Returns the lead id, new or existing.
+ */
+export async function saveLead(
+  input: { accountId: string; person: LeadPerson; market?: string; source?: "search" | "request" },
+  database: Database = defaultDb,
+): Promise<string> {
+  const p = input.person;
+  let personId: string | undefined;
+  if (p.linkedinUrl) {
+    const [known] = await database.select({ id: people.id }).from(people).where(eq(people.linkedinUrl, p.linkedinUrl)).limit(1);
+    personId = known?.id;
+  }
+  const fields = {
+    latin: p.name, firstAr: p.name.split(/\s+/)[0] ?? p.name, title: p.title, company: p.company,
+    companyDomain: p.companyDomain ?? null, geo: p.location ?? "", industries: p.industries ?? [],
+    seniority: p.seniority, linkedinUrl: p.linkedinUrl ?? null, source: "provider" as const,
+    servedBy: p.servedBy ?? null, updatedAt: nowIso(),
+  };
+  const statements: Stmt[] = [];
+  if (personId) {
+    statements.push(database.update(people).set(fields).where(eq(people.id, personId)));
+  } else {
+    personId = crypto.randomUUID();
+    statements.push(database.insert(people).values({ id: personId, ...fields }));
+  }
+  statements.push(
+    database.insert(leads)
+      .values({ accountId: input.accountId, personId, source: input.source ?? "search", market: input.market ?? null })
+      .onConflictDoNothing(),
+  );
+  await commit(database, statements);
+  const [lead] = await database.select({ id: leads.id }).from(leads)
+    .where(and(eq(leads.accountId, input.accountId), eq(leads.personId, personId))).limit(1);
+  return lead!.id;
+}
+
+export type LeadRow = typeof leads.$inferSelect & { person: typeof people.$inferSelect };
+
+export async function listLeads(accountId: string, database: Database = defaultDb): Promise<LeadRow[]> {
+  const rows = await database.select().from(leads).innerJoin(people, eq(leads.personId, people.id))
+    .where(eq(leads.accountId, accountId)).orderBy(sql`${leads.createdAt} desc`);
+  return rows.map((r) => ({ ...r.leads, person: r.people }));
+}
+
+export async function getLead(accountId: string, leadId: string, database: Database = defaultDb): Promise<LeadRow | null> {
+  const [r] = await database.select().from(leads).innerJoin(people, eq(leads.personId, people.id))
+    .where(and(eq(leads.id, leadId), eq(leads.accountId, accountId))).limit(1);
+  return r ? { ...r.leads, person: r.people } : null;
+}
+
+export async function saveLeadSignals(leadId: string, signals: NonNullable<typeof leads.$inferSelect["signals"]>, database: Database = defaultDb) {
+  await database.update(leads).set({ signals }).where(eq(leads.id, leadId));
+}
+
+/**
+ * Reserves the credit for revealing a lead's email. Runs inside the
+ * AccountGate Durable Object (one call per account at a time), so two reveals
+ * can never both spend the last credit. Revealing the same person again is
+ * free: the ledger ref is the person, and ledger_idempotency_idx holds it.
+ */
+export async function reserveReveal(
+  input: { accountId: string; personId: string },
+  database: Database = defaultDb,
+): Promise<{ ok: true; charged: boolean } | { ok: false; reason: "insufficient_credits" }> {
+  const ref = `reveal:${input.personId}`;
+  const [already] = await database.select({ id: ledger.id }).from(ledger)
+    .where(and(eq(ledger.accountId, input.accountId), eq(ledger.reason, "reveal"), eq(ledger.ref, ref))).limit(1);
+  if (already) return { ok: true, charged: false };
+  const [bal] = await database.select({ balance: sql<number>`coalesce(sum(${ledger.delta}), 0)` })
+    .from(ledger).where(eq(ledger.accountId, input.accountId));
+  if (Number(bal?.balance ?? 0) < 1) return { ok: false, reason: "insufficient_credits" };
+  await database.insert(ledger).values({ accountId: input.accountId, delta: -1, reason: "reveal", ref }).onConflictDoNothing();
+  return { ok: true, charged: true };
+}
+
+/** Records what the reveal found, and refunds the credit when nothing usable was. */
+export async function recordReveal(
+  input: { accountId: string; leadId: string; personId: string; email: string | null; status: "valid" | "risky" | "invalid" | "not_found" },
+  database: Database = defaultDb,
+): Promise<void> {
+  const usable = input.email && input.status !== "invalid";
+  const statements: Stmt[] = [
+    database.update(leads).set({ email: usable ? input.email : null, emailStatus: input.status, revealedAt: nowIso() })
+      .where(and(eq(leads.id, input.leadId), eq(leads.accountId, input.accountId))),
+    audit(database, input.accountId, input.leadId, "lead.revealed", input.status),
+  ];
+  if (usable) {
+    statements.push(database.update(people).set({ email: input.email, emailVerified: input.status === "valid" }).where(eq(people.id, input.personId)));
+  } else {
+    statements.push(database.insert(ledger)
+      .values({ accountId: input.accountId, delta: 1, reason: "refund_reveal", ref: `reveal:${input.personId}` })
+      .onConflictDoNothing());
+  }
+  await commit(database, statements);
+}
+
+/** A few free reveals on finishing onboarding, so search pays off on day one. */
+export const WELCOME_CREDITS = 3;
+export async function grantWelcomeCredits(accountId: string, database: Database = defaultDb): Promise<void> {
+  await database.insert(ledger)
+    .values({ accountId, delta: WELCOME_CREDITS, reason: "grant", ref: "welcome" })
+    .onConflictDoNothing();
+}
+
+export async function creditBalance(accountId: string, database: Database = defaultDb): Promise<number> {
+  const [bal] = await database.select({ balance: sql<number>`coalesce(sum(${ledger.delta}), 0)` })
+    .from(ledger).where(eq(ledger.accountId, accountId));
+  return Number(bal?.balance ?? 0);
+}
+
+/**
+ * Self-serve accounts don't wait for an account manager: every row backed by
+ * a source is approved and the pipeline is published straight away. Rows
+ * without evidence stay out, as they would in review. Managed accounts keep
+ * the review step (the caller decides).
+ */
+export async function autoPublish(pipelineId: string, actor: string, database: Database = defaultDb): Promise<string | null> {
+  const items = await database.select().from(pipelineItems).where(eq(pipelineItems.pipelineId, pipelineId));
+  const backed = items.filter((i) => (i.evidence ?? []).length > 0).map((i) => i.id);
+  if (backed.length === 0) return null;
+  await database.update(pipelineItems).set({ status: "approved" }).where(inArray(pipelineItems.id, backed));
+  return publishPipeline(pipelineId, actor, database);
+}
+
+export async function autoPublishLatestDraft(requestId: string, actor: string, database: Database = defaultDb): Promise<string | null> {
+  const [draft] = await database.select({ id: pipelines.id }).from(pipelines)
+    .where(and(eq(pipelines.requestId, requestId), eq(pipelines.status, "draft")))
+    .orderBy(sql`${pipelines.version} desc`).limit(1);
+  return draft ? autoPublish(draft.id, actor, database) : null;
 }

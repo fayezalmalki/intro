@@ -1,4 +1,4 @@
-import type { Brief, Evidence, Fit, Person, PipelineItem } from "./types";
+import type { Brief, Evidence, Fit, Person, PipelineItem } from "../types";
 
 /**
  * Sourced signals per person. In production these come from the enrichment

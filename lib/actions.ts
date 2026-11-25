@@ -6,6 +6,7 @@ import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
 import { sendThroughGate } from "./send";
+import { liveWorkflow, startSourcing } from "./sourcing/live";
 import { adminEmails, currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
 import { sendActivated, sendActivationRequested } from "./mailer";
 import { db } from "./db";
@@ -55,7 +56,20 @@ export async function confirmBrief(formData: FormData): Promise<void> {
   // this, any signed-in account could rewrite anyone's brief.
   await requireRequestOwner(requestId, "confirm this request");
 
-  await repo.confirmBrief(requestId, summary || undefined);
+  const workflow = liveWorkflow();
+  if (workflow) {
+    // Real sourcing runs in the background (worker/request-workflow.ts); the
+    // request page shows the "finding people" stage until v1 lands.
+    if (await repo.confirmBriefForSourcing(requestId, summary || undefined)) {
+      await startSourcing(workflow, requestId);
+    }
+  } else {
+    await repo.confirmBrief(requestId, summary || undefined);
+    // Without live sourcing the draft is written inline; publish it for
+    // self-serve accounts the same way the workflow does.
+    const account = await currentAccount();
+    if (account.state !== "managed") await repo.autoPublishLatestDraft(requestId, "AI");
+  }
 
   revalidatePath("/am");
   redirect(`/requests/${requestId}`);
@@ -253,6 +267,7 @@ export async function completeOnboarding(formData: FormData): Promise<void> {
     redirect(`/welcome?next=${encodeURIComponent(next)}&missing=1${locale === "en" ? "&lang=en" : ""}`);
   }
   const useCase = String(formData.get("useCase") ?? "");
+  await repo.grantWelcomeCredits(account.id);
   await repo.completeOnboarding({
     accountId: account.id,
     name,

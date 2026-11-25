@@ -277,6 +277,44 @@ export const ledger = sqliteTable("ledger", {
   index("ledger_account_idx").on(t.accountId),
 ]);
 
+// ── Search and leads ──────────────────────────────────────────
+
+/**
+ * Every search an account runs (/search). The daily budget is enforced from
+ * it, and cost_micro is what treg charged us, for the unit economics.
+ */
+export const searchLog = sqliteTable("search_log", {
+  id: id(),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"companies" | "people" | "person" | "news" | "email">().notNull(),
+  query: text("query", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  results: integer("results").notNull().default(0),
+  costMicro: integer("cost_micro").notNull().default(0),
+  servedBy: text("served_by"),
+  createdAt: isoNow("created_at"),
+}, (t) => [index("search_log_account_day_idx").on(t.accountId, t.createdAt)]);
+
+/**
+ * A person an account saved from search. The email is bought only when they
+ * reveal it (one credit, refunded on a miss), and kept with its verdict.
+ */
+export const leads = sqliteTable("leads", {
+  id: id(),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
+  source: text("source").$type<"search" | "request">().notNull().default("search"),
+  market: text("market"),
+  email: text("email"),
+  emailStatus: text("email_status").$type<"valid" | "risky" | "invalid" | "not_found">(),
+  revealedAt: text("revealed_at"),
+  signals: text("signals", { mode: "json" }).$type<{ url: string; title: string; source: string; date?: string }[]>(),
+  note: text("note"),
+  createdAt: isoNow("created_at"),
+}, (t) => [
+  uniqueIndex("leads_account_person_idx").on(t.accountId, t.personId),
+  index("leads_account_idx").on(t.accountId),
+]);
+
 // ── Audit ─────────────────────────────────────────────────────
 
 export const auditEvents = sqliteTable("audit_events", {

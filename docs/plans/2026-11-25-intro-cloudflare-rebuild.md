@@ -140,5 +140,5 @@ Inbound email → Worker `email()` → resolve the reply token → `workflow.sen
 - Deploy a preview to `workers.dev`, then switch `intro.sa` DNS only after the user signs off.
 
 ---
-**Implementation**: Phase 1 — PR #13
+**Implementation**: Phase 1 — PR #13 · Phase 2 — PR #14
 **Status**: in progress

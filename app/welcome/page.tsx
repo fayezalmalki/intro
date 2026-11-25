@@ -37,7 +37,7 @@ const COPY = {
     optional: "اختياري",
     role: "منصبك",
     rolePh: "مثال: مدير المبيعات",
-    goal: "وش اللي جابك لـ intro.sa؟",
+    goal: "وش اللي جابك لانترو؟",
     linkedin: "حسابك في LinkedIn",
     linkedinHint: "يسرّع تفعيل حسابك، وتقدر تضيفه لاحقًا.",
     missing: "أضف اسمك وشركتك ومنصبك عشان تكمل.",

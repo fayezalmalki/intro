@@ -25,6 +25,8 @@ const DELTA: Record<LedgerReason, number> = {
   refund_bounce: 1,
   refund_suppressed: 1,
   bonus_accept: 1,
+  reveal: -1,
+  refund_reveal: 1,
 };
 
 /**

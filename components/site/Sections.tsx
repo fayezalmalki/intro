@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Dictionary } from "@/lib/site/types";
+import { presetHref } from "@/lib/search/presets";
 import { Container, Contour, Icon, PillLink, Wordmark, cx, isLatin } from "./ui";
 
 const h2 = "display font-display text-[34px] leading-[1.08] font-medium tracking-[-1.2px] text-ink sm:text-[44px] sm:tracking-[-1.8px]";
@@ -12,6 +13,45 @@ export function Sectors({ t }: { t: Dictionary }) {
         {t.sectors.items.map((s) => (
           <span key={s} className="text-[14.5px] font-medium text-ink-2">{s}</span>
         ))}
+      </Container>
+    </section>
+  );
+}
+
+const WAY_TONE = ["bg-mint text-brand", "bg-peach text-accent-ink", "bg-sand text-ink", "bg-mint text-brand"];
+
+/** Every way to search, each with example searches that run on arrival. */
+export function Ways({ t }: { t: Dictionary }) {
+  const w = t.search.ways;
+  return (
+    <section id="search" aria-labelledby="ways-heading" className="scroll-mt-6 pt-20 lg:pt-[110px]">
+      <Container className="flex flex-col gap-10">
+        <div className="flex flex-col items-start gap-3.5">
+          <span className="rounded-full bg-surface px-3 py-[5px] text-[13px] font-medium text-ink">{w.chip}</span>
+          <h2 id="ways-heading" className={h2}>{w.heading}</h2>
+          <p className="max-w-[680px] text-[17px] leading-[27px] text-muted rtl:leading-[30px]">{w.body}</p>
+        </div>
+        <ul className="grid gap-3.5 sm:grid-cols-2">
+          {w.items.map((item, i) => (
+            <li key={item.mode} className="flex flex-col gap-4 rounded-[22px] bg-white p-6 outline outline-1 -outline-offset-1 outline-line">
+              <div className="flex items-start gap-3.5">
+                <span className={cx("flex size-11 shrink-0 items-center justify-center rounded-[13px]", WAY_TONE[i])}><Icon name={item.icon} size={18} /></span>
+                <span className="flex flex-col gap-1">
+                  <span className="display font-display text-[20px] font-medium tracking-[-0.5px] text-ink">{item.title}</span>
+                  <span className="text-[14.5px] leading-[22px] text-muted rtl:leading-[25px]">{item.body}</span>
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {item.examples.map((e) => (
+                  <a key={e.label} href={e.href} className="flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-hover">
+                    <Icon name="search" size={12} className="text-subtle" />{e.label}
+                  </a>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="flex items-center gap-2 text-[13.5px] text-muted"><Icon name="globe" size={15} className="text-brand" />{w.markets}</p>
       </Container>
     </section>
   );
@@ -37,7 +77,7 @@ export function UseCases({ t }: { t: Dictionary }) {
   const u = t.useCases;
   const card = (x: (typeof u.items)[number], i: number) => (
     <li key={x.id}>
-      <a href={`#demo-${x.id}`} className="flex h-full flex-col gap-4 rounded-[22px] bg-white p-6 outline outline-1 -outline-offset-1 outline-line transition-shadow hover:shadow-card">
+      <a href={presetHref(x.id, t.locale)} className="flex h-full flex-col gap-4 rounded-[22px] bg-white p-6 outline outline-1 -outline-offset-1 outline-line transition-shadow hover:shadow-card">
         <span className={cx("flex size-12 items-center justify-center rounded-[14px]", TILE[i])}>
           <Icon name={x.icon} size={18} />
         </span>
@@ -372,7 +412,7 @@ export function Footer({ t }: { t: Dictionary }) {
     <footer className="border-t border-line">
       <Container className="flex flex-col gap-12 pt-16 pb-14 md:flex-row">
         <div className="flex flex-1 flex-col gap-3">
-          <Wordmark />
+          <Wordmark lang={t.locale} />
           <p className="text-[15px] text-ink">{f.tagline}</p>
           <p className="text-[13px] text-subtle">{f.made}</p>
         </div>

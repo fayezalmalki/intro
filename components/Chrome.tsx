@@ -76,11 +76,17 @@ export function AppBar({ account }: { account: Account }) {
         <Link href="/" className="logo">
           <Wordmark />
         </Link>
+        <Link href="/search" className="sm muted">
+          البحث
+        </Link>
+        <Link href="/leads" className="sm muted">
+          العملاء المحتملون
+        </Link>
         <Link href="/requests" className="sm muted">
           طلباتي
         </Link>
         <Link href="/new" className="sm muted">
-          + Intro جديد
+          + طلب جديد
         </Link>
       </div>
       <div className="row g16 sm muted">
