@@ -16,6 +16,10 @@ export default defineConfig({
     // Custom entry: re-exports the Durable Object class and hands every HTTP
     // request to vinext.
     entrypoint: "./worker/index.ts",
+    // The app's home. Cloudflare creates the DNS record and certificate on
+    // deploy. intro.sa itself stays where it is until it is switched over.
+    domains: ["app.intro.sa"],
+    workersDev: false,
     compatibilityDate: "2026-11-25",
     compatibilityFlags: ["nodejs_compat"],
     assets: {
