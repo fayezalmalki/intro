@@ -45,6 +45,8 @@ const PATHS = {
   x: "M4 4l8 8M12 4l-8 8",
   target: "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM8 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM8 8.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z",
   mail: "M1.5 3.5h13v9h-13zM1.5 4l6.5 5 6.5-5",
+  home: "M2.5 7.5L8 3l5.5 4.5v6H10V10H6v3.5H2.5z",
+  refresh: "M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3",
 } as const;
 
 export type IconKey = keyof typeof PATHS;
