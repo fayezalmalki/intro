@@ -141,7 +141,7 @@ export function Demo({ t }: { t: Dictionary }) {
           {d.heading}
         </h2>
         <p className="max-w-[660px] text-center text-[17px] leading-[26px] text-muted rtl:leading-[29px]">{d.body}</p>
-        <PillLink href="/new" className="px-5 py-3">{d.cta}</PillLink>
+        <PillLink href={`/new?lang=${t.locale}`} className="px-5 py-3">{d.cta}</PillLink>
         <p className="flex items-center gap-2 pt-2 pb-3 text-center text-[14px] text-muted">{d.hint}</p>
         <DemoTabs
           label={d.tabsLabel}

@@ -59,6 +59,22 @@ function watch(page, who) {
 const requester = await identity("faisal@example.sa");
 const manager = await identity("reem@example.sa");
 
+/**
+ * First sign-in lands on /welcome (lib/session.ts pageAccount). Goes through
+ * the real form, and checks an app page lets them through afterwards.
+ */
+async function onboard(page, who, name) {
+  await page.goto(`${BASE}/new`, { waitUntil: "networkidle" });
+  if (!page.url().includes("/welcome")) throw new Error(`${who} was not sent to /welcome on first visit (${page.url()})`);
+  await page.fill("input[name=name]", name);
+  await page.fill("input[name=jobTitle]", "Head of Product");
+  await page.fill("input[name=company]", "Example Co");
+  await Promise.all([page.waitForURL((u) => !u.pathname.startsWith("/welcome")), page.click("button[type=submit]")]);
+  step(`${who} onboarded`, new URL(page.url()).pathname);
+}
+await onboard(requester, "requester", "فيصل");
+await onboard(manager, "manager", "ريم");
+
 /** Whichever identity the current step is acting as. */
 let page = requester;
 

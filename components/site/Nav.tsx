@@ -45,7 +45,7 @@ function GuideCard({ t }: { t: Dictionary }) {
         <p className="display font-display text-[22px] leading-[normal] font-medium tracking-[-0.4px] text-white">{g.title}</p>
         <p className="text-[14px] leading-[21px] text-white/70">{g.body}</p>
       </div>
-      <a href="/new" className="flex w-fit items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[14px] font-medium text-ink hover:bg-surface">
+      <a href={`/new?lang=${t.locale}`} className="flex w-fit items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[14px] font-medium text-ink hover:bg-surface">
         {g.action}
         <Icon name="arrow-right" flip />
       </a>
@@ -92,8 +92,8 @@ export function Nav({ t, signedIn }: { t: Dictionary; signedIn: boolean }) {
     { label: n.howItWorks, href: "#how-it-works" },
     { label: n.pricing, href: "#pricing" },
   ];
-  const account = signedIn ? { label: n.myRequests, href: "/requests" } : { label: n.signIn, href: "/login" };
-  const cta = signedIn ? "/new" : "/new";
+  const account = signedIn ? { label: n.myRequests, href: "/requests" } : { label: n.signIn, href: `/login?lang=${t.locale}` };
+  const cta = `/new?lang=${t.locale}`;
   return (
     <header className="relative z-20 bg-white">
       <Container className="flex h-[76px] items-center justify-between">

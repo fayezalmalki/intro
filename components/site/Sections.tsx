@@ -77,7 +77,7 @@ export function UseCases({ t }: { t: Dictionary }) {
                 <h4 className="display font-display text-[26px] font-medium tracking-[-0.6px] text-white">{u.guide.title}</h4>
                 <p className="max-w-[420px] text-[15px] leading-[23px] text-white/75">{u.guide.body}</p>
               </div>
-              <a href="/new" className="relative flex w-fit items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[14px] font-medium text-ink hover:bg-surface">
+              <a href={`/new?lang=${t.locale}`} className="relative flex w-fit items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[14px] font-medium text-ink hover:bg-surface">
                 {u.guide.action}
                 <Icon name="arrow-right" flip />
               </a>
@@ -352,6 +352,7 @@ export function Invitation({ t }: { t: Dictionary }) {
         <p className="relative text-[17px] text-ink-2">{iv.body}</p>
         {/* GETs to /new; middleware carries ?company through sign-in. */}
         <form action="/new" method="get" className="relative flex h-[54px] w-full max-w-[480px] items-center gap-2 rounded-full bg-white ps-[18px] pe-[7px] shadow-[0_10px_30px_-14px_#1d3d3359]">
+          <input type="hidden" name="lang" value={t.locale} />
           <Icon name="globe" className="text-subtle" />
           <input name="company" type="text" inputMode="url" dir="ltr" placeholder={iv.placeholder} aria-label={iv.label} className="font-latin min-w-0 flex-1 border-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-subtle rtl:text-right" />
           <button type="submit" className="flex h-10 cursor-pointer items-center gap-2 rounded-full bg-brand px-4 text-[14px] font-medium text-white hover:bg-brand-2">

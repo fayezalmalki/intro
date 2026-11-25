@@ -79,6 +79,11 @@
   border: 0; background: none; padding: 0; height: auto; border-radius: 0;
   font: inherit; color: inherit; box-shadow: none;
 }
+.site input, .site textarea, .site select {
+  border: 0; box-shadow: none; background: #fff; font: inherit; color: inherit; min-height: 0;
+}
+.site fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.site legend { padding: 0; }
 .site ul, .site ol { list-style: none; margin: 0; padding: 0; }
 .site dl, .site dd { margin: 0; }
 .site summary { list-style: none; }

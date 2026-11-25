@@ -177,6 +177,18 @@ export interface Account {
   frozenAt?: string;
   frozenReason?: string;
   assignedAm?: string;
+  company?: string;
+  companyWebsite?: string;
+  jobTitle?: string;
+  useCase?: string;
+  linkedinUrl?: string;
+  /** Interface language from onboarding; absent means Arabic. */
+  locale?: "ar" | "en";
+  /** Set when /welcome is completed; until then app pages send them there. */
+  onboardedAt?: string;
+  /** An observer asked to send (/activate); an admin approves in /am/team. */
+  activationRequestedAt?: string;
+  activationNote?: string;
   createdAt: string;
 }
 
