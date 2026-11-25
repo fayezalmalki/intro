@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppBar, DirectionBadge, ar } from "@/components/Chrome";
-import { currentAccount } from "@/lib/session";
+import { pageAccount } from "@/lib/session";
 import { loadMyRequests } from "@/lib/db/loaders";
 import type { Db, IntroRequest, RequestStatus } from "@/lib/types";
 
@@ -35,7 +35,7 @@ const STATE: Record<RequestStatus, { label: string; dot: string }> = {
 };
 
 export default async function MyRequestsPage() {
-  const account = await currentAccount();
+  const account = await pageAccount("/requests");
   const db = await loadMyRequests(account.id);
   const rows = [...db.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -50,6 +50,26 @@ export default async function MyRequestsPage() {
             طلب جديد
           </Link>
         </div>
+
+        {account.state === "observer" && (
+          <div className="card row between g14">
+            <div className="stack g4">
+              <strong className="sm">
+                {account.activationRequestedAt ? "طلب تفعيل الإرسال قيد المراجعة." : "فعّل الإرسال عشان تتواصل باسمك."}
+              </strong>
+              <span className="sm muted">
+                {account.activationRequestedAt
+                  ? "نراسلك أول ما يتفعّل، وعادةً خلال يوم عمل. وفي الوقت نفسه تقدر تنشئ طلباتك وتراجع مطابقاتك."
+                  : "تقدر تنشئ الطلبات وتشوف المطابقات من الحين. الإرسال يحتاج تحقق سريع من حسابك."}
+              </span>
+            </div>
+            {account.activationRequestedAt ? (
+              <span className="chip">قيد المراجعة</span>
+            ) : (
+              <Link href="/activate" className="btn btn-strong btn-sm">فعّل الإرسال</Link>
+            )}
+          </div>
+        )}
 
         {rows.length === 0 ? (
           <div className="card stack g10">

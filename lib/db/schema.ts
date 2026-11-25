@@ -95,6 +95,19 @@ export const accounts = sqliteTable("accounts", {
   frozenAt: text("frozen_at"),
   frozenReason: text("frozen_reason"),
   assignedAm: text("assigned_am"),
+  // Onboarding (/welcome): who they are and what they came for. Null
+  // onboardedAt sends every app page to /welcome first.
+  company: text("company"),
+  companyWebsite: text("company_website"),
+  jobTitle: text("job_title"),
+  useCase: text("use_case"),
+  linkedinUrl: text("linkedin_url"),
+  locale: text("locale").$type<"ar" | "en">().notNull().default("ar"),
+  onboardedAt: text("onboarded_at"),
+  // Activation (/activate): an observer asking to send. An admin approves it
+  // in /am/team (verifyAccount), which clears nothing here — verifiedAt wins.
+  activationRequestedAt: text("activation_requested_at"),
+  activationNote: text("activation_note"),
   createdAt: isoNow("created_at"),
 }, (t) => [uniqueIndex("accounts_user_id_idx").on(t.userId)]);
 

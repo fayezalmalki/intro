@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { AppBar, Provenance } from "@/components/Chrome";
 import { confirmBrief } from "@/lib/actions";
-import { canReadRequest, currentAccount } from "@/lib/session";
+import { canReadRequest, pageAccount } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +15,8 @@ const GOAL_LABEL: Record<string, string> = {
 };
 
 export default async function ConfirmPage({ params }: { params: Promise<{ id: string }> }) {
-  const account = await currentAccount();
   const { id } = await params;
+  const account = await pageAccount(`/requests/${id}/confirm`);
   const req = (await loadRequestContext(id)).requests.find((r) => r.id === id);
   if (!req?.brief || !canReadRequest(account, req.accountId)) notFound();
   const b = req.brief;

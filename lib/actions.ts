@@ -6,7 +6,11 @@ import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
 import { sendThroughGate } from "./send";
-import { currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
+import { adminEmails, currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
+import { sendActivated, sendActivationRequested } from "./mailer";
+import { db } from "./db";
+import { accounts } from "./db/schema";
+import { eq } from "drizzle-orm";
 import { assertDevTools } from "./env";
 import type { Channel, PipelineSource, Role } from "./types";
 
@@ -211,4 +215,86 @@ export async function verifyAccount(formData: FormData): Promise<void> {
 
   revalidatePath("/am/team");
   if (!result.ok) redirect(`/am/team?refused=${result.reason}`);
+
+  // Tell them. A failed email must not undo a verification that committed.
+  const [target] = await db.select().from(accounts).where(eq(accounts.id, targetAccountId)).limit(1);
+  if (target && result.granted) {
+    await sendActivated(target.email, target.displayName, target.locale, VERIFY_GRANT).catch((error) =>
+      console.error("[verifyAccount] activation email failed", error));
+  }
+}
+
+
+// ── Onboarding and activation ─────────────────────────────────
+
+const USE_CASES = new Set(["sell", "hire-me", "hire", "partner", "invest", "enter-market"]);
+
+/** Only same-site paths, as on /login: a `next` must never leave the site. */
+function safeNext(value: FormDataEntryValue | null, fallback: string): string {
+  const next = String(value ?? "");
+  return next.startsWith("/") && !next.startsWith("//") ? next : fallback;
+}
+
+function cleanUrl(value: FormDataEntryValue | null): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+}
+
+/** /welcome. Required: name, company, role. */
+export async function completeOnboarding(formData: FormData): Promise<void> {
+  const account = await currentAccount();
+  const name = String(formData.get("name") ?? "").trim();
+  const company = String(formData.get("company") ?? "").trim();
+  const jobTitle = String(formData.get("jobTitle") ?? "").trim();
+  const locale = formData.get("locale") === "en" ? "en" : "ar";
+  const next = safeNext(formData.get("next"), "/new");
+  if (!name || !company || !jobTitle) {
+    redirect(`/welcome?next=${encodeURIComponent(next)}&missing=1${locale === "en" ? "&lang=en" : ""}`);
+  }
+  const useCase = String(formData.get("useCase") ?? "");
+  await repo.completeOnboarding({
+    accountId: account.id,
+    name,
+    company,
+    companyWebsite: cleanUrl(formData.get("companyWebsite")),
+    jobTitle,
+    useCase: USE_CASES.has(useCase) ? useCase : undefined,
+    linkedinUrl: cleanUrl(formData.get("linkedinUrl")),
+    locale,
+  });
+  // A first request with nothing typed yet starts from their use case's example,
+  // in their language.
+  const url = new URL(next, "https://intro.sa");
+  if (url.pathname === "/new" && !url.searchParams.get("q") && USE_CASES.has(useCase)) {
+    const { en } = await import("./site/en");
+    const { ar } = await import("./site/ar");
+    const seed = (locale === "en" ? en : ar).useCases.items.find((u) => u.id === useCase)?.seed;
+    if (seed) url.searchParams.set("q", seed);
+  }
+  redirect(url.pathname + url.search);
+}
+
+/** /activate. An observer asks to send; admins are told by email. */
+export async function requestActivation(formData: FormData): Promise<void> {
+  const account = await currentAccount();
+  const linkedinUrl = cleanUrl(formData.get("linkedinUrl"));
+  const companyWebsite = cleanUrl(formData.get("companyWebsite"));
+  const next = safeNext(formData.get("next"), "/requests");
+  if (!linkedinUrl || !companyWebsite) {
+    redirect(`/activate?next=${encodeURIComponent(next)}&missing=1`);
+  }
+  const note = String(formData.get("note") ?? "").slice(0, 500);
+  const result = await repo.requestActivation({ accountId: account.id, linkedinUrl, companyWebsite, note });
+  if (result.ok) {
+    // Everyone who can approve: the bootstrap list and anyone granted admin.
+    const granted = await db.select({ email: accounts.email }).from(accounts).where(eq(accounts.role, "admin"));
+    const admins = [...new Set([...adminEmails(), ...granted.map((a) => a.email.toLowerCase())])];
+    await sendActivationRequested(admins, {
+      displayName: account.displayName, email: account.email, company: account.company,
+      companyWebsite, linkedinUrl, jobTitle: account.jobTitle, note,
+    }).catch((error) => console.error("[requestActivation] admin email failed", error));
+  }
+  revalidatePath("/requests");
+  redirect(`/activate?sent=1&next=${encodeURIComponent(next)}`);
 }
