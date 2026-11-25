@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppBar, FitBadge, OutreachBadge, ar } from "@/components/Chrome";
 import { devVerifyAndGrant } from "@/lib/actions";
 import { devToolsEnabled } from "@/lib/env";
 import { SendButton } from "@/components/SendButton";
 import { balanceOf } from "@/lib/credits";
-import { canReadRequest, currentAccount } from "@/lib/session";
+import { canReadRequest, pageAccount } from "@/lib/session";
 import { loadRequestContext } from "@/lib/db/loaders";
 import type { Account, Db, OutreachStatus } from "@/lib/types";
 
@@ -20,8 +21,8 @@ const OUTREACH_LABEL: Record<OutreachStatus, string> = {
 };
 
 export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
-  const account = await currentAccount();
   const { id } = await params;
+  const account = await pageAccount(`/requests/${id}`);
   const db: Db = await loadRequestContext(id);
   const req = db.requests.find((r) => r.id === id);
   // notFound() rather than a refusal screen: a refusal would confirm that a
@@ -66,13 +67,16 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
           {account.state === "observer" ? (
             <div className="card row between g14">
               <div className="stack g4">
-                <strong className="sm">حسابك يشوف القوائم، لكنه ما يرسل بعد.</strong>
+                <strong className="sm">
+                  {account.activationRequestedAt ? "طلب التفعيل قيد المراجعة." : "قائمتك جاهزة. باقي تفعيل الإرسال."}
+                </strong>
                 <span className="sm muted">
-                  فعّل الإرسال بالتحقق من بريد العمل وحساب LinkedIn. أول رسائلك يراجعها مدير حسابك.
+                  {account.activationRequestedAt
+                    ? "نراسلك أول ما يتفعّل الإرسال، وعادةً خلال يوم عمل."
+                    : "نتحقق من حسابك في LinkedIn وموقع شركتك، وبعدها ترسل باسمك."}
                 </span>
               </div>
-              {/* The real verification flow lands with auth. Until then the
-                  shortcut exists only in development — never in a deploy. */}
+              {/* The dev shortcut exists only in development — never in a deploy. */}
               {devToolsEnabled ? (
                 <form action={devVerifyAndGrant}>
                   <input type="hidden" name="requestId" value={id} />
@@ -80,8 +84,12 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
                     فعّل الإرسال
                   </button>
                 </form>
-              ) : (
+              ) : account.activationRequestedAt ? (
                 <span className="chip">قيد المراجعة</span>
+              ) : (
+                <Link href={`/activate?next=${encodeURIComponent(`/requests/${id}`)}`} className="btn btn-strong btn-sm">
+                  فعّل الإرسال
+                </Link>
               )}
             </div>
           ) : (

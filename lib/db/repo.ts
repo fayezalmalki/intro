@@ -490,11 +490,67 @@ export async function setAccountRole(
 /** Every account, for the team screen. */
 export async function listAccounts(database: Database = defaultDb): Promise<Account[]> {
   const rows = await database.select().from(accounts).orderBy(accounts.createdAt);
-  return rows.map((row) => ({
-    ...row,
-    verifiedAt: row.verifiedAt ?? undefined,
-    frozenAt: row.frozenAt ?? undefined,
-    frozenReason: row.frozenReason ?? undefined,
-    assignedAm: row.assignedAm ?? undefined,
-  }));
+  // Nullable columns become optional fields (the Account shape uses undefined).
+  return rows.map((row) =>
+    Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v ?? undefined])) as unknown as Account);
+}
+
+// ── Onboarding and activation ─────────────────────────────────
+
+export interface OnboardingInput {
+  accountId: string;
+  name: string;
+  company: string;
+  companyWebsite?: string;
+  jobTitle: string;
+  useCase?: string;
+  linkedinUrl?: string;
+  locale: "ar" | "en";
+}
+
+/**
+ * Completes /welcome. The display name is what account managers and the
+ * people being introduced see, so it replaces the email-prefix placeholder
+ * provisioning used (lib/session.ts).
+ */
+export async function completeOnboarding(input: OnboardingInput, database: Database = defaultDb): Promise<void> {
+  const name = input.name.trim();
+  await commit(database, [
+    database.update(accounts).set({
+      displayName: name,
+      initial: (name[0] ?? "?").toUpperCase(),
+      company: input.company.trim(),
+      companyWebsite: input.companyWebsite?.trim() || null,
+      jobTitle: input.jobTitle.trim(),
+      useCase: input.useCase || null,
+      linkedinUrl: input.linkedinUrl?.trim() || null,
+      locale: input.locale,
+      onboardedAt: nowIso(),
+    }).where(eq(accounts.id, input.accountId)),
+    audit(database, name, input.accountId, "account.onboarded", input.useCase ?? ""),
+  ]);
+}
+
+/**
+ * An observer asks to send. Idempotent: asking again refreshes the details
+ * without resetting when they first asked (the queue is ordered by it).
+ * Returns false for an account that is already verified — nothing to ask.
+ */
+export async function requestActivation(
+  input: { accountId: string; linkedinUrl: string; companyWebsite: string; note?: string },
+  database: Database = defaultDb,
+): Promise<{ ok: boolean; first: boolean }> {
+  const [account] = await database.select().from(accounts).where(eq(accounts.id, input.accountId)).limit(1);
+  if (!account || account.state !== "observer") return { ok: false, first: false };
+  const first = !account.activationRequestedAt;
+  await commit(database, [
+    database.update(accounts).set({
+      linkedinUrl: input.linkedinUrl.trim(),
+      companyWebsite: input.companyWebsite.trim(),
+      activationNote: input.note?.trim() || null,
+      activationRequestedAt: account.activationRequestedAt ?? nowIso(),
+    }).where(eq(accounts.id, input.accountId)),
+    audit(database, account.displayName, input.accountId, "account.activation_requested", input.companyWebsite),
+  ]);
+  return { ok: true, first };
 }

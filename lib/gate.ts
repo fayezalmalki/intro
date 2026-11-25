@@ -28,7 +28,7 @@ export interface GateResult {
 }
 
 const REASON: Record<GateFailure, string> = {
-  account_not_verified: "حسابك ما زال بدون تفعيل للإرسال. أكمل التحقق أولًا.",
+  account_not_verified: "الإرسال غير مفعّل في حسابك بعد. فعّله من «فعّل الإرسال» أعلى الصفحة.",
   account_frozen: "أوقفنا الإرسال من حسابك مؤقتًا بعد شكاوى. مدير حسابك يراجعها.",
   recipient_suppressed: "هذا الشخص طلب عدم التواصل معه. لا يمكن مراسلته.",
   recipient_cooldown: "تواصل معه أحد خلال آخر ٩٠ يومًا. جرّب مسارًا ثانيًا.",

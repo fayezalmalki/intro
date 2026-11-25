@@ -1,5 +1,5 @@
 import { AppBar } from "@/components/Chrome";
-import { currentAccount } from "@/lib/session";
+import { pageAccount } from "@/lib/session";
 import { createRequest } from "@/lib/actions";
 
 const EXAMPLES = [
@@ -21,10 +21,13 @@ export const dynamic = "force-dynamic";
 export default async function NewRequestPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; company?: string; lang?: string }>;
 }) {
-  const account = await currentAccount();
-  const { q } = await searchParams;
+  const params = await searchParams;
+  // Keep what the landing sent (?q, ?company, ?lang) through /welcome.
+  const carried = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString();
+  const account = await pageAccount(`/new${carried ? `?${carried}` : ""}`);
+  const { q } = params;
   const prefill = q?.trim() || EXAMPLES[0];
   return (
     <>

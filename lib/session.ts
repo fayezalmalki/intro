@@ -11,7 +11,7 @@ import type { Account, Role } from "./types";
  * Read once, at provisioning. Adding an address here later does not promote an
  * account that already exists — see accountForUser.
  */
-function adminEmails(): string[] {
+export function adminEmails(): string[] {
   const raw = (env as unknown as { ADMIN_EMAILS?: string }).ADMIN_EMAILS ?? process.env.ADMIN_EMAILS ?? "";
   return raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
 }
@@ -41,6 +41,14 @@ function normalize(row: typeof accounts.$inferSelect): Account {
     frozenAt: row.frozenAt ?? undefined,
     frozenReason: row.frozenReason ?? undefined,
     assignedAm: row.assignedAm ?? undefined,
+    company: row.company ?? undefined,
+    companyWebsite: row.companyWebsite ?? undefined,
+    jobTitle: row.jobTitle ?? undefined,
+    useCase: row.useCase ?? undefined,
+    linkedinUrl: row.linkedinUrl ?? undefined,
+    onboardedAt: row.onboardedAt ?? undefined,
+    activationRequestedAt: row.activationRequestedAt ?? undefined,
+    activationNote: row.activationNote ?? undefined,
   };
 }
 
@@ -97,6 +105,20 @@ export async function currentAccount(database: Database = defaultDb): Promise<Ac
   const user = await getSessionUser(await headers());
   if (!user?.email) throw new NotAuthenticated();
   return accountForUser(user.id, user.email, database);
+}
+
+/**
+ * The signed-in account for an app page, sent to /welcome first if they have
+ * not finished onboarding. Pages only — a server action must not redirect a
+ * caller somewhere it never asked to go; actions keep currentAccount().
+ */
+export async function pageAccount(next: string, database: Database = defaultDb): Promise<Account> {
+  const account = await currentAccount(database);
+  if (!account.onboardedAt) {
+    const { redirect } = await import("next/navigation");
+    redirect(`/welcome?next=${encodeURIComponent(next)}`);
+  }
+  return account;
 }
 
 /** The signed-in account, or null for a visitor. For pages that render either way. */
@@ -202,7 +224,7 @@ export async function accountForPage(
   need: "account_manager" | "admin",
   database: Database = defaultDb,
 ): Promise<Account | null> {
-  const account = await currentAccount(database);
+  const account = await pageAccount(need === "admin" ? "/am/team" : "/am", database);
   const permitted = need === "admin" ? account.role === "admin" : isAccountManager(account);
   return permitted ? account : null;
 }

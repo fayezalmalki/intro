@@ -54,6 +54,11 @@ export default async function TeamPage({
   // a verified account whose credits ran out is equally stuck, and used to be
   // stuck permanently, since the only button on this page appeared for
   // observers.
+  // Observers who asked to send (/activate), oldest first. Approving here is
+  // the same verifyAccount as in the table below, and it emails them.
+  const waiting = accounts
+    .filter((a) => a.state === "observer" && a.activationRequestedAt)
+    .sort((a, b) => a.activationRequestedAt!.localeCompare(b.activationRequestedAt!));
   const stuck = accounts.filter(
     (a) => a.state === "observer" || (credits.get(a.id)?.balance ?? 0) < 1,
   ).length;
@@ -84,6 +89,52 @@ export default async function TeamPage({
           </div>
 
           {refused && <div className="alert">{REFUSED[refused] ?? "ما قدرنا نغيّر الدور."}</div>}
+
+          {waiting.length > 0 && (
+            <div className="stack g10">
+              <div className="row between">
+                <strong>بانتظار التفعيل</strong>
+                <span className="xs dim">{ar(waiting.length)} طلب · الأقدم أولًا</span>
+              </div>
+              {waiting.map((account) => {
+                const standing = credits.get(account.id) ?? { balance: 0, grants: 0 };
+                return (
+                  <div className="card row between g14" key={account.id} style={{ alignItems: "flex-start" }}>
+                    <div className="stack g6">
+                      <div className="row g10">
+                        <div className="avatar sm">{account.initial}</div>
+                        <div className="stack g4">
+                          <strong className="sm">
+                            {account.displayName}
+                            {account.jobTitle ? ` · ${account.jobTitle}` : ""}
+                            {account.company ? ` · ${account.company}` : ""}
+                          </strong>
+                          <span className="xs dim lat">{account.email}</span>
+                        </div>
+                      </div>
+                      <div className="row g14 wrapx xs">
+                        {account.companyWebsite && (
+                          <a href={account.companyWebsite} target="_blank" rel="noreferrer" className="lat">{account.companyWebsite.replace(/^https?:\/\//, "")}</a>
+                        )}
+                        {account.linkedinUrl && (
+                          <a href={account.linkedinUrl} target="_blank" rel="noreferrer" className="lat">LinkedIn</a>
+                        )}
+                        <span className="dim">طلب {new Date(account.activationRequestedAt!).toISOString().slice(0, 10)}</span>
+                      </div>
+                      {account.activationNote && <span className="sm muted">«{account.activationNote}»</span>}
+                    </div>
+                    <form action={verifyAccount}>
+                      <input type="hidden" name="accountId" value={account.id} />
+                      <input type="hidden" name="grants" value={standing.grants} />
+                      <button type="submit" className="btn btn-strong btn-sm">
+                        فعّل وامنح {ar(VERIFY_GRANT)} رسائل
+                      </button>
+                    </form>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="tbl">
             <div className="tr head tr-team">

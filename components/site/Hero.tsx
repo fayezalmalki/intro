@@ -14,14 +14,14 @@ export function Hero({ t }: { t: Dictionary }) {
           </p>
           <h1
             id="hero-heading"
-            className="display font-display text-[46px] leading-[1.02] font-medium tracking-[-2px] text-balance text-ink sm:text-[68px] sm:tracking-[-3px] lg:text-[84px] lg:leading-[86px] lg:tracking-[-4.4px] rtl:lg:text-[66px]"
+            className="display font-display text-[46px] leading-[1.02] font-medium tracking-[-2px] text-balance text-ink sm:text-[68px] sm:tracking-[-3px] lg:text-[84px] lg:leading-[86px] lg:tracking-[-4.4px] rtl:text-[36px] rtl:sm:text-[54px] rtl:lg:text-[66px]"
           >
             <span className="block">{h.headline[0]}</span>
             <span className="block">{h.headline[1]}</span>
           </h1>
           <p className="max-w-[640px] text-[17px] leading-[27px] text-muted sm:text-[18px] sm:leading-[29px] rtl:sm:leading-[31px]">{h.subhead}</p>
           <div className="flex flex-wrap justify-center gap-2.5 pt-1.5">
-            <PillLink href="/new" className="px-[22px] py-[13px]">{h.primary}</PillLink>
+            <PillLink href={`/new?lang=${t.locale}`} className="px-[22px] py-[13px]">{h.primary}</PillLink>
             <PillLink href="#how-it-works" variant="secondary" className="px-[22px] py-[13px]">
               {h.secondary}
               <Icon name="play" size={12} flip />

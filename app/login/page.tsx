@@ -1,42 +1,36 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { getSessionUser, googleEnabled } from "@/lib/auth";
+import { AuthShell, pickLang, withLang } from "@/components/site/AuthShell";
 import { LoginForm } from "./LoginForm";
 
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = { title: "Sign in · intro.sa" };
+
 /**
- * The only unauthenticated screen in the app. Middleware sends everyone here
- * with `?next=`, so a signed-in visitor who lands here has already arrived —
- * bounce them onward rather than showing a sign-in form they do not need.
+ * The only unauthenticated app screen. Middleware sends everyone here with
+ * `?next=`, so a signed-in visitor who lands here has already arrived —
+ * bounce them onward rather than showing a form they do not need.
  */
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; lang?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, lang: langParam } = await searchParams;
 
   // Only same-site paths. An open redirect here would let a phishing link send
-  // a freshly-signed-in user to an attacker's page carrying the trust of our
-  // own domain.
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  // a freshly-signed-in user to an attacker's page carrying our domain's trust.
+  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/requests";
 
   if (await getSessionUser(await headers())) redirect(target);
 
-  const providers = { google: googleEnabled() };
-
+  const lang = pickLang(langParam, next);
   return (
-    <div className="login-page">
-      <div className="stack g26 narrow" style={{ width: "100%" }}>
-        <div className="stack g8" style={{ textAlign: "center" }}>
-          <span className="logo" style={{ fontSize: "var(--text-xl)" }}>
-            intro<span>.</span>
-          </span>
-          <span className="sm muted">سجّل دخولك عشان تكمّل طلبك.</span>
-        </div>
-        <LoginForm target={target} providers={providers} />
-      </div>
-    </div>
+    <AuthShell lang={lang} switchHref={withLang("/login", { next }, lang === "ar" ? "en" : "ar")}>
+      <LoginForm target={target} providers={{ google: googleEnabled() }} lang={lang} />
+    </AuthShell>
   );
 }
