@@ -10,7 +10,7 @@ import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
 import { loadRequestContext } from "./loaders";
 import type {
-  Account, Brief, Channel, Db, ItemStatus, PipelineSource, RequestStatus, Role,
+  Account, Brief, Channel, Db, ItemStatus, PipelineItem, PipelineSource, RequestStatus, Role,
 } from "../types";
 
 /**
@@ -123,6 +123,139 @@ export async function confirmBrief(
   statements.push(audit(database, request.requesterName, requestId, "brief.confirmed",
     `مسودة آلية بـ${drafted.length} أشخاص`));
   await commit(database, statements);
+}
+
+/**
+ * Confirms the brief for live sourcing: the request moves to `in_sourcing`
+ * with no pipeline yet, and RequestWorkflow (worker/request-workflow.ts)
+ * writes v1 when it finishes. Returns whether sourcing should be (re)started:
+ * true for a fresh confirm or a confirmed request still without a pipeline.
+ */
+export async function confirmBriefForSourcing(
+  requestId: string,
+  summaryAr: string | undefined,
+  database: Database = defaultDb,
+): Promise<boolean> {
+  const [request] = await database.select().from(requests).where(eq(requests.id, requestId)).limit(1);
+  if (!request?.brief) return false;
+  if (request.status === "in_sourcing") {
+    // Confirmed before, but the workflow may never have started (the start
+    // failed after this commit). Starting again is safe: the instance id is
+    // the request id. Once a pipeline exists there is nothing to start.
+    const [pipeline] = await database.select({ id: pipelines.id }).from(pipelines)
+      .where(eq(pipelines.requestId, requestId)).limit(1);
+    return !pipeline;
+  }
+  if (request.status !== "intent_review") return false;
+
+  const brief = request.brief as Brief;
+  if (summaryAr) brief.summaryAr = summaryAr;
+  await commit(database, [
+    database.update(requests).set({
+      brief,
+      status: "in_sourcing" as RequestStatus,
+      confirmedAt: nowIso(),
+      workflowId: requestId,
+    }).where(and(eq(requests.id, requestId), eq(requests.status, "intent_review"))),
+    audit(database, request.requesterName, requestId, "brief.confirmed", "بدأ البحث عن الأشخاص"),
+  ]);
+  return true;
+}
+
+export interface SourcedPerson {
+  key: string;
+  name: string;
+  title: string;
+  company: string;
+  companyDomain: string;
+  industries: string[];
+  seniority: string;
+  linkedinUrl?: string;
+  servedBy: string;
+}
+
+export type SourcedRow = Omit<PipelineItem, "id" | "personId"> & { candidateKey: string };
+
+/**
+ * Writes what RequestWorkflow sourced: the people (upserted by LinkedIn URL,
+ * so a person found by two requests is one row), pipeline v1 and its rows,
+ * and the request's sourcing spend — in one atomic batch.
+ *
+ * Idempotent: if v1 already exists (a workflow step retried after a commit
+ * whose acknowledgement was lost) it returns that pipeline and writes nothing.
+ */
+export async function writeSourcedPipeline(
+  input: {
+    requestId: string;
+    people: SourcedPerson[];
+    rows: SourcedRow[];
+    spentMicro: number;
+    note?: string;
+    createdBy: string;
+  },
+  database: Database = defaultDb,
+): Promise<string | null> {
+  const [request] = await database.select().from(requests).where(eq(requests.id, input.requestId)).limit(1);
+  if (!request) return null;
+  const [existing] = await database.select().from(pipelines)
+    .where(and(eq(pipelines.requestId, input.requestId), eq(pipelines.version, 1))).limit(1);
+  if (existing) return existing.id;
+
+  const urls = input.people.map((p) => p.linkedinUrl).filter((u): u is string => !!u);
+  const known = urls.length
+    ? await database.select({ id: people.id, linkedinUrl: people.linkedinUrl }).from(people)
+        .where(inArray(people.linkedinUrl, urls))
+    : [];
+  const idByUrl = new Map(known.map((k) => [k.linkedinUrl, k.id]));
+
+  const statements: Stmt[] = [];
+  const idByKey = new Map<string, string>();
+  for (const p of input.people) {
+    const fields = {
+      latin: p.name,
+      // No Arabic name from the provider; the opener greets by the first name as written.
+      firstAr: p.name.split(/\s+/)[0] ?? p.name,
+      title: p.title,
+      company: p.company,
+      companyDomain: p.companyDomain,
+      geo: "السعودية",
+      industries: p.industries,
+      seniority: p.seniority,
+      linkedinUrl: p.linkedinUrl,
+      source: "provider" as const,
+      servedBy: p.servedBy,
+      updatedAt: nowIso(),
+    };
+    const knownId = p.linkedinUrl ? idByUrl.get(p.linkedinUrl) : undefined;
+    if (knownId) {
+      // Refresh what the provider says now; keep anything a person or AM set
+      // (email, verification, open-to-intros) untouched.
+      statements.push(database.update(people).set(fields).where(eq(people.id, knownId)));
+      idByKey.set(p.key, knownId);
+    } else {
+      const id = crypto.randomUUID();
+      statements.push(database.insert(people).values({ id, ...fields }));
+      idByKey.set(p.key, id);
+    }
+  }
+
+  const pipelineId = crypto.randomUUID();
+  statements.push(database.insert(pipelines).values({
+    id: pipelineId, requestId: input.requestId, version: 1, source: "ai_generated",
+    status: "draft", createdBy: input.createdBy, note: input.note,
+  }));
+  for (const { candidateKey, ...row } of input.rows) {
+    const personId = idByKey.get(candidateKey);
+    if (!personId) continue;
+    statements.push(database.insert(pipelineItems).values({ ...row, personId, pipelineId }));
+  }
+  statements.push(
+    database.update(requests).set({ sourcingCostMicro: input.spentMicro }).where(eq(requests.id, input.requestId)),
+    audit(database, input.createdBy, input.requestId, "pipeline.sourced",
+      `${input.rows.length} أشخاص · ${(input.spentMicro / 1_000_000).toFixed(4)}$`),
+  );
+  await commit(database, statements);
+  return pipelineId;
 }
 
 export async function setItemStatus(

@@ -6,6 +6,7 @@ import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
 import { sendThroughGate } from "./send";
+import { liveWorkflow, startSourcing } from "./sourcing/live";
 import { currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
 import { assertDevTools } from "./env";
 import type { Channel, PipelineSource, Role } from "./types";
@@ -51,7 +52,16 @@ export async function confirmBrief(formData: FormData): Promise<void> {
   // this, any signed-in account could rewrite anyone's brief.
   await requireRequestOwner(requestId, "confirm this request");
 
-  await repo.confirmBrief(requestId, summary || undefined);
+  const workflow = liveWorkflow();
+  if (workflow) {
+    // Real sourcing runs in the background (worker/request-workflow.ts); the
+    // request page shows the "finding people" stage until v1 lands.
+    if (await repo.confirmBriefForSourcing(requestId, summary || undefined)) {
+      await startSourcing(workflow, requestId);
+    }
+  } else {
+    await repo.confirmBrief(requestId, summary || undefined);
+  }
 
   revalidatePath("/am");
   redirect(`/requests/${requestId}`);

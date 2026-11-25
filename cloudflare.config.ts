@@ -4,8 +4,8 @@ const WORKER = "intro";
 
 /**
  * Phase 1 (platform move): D1, the AccountGate Durable Object, outbound email
- * and secrets. Later phases add, in the phase that implements them:
- *   Phase 2  RequestWorkflow (exports.workflow + bindings.workflow)
+ * and secrets. Phase 2: RequestWorkflow (real sourcing through treg). Later
+ * phases add, in the phase that implements them:
  *   Phase 4  OutreachWorkflow, inbound replies (triggers.email), R2 for attach uploads
  *   Phase 5  signals queue (triggers.queue + bindings.queue), daily cron (triggers.scheduled)
  * See docs/plans/2026-11-25-intro-cloudflare-rebuild.md.
@@ -30,13 +30,18 @@ export default defineConfig({
     exports: {
       // One instance per account: serialises send + credit decisions (replaces SELECT … FOR UPDATE).
       AccountGate: exports.durableObject({ storage: "sqlite" }),
+      // Confirmed brief → companies → people → signals → ranked draft (lib/sourcing/run.ts).
+      RequestWorkflow: exports.workflow({ name: "intro-request" }),
     },
     env: {
       ASSETS: bindings.assets(),
       DB: bindings.d1({ name: "intro-db" }),
       EMAIL: bindings.sendEmail(),
       ACCOUNT_GATE: bindings.durableObject({ worker: WORKER, exportName: "AccountGate" }),
+      REQUEST_WORKFLOW: bindings.workflow({ name: "intro-request", worker: WORKER, exportName: "RequestWorkflow" }),
       ANTHROPIC_API_KEY: bindings.secret(),
+      // A capped treg agent token (`treg org agent-new intro-prod --cap …`). Unset → seeded fixtures.
+      TREG_TOKEN: bindings.secret(),
       BETTER_AUTH_SECRET: bindings.secret(),
       BETTER_AUTH_URL: bindings.secret(),
       // Comma-separated emails provisioned as admin on first sign-in (lib/session.ts).
