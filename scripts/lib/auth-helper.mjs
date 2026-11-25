@@ -1,36 +1,54 @@
+import fs from "node:fs";
+import path from "node:path";
+
 /**
- * Signs a Playwright browser context in through the dev-only `dev-email`
- * credentials provider, which exists only when NODE_ENV=development.
+ * Signs a Playwright browser context in through the real email-OTP flow.
  *
- * NextAuth's credentials callback is CSRF-protected, so this is a two-step
- * dance: fetch the token, then post it back alongside the email. Posting with
- * `json: "true"` makes NextAuth answer with a JSON body instead of a 302, which
- * is what lets us tell a failed sign-in from a successful one — a redirect to
- * the error page looks a lot like a redirect to the callback URL otherwise.
+ * Locally, Cloudflare's send_email binding is simulated: each message is
+ * written under .cloudflare/tmp/email/ instead of being delivered. This asks
+ * Better Auth for a code, reads it back from the newest simulated message's
+ * text, and posts it — the same path a person takes, minus the inbox.
  */
+const EMAIL_DIR = path.join(process.cwd(), ".cloudflare/tmp/email");
+
+function newestTextMessages() {
+  if (!fs.existsSync(EMAIL_DIR)) return [];
+  const files = [];
+  for (const instance of fs.readdirSync(EMAIL_DIR)) {
+    const dir = path.join(EMAIL_DIR, instance, "email-text");
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      const file = path.join(dir, f);
+      files.push({ file, mtime: fs.statSync(file).mtimeMs });
+    }
+  }
+  return files.sort((a, b) => b.mtime - a.mtime);
+}
+
+async function readCode(seen) {
+  for (let i = 0; i < 40; i += 1) {
+    const latest = newestTextMessages().find((m) => !seen.has(m.file));
+    if (latest) {
+      const match = fs.readFileSync(latest.file, "utf8").match(/\b(\d{6})\b/);
+      if (match) return match[1];
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("no sign-in code arrived in the local email simulator — is `npm run dev` running?");
+}
+
 export async function signIn(context, baseUrl, email) {
-  const csrfResponse = await context.request.get(`${baseUrl}/api/auth/csrf`);
-  if (!csrfResponse.ok()) {
-    throw new Error(`csrf endpoint returned ${csrfResponse.status()} — is the dev server up?`);
-  }
-  const { csrfToken } = await csrfResponse.json();
-
-  const callbackResponse = await context.request.post(`${baseUrl}/api/auth/callback/dev-email`, {
-    form: { email, csrfToken, callbackUrl: baseUrl, json: "true" },
+  // Messages already on disk belong to earlier sign-ins; only a new one is ours.
+  const seen = new Set(newestTextMessages().map((m) => m.file));
+  const headers = { origin: baseUrl };
+  const sent = await context.request.post(`${baseUrl}/api/auth/email-otp/send-verification-otp`, {
+    headers, data: { email, type: "sign-in" },
   });
-  if (!callbackResponse.ok()) {
-    throw new Error(`sign-in for ${email} returned ${callbackResponse.status()}`);
-  }
+  if (!sent.ok()) throw new Error(`sending a code to ${email} returned ${sent.status()}`);
 
-  const cookies = await context.cookies();
-  const session = cookies.find((cookie) => cookie.name.endsWith("authjs.session-token"));
-  if (!session) {
-    // The dev-email provider is absent unless NODE_ENV=development, and its
-    // absence shows up here rather than as an HTTP error.
-    throw new Error(
-      `no session cookie after signing in as ${email}. ` +
-        `The dev-email provider only exists when the server runs with NODE_ENV=development.`,
-    );
-  }
-  return session;
+  const otp = await readCode(seen);
+  const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email-otp`, {
+    headers, data: { email, otp },
+  });
+  if (!signedIn.ok()) throw new Error(`sign-in for ${email} returned ${signedIn.status()}`);
 }

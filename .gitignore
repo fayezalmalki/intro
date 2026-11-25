@@ -8,3 +8,11 @@ node_modules/
 # TypeScript incremental build cache — regenerated on every build, and a
 # tracked copy conflicts on every branch.
 *.tsbuildinfo
+
+# Claude Code personal settings
+.claude/settings.local.json
+/dist/
+.vinext/
+.cloudflare/
+.dev.vars
+drizzle/seed/

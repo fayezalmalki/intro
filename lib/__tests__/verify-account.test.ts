@@ -12,8 +12,8 @@ import type { Db } from "../types";
  *
  * Every account is provisioned as an observer with an empty ledger, so the
  * gate refuses every send with account_not_verified and insufficient_credits.
- * These run against a real transaction rather than a mock, because the
- * idempotency this depends on is an index in Postgres, not a branch in
+ * These run against a real D1 database rather than a mock, because the
+ * idempotency this depends on is a unique index, not a branch in
  * TypeScript — a stub would happily agree with a wrong implementation.
  */
 describe("verifyAndCredit", () => {
@@ -21,7 +21,7 @@ describe("verifyAndCredit", () => {
   let target: string;
 
   const makeAccount = async (name: string) => {
-    const [user] = await db.insert(authUsers).values({ email: `${name}@example.sa` }).returning();
+    const [user] = await db.insert(authUsers).values({ email: `${name}@example.sa`, name: "test" }).returning();
     const [account] = await db.insert(accounts).values({
       userId: user.id, role: "requester", displayName: name,
       initial: name[0].toUpperCase(), email: `${name}@example.sa`, state: "observer",
@@ -140,7 +140,7 @@ describe("creditStanding", () => {
 
   it("sums each account's ledger and omits accounts with none", async () => {
     const make = async (name: string) => {
-      const [user] = await db.insert(authUsers).values({ email: `${name}@example.sa` }).returning();
+      const [user] = await db.insert(authUsers).values({ email: `${name}@example.sa`, name: "test" }).returning();
       const [a] = await db.insert(accounts).values({
         userId: user.id, role: "requester", displayName: name, initial: "X",
         email: `${name}@example.sa`, state: "observer",
@@ -169,7 +169,7 @@ describe("creditStanding", () => {
    * could repeat one after a refund.
    */
   it("counts grant rows, not every ledger row", async () => {
-    const [user] = await db.insert(authUsers).values({ email: "g@example.sa" }).returning();
+    const [user] = await db.insert(authUsers).values({ email: "g@example.sa", name: "test" }).returning();
     const [a] = await db.insert(accounts).values({
       userId: user.id, role: "requester", displayName: "g", initial: "G",
       email: "g@example.sa", state: "verified",

@@ -1,4 +1,5 @@
 import "server-only";
+import { env } from "cloudflare:workers";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
@@ -35,19 +36,20 @@ const SYSTEM = `أنت محلل طلبات في منصة Intro السعودية.
  * extractor otherwise, so the app runs end to end with no API key configured.
  */
 export async function extractBrief(rawText: string): Promise<Brief> {
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    return rulesBrief(rawText);
-  }
+  const apiKey = (env as unknown as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY;
+  if (!apiKey) return rulesBrief(rawText);
   try {
-    const client = new Anthropic();
+    const client = new Anthropic({ apiKey });
     const response = await client.messages.parse({
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
       max_tokens: 4096,
+      // A short structured extraction: low effort keeps it fast and cheap.
+      output_config: { effort: "low", format: zodOutputFormat(BriefSchema) },
       system: SYSTEM,
       messages: [{ role: "user", content: rawText }],
-      output_config: { format: zodOutputFormat(BriefSchema) },
     });
-    const parsed = response.parsed_output;
+    // A refusal carries no parsed output; treat it like any other failure.
+    const parsed = response.stop_reason === "refusal" ? null : response.parsed_output;
     if (!parsed) return rulesBrief(rawText);
     return { ...parsed, confidence: 0.9, extractedBy: "claude" };
   } catch {

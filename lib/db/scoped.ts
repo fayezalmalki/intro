@@ -5,21 +5,16 @@ import {
 } from "./schema";
 
 /**
- * The replacement for row-level security.
+ * Tenant isolation, in the application.
  *
- * NextAuth JWT sessions and the stateless neon-http driver mean Postgres has no
- * per-request role, so RLS cannot enforce anything — every isolation guarantee
- * rests on this file. Feature code must never call `db.select()` directly; it
- * goes through here, and `lib/__tests__/isolation.test.ts` proves that account B
- * cannot reach account A's rows.
+ * D1 has no row-level security, so every isolation guarantee rests on this
+ * file. Feature code must never call `db.select()` directly for tenant data;
+ * it goes through here, and `lib/__tests__/isolation.test.ts` proves that
+ * account B cannot reach account A's rows.
  *
  * Ownership of pipelines, outreach and send attempts is derived from the
  * request's account rather than trusted from the caller — passing someone
  * else's requestId returns nothing rather than their data.
- *
- * drizzle/policies/rls.sql holds the equivalent database-level policies,
- * written now and applied when the postgres-js driver takes over. See
- * docs/03-design-review.md.
  */
 export function scoped(db: Database, accountId: string) {
   /** Request ids this account owns — the root of every other check. */

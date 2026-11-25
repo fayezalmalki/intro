@@ -1,7 +1,8 @@
+import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import type { Database } from "./db";
 import { db as defaultDb } from "./db";
-import { accounts, authUsers, requests } from "./db/schema";
+import { accounts, requests } from "./db/schema";
 import type { Account, Role } from "./types";
 
 /**
@@ -10,13 +11,13 @@ import type { Account, Role } from "./types";
  * Read once, at provisioning. Adding an address here later does not promote an
  * account that already exists — see accountForUser.
  */
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "")
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
+function adminEmails(): string[] {
+  const raw = (env as unknown as { ADMIN_EMAILS?: string }).ADMIN_EMAILS ?? process.env.ADMIN_EMAILS ?? "";
+  return raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+}
 
 export function isAdminEmail(email?: string | null): boolean {
-  return Boolean(email) && ADMIN_EMAILS.includes(email!.toLowerCase());
+  return Boolean(email) && adminEmails().includes(email!.toLowerCase());
 }
 
 export class NotAuthenticated extends Error {
@@ -87,19 +88,25 @@ export async function accountForUser(
 /**
  * The signed-in account. Throws rather than redirecting, so a server action
  * reached directly fails closed instead of returning a redirect a caller can
- * ignore; middleware.ts handles the redirect for people browsing.
+ * ignore; middleware.ts handles the redirect for people browsing. The session
+ * is validated against the database by Better Auth on every call.
  */
 export async function currentAccount(database: Database = defaultDb): Promise<Account> {
-  const { auth } = await import("./auth");
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new NotAuthenticated();
+  const { headers } = await import("next/headers");
+  const { getSessionUser } = await import("./auth");
+  const user = await getSessionUser(await headers());
+  if (!user?.email) throw new NotAuthenticated();
+  return accountForUser(user.id, user.email, database);
+}
 
-  const [user] = await database
-    .select().from(authUsers).where(eq(authUsers.email, email)).limit(1);
-  if (!user) throw new NotAuthenticated();
-
-  return accountForUser(user.id, email, database);
+/** The signed-in account, or null for a visitor. For pages that render either way. */
+export async function maybeAccount(database: Database = defaultDb): Promise<Account | null> {
+  try {
+    return await currentAccount(database);
+  } catch (error) {
+    if (error instanceof NotAuthenticated) return null;
+    throw error;
+  }
 }
 
 export function isAccountManager(account: Account): boolean {

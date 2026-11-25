@@ -1,1 +1,0 @@
-ALTER TABLE "requests" ALTER COLUMN "assigned_am" DROP NOT NULL;

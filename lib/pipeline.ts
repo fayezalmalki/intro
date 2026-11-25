@@ -60,7 +60,7 @@ function time(iso?: string): string | undefined {
  * where a request actually is without opening four screens. This assembles it
  * from what already exists; it stores nothing new.
  *
- * Pure over `Db`, like lib/gate.ts, so it survives the Postgres port unchanged.
+ * Pure over `Db`, like lib/gate.ts, so it survives storage changes unchanged.
  */
 const UNASSIGNED = "غير مُسند";
 

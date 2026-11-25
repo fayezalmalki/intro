@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, ne } from "drizzle-orm";
 import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import { scoped } from "./scoped";
@@ -7,11 +7,13 @@ import {
   pipelineItems, pipelines, requests, sendAttempts, suppressions,
 } from "./schema";
 import type { Db, Pipeline, PipelineItem } from "../types";
+import { GLOBAL_COOLDOWN_DAYS } from "../gate";
+import { hashEmail } from "../suppression";
 
 /**
  * Loaders assemble the `Db` shape the pure functions already consume —
  * lib/gate.ts, lib/pipeline.ts, lib/sourcing.ts — from scoped queries, so
- * moving storage to Postgres does not touch a line of domain logic.
+ * moving storage to D1 does not touch a line of domain logic.
  *
  * They deliberately load only what the caller needs rather than the whole
  * database, which is what the old JSON store did.
@@ -71,9 +73,33 @@ export async function loadRequestContext(
     : [];
 
   out.outreach = (await scope.outreach()).filter((o) => o.requestId === requestId);
-  out.sendAttempts = (await scope.sendAttempts()).map((a) => undef(a) as Db["sendAttempts"][number]);
+
+  // The account's own attempts (daily cap, near-duplicate check), plus other
+  // accounts' allowed sends to these same people in the cooldown window — the
+  // cross-requester cooldown cannot fire without them. Other accounts' bodies
+  // are blanked: the gate only needs that a send happened, not what it said.
+  const own = await scope.sendAttempts();
+  const cutoff = new Date(Date.now() - GLOBAL_COOLDOWN_DAYS * 86_400_000).toISOString();
+  const elsewhere = personIds.length
+    ? await database.select().from(sendAttempts).where(and(
+        inArray(sendAttempts.personId, personIds),
+        ne(sendAttempts.accountId, request.accountId),
+        eq(sendAttempts.result, "allowed"),
+        gt(sendAttempts.at, cutoff),
+      ))
+    : [];
+  out.sendAttempts = [
+    ...own,
+    ...elsewhere.map((a) => ({ ...a, body: "", variantHash: "" })),
+  ].map((a) => undef(a) as Db["sendAttempts"][number]);
+
   out.ledger = (await scope.ledger()).map((e) => undef(e) as Db["ledger"][number]);
-  out.suppressions = await database.select().from(suppressions);
+
+  // Only the suppression rows that could match someone in this request.
+  const hashes = out.people.filter((p) => p.email).map((p) => hashEmail(p.email!));
+  out.suppressions = hashes.length
+    ? await database.select().from(suppressions).where(inArray(suppressions.emailHash, hashes))
+    : [];
 
   return out;
 }

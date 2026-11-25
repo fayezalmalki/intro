@@ -10,8 +10,8 @@ import { SEED_ACCOUNTS, SEED_LISTS, SEED_PEOPLE } from "../seed";
  * an account manager to review.
  *
  * The explicit ids matter and are not incidental: lib/sourcing.ts keys its
- * sourced evidence off these stable person ids. Letting Postgres generate
- * UUIDs instead would leave every drafted row with no evidence — and since the
+ * sourced evidence off these stable person ids. Letting the database generate
+ * random ids instead would leave every drafted row with no evidence — and since the
  * evidence gate refuses rows without a source, the review console would
  * silently stop being able to approve anything.
  *
@@ -46,7 +46,7 @@ export async function seedDemoAccounts(database: Database = defaultDb): Promise<
       .select().from(authUsers).where(eq(authUsers.email, account.email)).limit(1);
     const user =
       existing ??
-      (await database.insert(authUsers).values({ email: account.email }).returning())[0];
+      (await database.insert(authUsers).values({ email: account.email, name: account.displayName }).returning())[0];
 
     await database
       .insert(accounts)

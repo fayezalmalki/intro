@@ -2,14 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The health route's job is to make an opaque 500 into a URL that names the
- * problem, and — since this change — to answer "is Claude actually running on
- * this deployment?" without signing in and reading Arabic prose style.
+ * problem, and to answer "is Claude actually running on this deployment?"
+ * without signing in.
  *
- * The database is stubbed so these test the reporting, not Postgres; the
- * loaders and repo suites cover the queries.
+ * The Worker env is stubbed so these test the reporting, not D1; the loaders
+ * and repo suites cover the queries.
  */
+const fakeEnv: Record<string, unknown> = {};
+
+vi.mock("cloudflare:workers", () => ({ env: fakeEnv }));
 vi.mock("@/lib/db", () => ({
-  db: { execute: vi.fn(async () => ({ rows: [] })) },
+  db: {
+    run: vi.fn(async () => undefined),
+    all: vi.fn(async () => []),
+  },
 }));
 
 const get = async () => {
@@ -19,27 +25,21 @@ const get = async () => {
   return { res, body: (await res.json()) as { ok: boolean; config: Record<string, boolean> } };
 };
 
-describe("GET /api/health", () => {
-  beforeEach(() => {
-    vi.unstubAllEnvs();
-    vi.stubEnv("DATABASE_URL", "");
-  });
+const set = (values: Record<string, unknown>) => {
+  for (const key of Object.keys(fakeEnv)) delete fakeEnv[key];
+  Object.assign(fakeEnv, values);
+};
 
-  it("reports the extractor as unconfigured when neither credential is set", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "");
+describe("GET /api/health", () => {
+  beforeEach(() => set({}));
+
+  it("reports the extractor as unconfigured without an Anthropic key", async () => {
     const { body } = await get();
     expect(body.config.intent_extractor).toBe(false);
   });
 
-  /** lib/intent.ts accepts either, so reporting only one would lie on the other. */
-  it("accepts either Anthropic credential", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-test");
-    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "");
-    expect((await get()).body.config.intent_extractor).toBe(true);
-
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "token");
+  it("reports the extractor as configured with a key", async () => {
+    set({ ANTHROPIC_API_KEY: "sk-test" });
     expect((await get()).body.config.intent_extractor).toBe(true);
   });
 
@@ -49,17 +49,10 @@ describe("GET /api/health", () => {
    * train us to ignore it.
    */
   it("does not let configuration change the verdict", async () => {
-    vi.stubEnv("AUTH_SECRET", "s");
-    vi.stubEnv("ADMIN_EMAILS", "boss@intro.sa");
-    vi.stubEnv("AUTH_GOOGLE_ID", "");
-    vi.stubEnv("SMTP_PASSWORD", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "");
-
+    const base = { BETTER_AUTH_SECRET: "s", ADMIN_EMAILS: "boss@intro.sa", ACCOUNT_GATE: {} };
+    set(base);
     const withNothing = await get();
-    vi.stubEnv("AUTH_GOOGLE_ID", "id");
-    vi.stubEnv("SMTP_PASSWORD", "pw");
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-test");
+    set({ ...base, GOOGLE_CLIENT_ID: "id", EMAIL: {}, ANTHROPIC_API_KEY: "sk-test" });
     const withEverything = await get();
 
     expect(withNothing.body.config).toEqual({
@@ -72,10 +65,9 @@ describe("GET /api/health", () => {
     expect(withNothing.res.status).toBe(withEverything.res.status);
   });
 
-  /** Without these two, sign-in cannot work and no admin can exist. */
-  it("fails when AUTH_SECRET or ADMIN_EMAILS is missing", async () => {
-    vi.stubEnv("AUTH_SECRET", "");
-    vi.stubEnv("ADMIN_EMAILS", "   ");
+  /** Without these, sign-in cannot work, no admin can exist, and nothing can send. */
+  it("fails when the auth secret, ADMIN_EMAILS or the send gate is missing", async () => {
+    set({ ADMIN_EMAILS: "   " });
     const { res, body } = await get();
     expect(body.ok).toBe(false);
     expect(res.status).toBe(503);
@@ -83,14 +75,14 @@ describe("GET /api/health", () => {
 
   /** Whatever else it reports, it must never report a value. */
   it("puts no secret in the response", async () => {
-    vi.stubEnv("AUTH_SECRET", "super-secret-value");
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-do-not-leak");
-    vi.stubEnv("SMTP_PASSWORD", "hunter2");
-    vi.stubEnv("DATABASE_URL", "postgres://user:pw@host/db");
-    const { body } = await get();
-    const text = JSON.stringify(body);
-    for (const secret of ["super-secret-value", "sk-ant-do-not-leak", "hunter2", "user:pw"]) {
-      expect(text).not.toContain(secret);
-    }
+    set({
+      BETTER_AUTH_SECRET: "super-secret-value",
+      ANTHROPIC_API_KEY: "sk-ant-do-not-leak",
+      GOOGLE_CLIENT_SECRET: "hunter2",
+    });
+    const text = JSON.stringify((await get()).body);
+    expect(text).not.toContain("super-secret-value");
+    expect(text).not.toContain("sk-ant-do-not-leak");
+    expect(text).not.toContain("hunter2");
   });
 });

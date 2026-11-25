@@ -1,74 +1,36 @@
-import { drizzle as drizzleNeon, type NeonDatabase } from "drizzle-orm/neon-serverless";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle as drizzlePostgresJs } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import ws from "ws";
+import { env } from "cloudflare:workers";
+import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
-export type Database = NeonDatabase<typeof schema>;
-
-// The WebSocket driver needs a constructor; Node has none before 22's global.
-neonConfig.webSocketConstructor = globalThis.WebSocket ?? ws;
+export type Database = DrizzleD1Database<typeof schema>;
 
 /**
- * Three drivers, one exported type:
+ * D1 through Drizzle.
  *
- *   neon-serverless  production. A WebSocket Pool rather than the stateless
- *                    HTTP driver, because `neon-http` throws
- *                    "No transactions support" — and a send debits a credit,
- *                    records an attempt and writes an audit row, which must
- *                    land together or not at all.
- *   postgres-js      local development against plain Postgres, and the driver
- *                    row-level security will need: it holds a session, so
- *                    `SET LOCAL app.account_id` works. See
- *                    drizzle/policies/rls.sql.
- *   pglite           tests. Postgres compiled to WASM, in-process, with the
- *                    same transaction semantics as Neon.
- *
- * DATABASE_URL may be absent at build time (preview deploys, CI), so the pool
- * gets a syntactically valid placeholder rather than throwing during static
- * analysis. No query is ever made on that path.
+ * D1 has no interactive transactions. Multi-statement writes that must land
+ * together go through `database.batch([...])`, which D1 runs atomically. The
+ * one place that needs read-then-write serialisation — a send debiting a
+ * credit — runs inside the per-account AccountGate Durable Object instead
+ * (worker/account-gate.ts).
  */
-function createDb(): Database {
-  if (process.env.DATABASE_DRIVER === "postgres-js" && process.env.DATABASE_URL) {
-    // PGlite (scripts/db-local.mjs) is one embedded engine behind the wire
-    // protocol; a multi-connection pool fights over it. One connection is also
-    // fine against a real Postgres in development.
-    const client = postgres(process.env.DATABASE_URL, { max: 1 });
-    // The query-builder API is identical across drivers; the cast keeps one
-    // exported type for the app while allowing the local driver.
-    return drizzlePostgresJs(client, { schema }) as unknown as Database;
-  }
-  const pool = new Pool({
-    connectionString:
-      process.env.DATABASE_URL ?? "postgresql://build:placeholder@localhost/db",
-  });
-  return drizzleNeon(pool, { schema });
+export function dbFrom(d1: D1Database): Database {
+  return drizzle(d1, { schema });
 }
 
-/**
- * Lazy, and deliberately so. ES module imports are hoisted, so a script that
- * loads .env.local before using the database would still have evaluated this
- * module first — and picked its driver from an environment that was not set up
- * yet. Creating the client on first use makes the order irrelevant, and keeps
- * `next build` from opening a connection it never uses.
- */
-let instance: Database | undefined;
+let cached: { d1: D1Database; db: Database } | undefined;
 
-/**
- * The concrete client, for callers that inspect it rather than just query it.
- * `@auth/drizzle-adapter` detects the dialect from the instance, and a Proxy
- * over an empty object fails that check with "Unsupported database type".
- *
- * Safe to call at module scope in request-path modules: creating the pool
- * opens no connection, and only lib/auth.ts needs it — the scripts that made
- * laziness necessary never import it.
- */
+/** The database for the current Worker's D1 binding. */
 export function resolveDb(): Database {
-  instance ??= createDb();
-  return instance;
+  const d1 = (env as unknown as { DB: D1Database }).DB;
+  if (cached?.d1 !== d1) cached = { d1, db: dbFrom(d1) };
+  return cached.db;
 }
 
+/**
+ * A lazily-resolved handle so call sites keep `import { db }`. The binding is
+ * read on use, not at module evaluation, so importing this module never
+ * touches D1.
+ */
 export const db: Database = new Proxy({} as Database, {
   get(_target, property) {
     const resolved = resolveDb();

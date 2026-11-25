@@ -17,14 +17,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - name: Typecheck
-        run: npx tsc --noEmit
+        # Generates Worker binding + runtime types into .cloudflare/types first.
+        run: npm run typecheck
       - name: Unit tests
-        # PGlite runs Postgres in-process, so migrations, constraints and the
-        # RLS rehearsal all run here with no database service to provision.
+        # Run inside workerd through Miniflare: real local D1 with the real
+        # migrations, and the real AccountGate Durable Object.
         run: npm test
       - name: Verify migrations are in sync with the schema
         # Catches a schema edit that never had `npm run db:generate` run for it.
@@ -45,31 +46,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium-headless-shell
       - name: Run the flow end to end
-        # Against a real Postgres: scripts/db-local.mjs serves PGlite over the
-        # Postgres wire protocol, so this exercises the same driver path as
-        # Neon rather than a stand-in. Nothing to provision.
+        # Against the local Workers runtime: local D1, the AccountGate Durable
+        # Object, and the simulated send_email binding (sign-in codes are read
+        # back from .cloudflare/tmp/email). No Cloudflare account needed.
         #
-        # Deliberately `npm run dev`, not `npm start`: the flow uses the
-        # account shortcut, which is disabled outside development. The
-        # production build is verified by the `check` job instead.
-        env:
-          DATABASE_DRIVER: postgres-js
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
-          # The flow signs in as a requester and as an account manager, so
-          # NextAuth needs a signing key. Not a secret: it signs throwaway
-          # sessions inside a disposable runner, and nothing it signs outlives
-          # the job.
-          AUTH_SECRET: ci-only-not-a-secret-0000000000000000
+        # Deliberately `npm run dev`: the flow uses the account shortcut, which
+        # is disabled outside development. The production build is verified by
+        # the `check` job instead.
         run: |
-          sh scripts/pg-start.sh "$RUNNER_TEMP/pg.log"
-          npm run db:reset
+          printf 'BETTER_AUTH_SECRET=ci-only-not-a-secret-0000000000000000\nBETTER_AUTH_URL=http://localhost:3000\nADMIN_EMAILS=admin@intro.sa\n' > .dev.vars
           npm run dev &
-          npx wait-on http://localhost:3000 --timeout 120000
+          # Any HTTP answer means the server is up (health is 503 until migrated).
+          timeout 120 sh -c 'until curl -s -o /dev/null http://localhost:3000/api/health; do sleep 1; done'
+          npm run db:local -- --seed
           node scripts/e2e.mjs "$RUNNER_TEMP/shots"
       - uses: actions/upload-artifact@v4
         if: always()

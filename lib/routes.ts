@@ -1,7 +1,7 @@
 /**
  * Which paths require a signed-in visitor.
  *
- * Kept apart from middleware.ts so it can be tested without pulling NextAuth
+ * Kept apart from middleware.ts so it can be tested without pulling Better Auth
  * (and, through it, the Edge runtime shims) into the test environment.
  */
 const PROTECTED_PREFIXES = ["/requests", "/am", "/new"];

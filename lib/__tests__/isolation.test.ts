@@ -7,8 +7,8 @@ import {
 import type { Database } from "../db";
 
 /**
- * These tests ARE the security model. RLS cannot run under the neon-http
- * driver, so nothing but lib/db/scoped.ts stands between one account and
+ * These tests ARE the security model. D1 has no row-level security, so
+ * nothing but lib/db/scoped.ts stands between one account and
  * another's data — if these pass for the wrong reason, the product leaks.
  */
 describe("cross-account isolation", () => {
@@ -19,7 +19,7 @@ describe("cross-account isolation", () => {
   let aPipeline: string;
 
   async function makeAccount(email: string, name: string) {
-    const [user] = await db.insert(authUsers).values({ email }).returning();
+    const [user] = await db.insert(authUsers).values({ email, name: "test" }).returning();
     const [account] = await db
       .insert(accounts)
       .values({ userId: user.id, displayName: name, initial: name[0], email, state: "verified" })

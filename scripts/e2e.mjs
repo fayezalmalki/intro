@@ -26,7 +26,7 @@ const errors = [];
  * Roles are enforced now, so one browser context can no longer drive both
  * halves of the flow: the requester screens need a requester, and /am refuses
  * anyone who is not an account manager. Two contexts, each signed in through
- * the dev-only `dev-email` provider, and each carrying its own cookie jar.
+ * the real email-OTP flow (scripts/lib/auth-helper.mjs), each with its own cookie jar.
  */
 async function identity(email) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });

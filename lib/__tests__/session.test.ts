@@ -28,7 +28,7 @@ describe("account provisioning", () => {
   });
 
   const newUser = async (email: string) => {
-    const [user] = await db.insert(authUsers).values({ email }).returning();
+    const [user] = await db.insert(authUsers).values({ email, name: "test" }).returning();
     return user.id;
   };
 
@@ -93,7 +93,7 @@ describe("requireAccountManager", () => {
   });
 
   const seedAccount = async (email: string, role: Account["role"]) => {
-    const [user] = await db.insert(authUsers).values({ email }).returning();
+    const [user] = await db.insert(authUsers).values({ email, name: "test" }).returning();
     const [account] = await db
       .insert(accounts)
       .values({

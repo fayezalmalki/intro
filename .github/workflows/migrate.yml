@@ -1,21 +1,18 @@
 name: Migrate
 
-# Applies database migrations and seeds the people graph after a merge to main.
+# Applies D1 migrations and seeds the people graph after a merge to main.
 #
-# Not on pull requests, and not from `next build`: a preview deploy sharing the
-# connection string would otherwise run DDL against production.
+# Not on pull requests, and not from the build: migrations are an explicit
+# deploy step against the production database.
 #
-# This job FAILS when the secret is missing. An earlier version skipped and
-# succeeded so it would not block merges before the secret existed — and the
-# result was a green check that read as "migrations ran" while the database
-# stayed empty, which is how production broke. A red X naming the missing
-# secret is worth more than a green tick that means nothing happened.
+# This job FAILS when a secret is missing. An earlier version skipped and
+# succeeded — and the result was a green check that read as "migrations ran"
+# while the database stayed empty, which is how production once broke.
 #
 #   Settings → Secrets and variables → Actions → New repository secret
-#   DATABASE_URL_UNPOOLED   (from Vercel's Neon integration)
-#
-# Unpooled deliberately: the pooled connection goes through pgbouncer, which
-# can mangle DDL and prepared statements.
+#   CLOUDFLARE_API_TOKEN   (D1 edit permission on the account)
+#   CLOUDFLARE_ACCOUNT_ID
+#   D1_DATABASE_ID         (the intro-db UUID, after the first deploy creates it)
 
 on:
   push:
@@ -29,31 +26,31 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
 
-      - name: Check the connection string is configured
-        env:
-          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+      - name: Check the secrets are configured
         run: |
-          if [ -z "$DATABASE_URL_UNPOOLED" ]; then
-            echo "::error::DATABASE_URL_UNPOOLED is not set. Migrations cannot run, so the database will not match the code that is about to deploy. Add it under Settings → Secrets and variables → Actions, using Neon's UNPOOLED connection string."
-            exit 1
-          fi
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_DATABASE_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set. Migrations cannot run, so the database will not match the code that is about to deploy."
+              exit 1
+            fi
+          done
 
       - name: Apply migrations
-        env:
-          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
-        run: npm run db:migrate
+        run: npm run db:migrate:remote
 
       # The people graph only. Accounts come from real sign-ins — see
       # lib/db/seed.ts.
       - name: Seed the people graph
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_UNPOOLED }}
-        run: npm run db:seed
+        run: npm run db:seed:remote

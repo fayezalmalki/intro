@@ -8,7 +8,7 @@ import type { Role } from "../types";
 
 /**
  * The two refusals in setAccountRole are the substance of the role screen, so
- * they run against a real Postgres transaction rather than a mock — a guard
+ * they run against a real D1 database rather than a mock — a guard
  * that only holds against a stub is not a guard.
  */
 describe("setAccountRole", () => {
@@ -16,7 +16,7 @@ describe("setAccountRole", () => {
 
   async function makeAccount(name: string, role: Role): Promise<string> {
     const [user] = await db
-      .insert(authUsers).values({ email: `${name}@example.sa` }).returning();
+      .insert(authUsers).values({ email: `${name}@example.sa`, name: "test" }).returning();
     const [account] = await db
       .insert(accounts)
       .values({

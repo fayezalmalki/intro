@@ -12,7 +12,7 @@ describe("migrations", () => {
   });
 
   const seedAccount = async () => {
-    const [user] = await db.insert(authUsers).values({ email: "f@x.sa" }).returning();
+    const [user] = await db.insert(authUsers).values({ email: "f@x.sa", name: "test" }).returning();
     const [account] = await db
       .insert(accounts)
       .values({ userId: user.id, displayName: "فيصل", initial: "F", email: "f@x.sa" })
@@ -20,11 +20,11 @@ describe("migrations", () => {
     return account;
   };
 
-  it("apply cleanly to an empty Postgres", async () => {
-    const rows = await db.execute(
-      sql`select table_name from information_schema.tables where table_schema = 'public' order by table_name`,
+  it("apply cleanly to an empty D1", async () => {
+    const rows = await db.all<{ name: string }>(
+      sql`select name from sqlite_master where type = 'table' order by name`,
     );
-    const names = (rows.rows as { table_name: string }[]).map((r) => r.table_name);
+    const names = rows.map((r) => r.name);
     expect(names).toContain("accounts");
     expect(names).toContain("ledger");
     expect(names).toContain("send_attempts");

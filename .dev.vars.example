@@ -1,0 +1,10 @@
+# Copy to .dev.vars for `npm run dev`. Never commit .dev.vars.
+# Production values are set with `cf workers secrets` / the Cloudflare dashboard.
+BETTER_AUTH_SECRET=change-me-to-a-long-random-string
+BETTER_AUTH_URL=http://localhost:3000
+ADMIN_EMAILS=you@example.com
+# Optional — without it, intent extraction falls back to the keyword extractor.
+ANTHROPIC_API_KEY=
+# Optional — Google sign-in appears only when both are set.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=

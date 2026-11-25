@@ -17,7 +17,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("production guards", () => {
   it("disables the credit-granting shortcut in production", async () => {
-    const env = await loadEnv({ NODE_ENV: "production", DATABASE_URL: "postgres://x/y" });
+    const env = await loadEnv({ NODE_ENV: "production" });
     expect(env.devToolsEnabled).toBe(false);
     expect(() => env.assertDevTools("granting credits")).toThrow(/development-only/);
   });

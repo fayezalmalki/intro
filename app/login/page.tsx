@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { getSessionUser, googleEnabled } from "@/lib/auth";
 import { LoginForm } from "./LoginForm";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +22,9 @@ export default async function LoginPage({
   // own domain.
   const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
-  if (await auth()) redirect(target);
+  if (await getSessionUser(await headers())) redirect(target);
 
-  const providers = {
-    google: Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET),
-    magicLink: Boolean(process.env.SMTP_PASSWORD),
-  };
+  const providers = { google: googleEnabled() };
 
   return (
     <div className="login-page">
