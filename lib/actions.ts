@@ -284,6 +284,7 @@ export async function completeOnboarding(formData: FormData): Promise<void> {
   }
   const useCase = String(formData.get("useCase") ?? "");
   await repo.grantWelcomeCredits(account.id);
+  await repo.markSignupOnboarded(account.id).catch(() => undefined);
   await repo.completeOnboarding({
     accountId: account.id,
     name,

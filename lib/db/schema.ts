@@ -340,6 +340,29 @@ export const leads = sqliteTable("leads", {
   index("leads_account_idx").on(t.accountId),
 ]);
 
+// ── Sign-ups ──────────────────────────────────────────────────
+
+/**
+ * Everyone who asked for a sign-in code, with what they were about to do.
+ * Written when the code is sent, so a visitor who never enters it is still a
+ * lead the team can follow up; filled in as they verify and onboard.
+ */
+export const signups = sqliteTable("signups", {
+  id: id(),
+  email: text("email").notNull(),
+  /** The app path they were headed to (a search or a request), if any. */
+  pending: text("pending"),
+  lang: text("lang"),
+  referrer: text("referrer"),
+  accountId: text("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  createdAt: isoNow("created_at"),
+  verifiedAt: text("verified_at"),
+  onboardedAt: text("onboarded_at"),
+}, (t) => [
+  index("signups_email_idx").on(t.email),
+  index("signups_created_idx").on(t.createdAt),
+]);
+
 // ── Billing ───────────────────────────────────────────────────
 
 /**

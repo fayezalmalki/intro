@@ -84,7 +84,15 @@ export async function accountForUser(
     .onConflictDoNothing()
     .returning();
 
-  if (created) return normalize(created);
+  if (created) {
+    try {
+      const { linkSignup } = await import("./db/repo");
+      await linkSignup(email, created.id, database);
+    } catch (err) {
+      console.error("linkSignup failed", err);
+    }
+    return normalize(created);
+  }
 
   // Another request won the insert.
   const [raced] = await database

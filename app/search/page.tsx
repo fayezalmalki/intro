@@ -40,7 +40,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const credits = await repo.creditBalance(account.id);
 
   return (
-    <AppShell account={account} lang={lang} on="search" credits={credits}>
+    <AppShell account={account} lang={lang} on="search" mode={defaults.mode} credits={credits}>
       <SearchApp lang={lang} defaults={defaults} initialCredits={credits} />
     </AppShell>
   );

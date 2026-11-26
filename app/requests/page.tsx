@@ -51,12 +51,6 @@ export default async function MyRequestsPage({ searchParams }: { searchParams: P
       <div className="flex flex-col gap-6">
         <PageHeader title={t.title} sub={t.sub} actions={<Btn href={`/new?lang=${lang}`} icon="plus">{t.newReq}</Btn>} />
 
-        {account.state === "observer" && (
-          <Tip icon="shield-check" tone="sand" title={account.activationRequestedAt ? t.observerPending : t.observer}
-            action={account.activationRequestedAt ? undefined : <Btn href="/activate" size="sm">{t.activate}</Btn>}>
-            {t.observerSub}
-          </Tip>
-        )}
 
         {rows.length === 0 ? (
           <Empty icon="file-text" title={t.empty} body={t.emptySub}>
@@ -71,7 +65,8 @@ export default async function MyRequestsPage({ searchParams }: { searchParams: P
             <Kpis db={db} t={t} />
             <ul className="flex flex-col gap-2">
               {rows.map((r) => {
-                const s = REQUEST_STATUS[r.status];
+                const none = noMatches(db, r.id);
+                const s = none ? { tone: "accent" as const, en: "No matches — refine", ar: "ما لقينا تطابق — عدّل الطلب" } : REQUEST_STATUS[r.status];
                 const matched = matchedIn(db, r.id);
                 const contacted = db.outreach.filter((o) => o.requestId === r.id && o.status !== "none").length;
                 return (
@@ -79,7 +74,7 @@ export default async function MyRequestsPage({ searchParams }: { searchParams: P
                     <a data-testid="request-row" href={r.status === "intent_review" ? `/requests/${r.id}/confirm?lang=${lang}` : `/requests/${r.id}?lang=${lang}`}
                       className="flex flex-wrap items-center gap-3 rounded-[16px] bg-white p-4 outline outline-1 -outline-offset-1 outline-line transition-colors hover:bg-surface-3">
                       <span className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="truncate text-[15px] font-medium text-ink" dir="auto">{r.brief?.summaryAr ?? r.rawText}</span>
+                        <span className="truncate text-[15px] font-medium text-ink" dir="auto">{lang === "ar" ? r.brief?.summaryAr ?? r.rawText : r.rawText}</span>
                         <span className="flex flex-wrap items-center gap-2 text-[12.5px] text-subtle">
                           {r.brief && <Badge>{GOAL_LABEL[r.brief.goalType]?.[lang] ?? r.brief.goalType}</Badge>}
                           {matched > 0 && <span>{t.people(matched)}</span>}
@@ -129,4 +124,10 @@ function matchedIn(db: Db, requestId: string): number {
     .filter((p) => p.requestId === requestId && p.status === "published")
     .sort((a, b) => b.version - a.version)[0];
   return published?.items.length ?? 0;
+}
+
+/** Sourcing finished and found nobody: the latest pipeline exists and is empty. */
+function noMatches(db: Db, requestId: string): boolean {
+  const latest = db.pipelines.filter((p) => p.requestId === requestId).sort((a, b) => b.version - a.version)[0];
+  return Boolean(latest) && latest.items.length === 0;
 }

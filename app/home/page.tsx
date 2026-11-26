@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app/AppShell";
-import { Badge, Btn, Card, PageHeader, Starter, Tip } from "@/components/app/ui";
+import { Badge, Card, PageHeader, Starter, Tip } from "@/components/app/ui";
 import { pickLang } from "@/components/site/AuthShell";
 import { Icon, cx } from "@/components/site/ui";
 import * as repo from "@/lib/db/repo";
@@ -19,7 +19,7 @@ const C = {
     hi: (n: string) => `Welcome back, ${n}`,
     hiNew: (n: string) => `You're in, ${n}`,
     sub: "Find the right people, see why they matter now, and reach out — all from here.",
-    welcome: "You have 3 free email reveals. Start with a goal below, or search for anyone in seconds.",
+    welcome: (n: number) => `You have ${n} free credits. A search or a verified email costs 1, and anything that comes back empty is refunded.`,
     setup: "Get set up", setupSub: (d: number, t: number) => `${d} of ${t} done`,
     steps: {
       profile: ["Complete your profile", "Done during sign-up"],
@@ -27,11 +27,12 @@ const C = {
       lead: ["Save a lead", "Keep the people worth a conversation"],
       reveal: ["Reveal a verified email", "One credit; refunded if we find nothing"],
       request: ["Describe a goal", "We'll find the people and draft the first message"],
-      activate: ["Activate sending", "Send first emails under your name"],
       pending: "Under review",
     },
     quick: "Who do you need to reach?", quickPh: "e.g. heads of procurement at private hospitals in Riyadh", quickGo: "Search",
-    companies: "Companies", people: "People",
+    companies: "Companies", people: "People", person: "A person", news: "News",
+    flow: "How it connects", flowSub: "Everything you find lands in the same place.",
+    flowSteps: { searches: ["Searches", "Find companies, people, a person or news"], leads: ["Leads saved", "Keep the people worth a conversation"], revealed: ["Verified emails", "Unlock how to reach them"], requests: ["Requests", "Hand us a whole goal to source"] },
     starters: "Start from a goal", startersSub: "Each opens a ready search you can refine.",
     own: "Describe your own goal", ownSub: "One sentence; we'll take it from there",
     recentReq: "Your requests", recentLeads: "Your leads", all: "View all",
@@ -42,7 +43,7 @@ const C = {
     hi: (n: string) => `أهلًا ${n}`,
     hiNew: (n: string) => `حيّاك ${n}`,
     sub: "اعثر على الأشخاص الصح، واعرف ليش يهمونك الحين، وابدأ التواصل، كل هذا من هنا.",
-    welcome: "عندك ٣ كشوفات بريد مجانية. ابدأ بهدف من الأهداف تحت، أو ابحث عن أي شخص خلال ثوانٍ.",
+    welcome: (n: number) => `معك ${n} رصيد مجاني. البحث أو البريد الموثّق برصيد واحد، واللي يرجع فاضي يرجع رصيده.`,
     setup: "جهّز حسابك", setupSub: (d: number, t: number) => `أنجزت ${d} من ${t}`,
     steps: {
       profile: ["أكمل ملفك", "تم أثناء التسجيل"],
@@ -50,11 +51,12 @@ const C = {
       lead: ["احفظ عميلًا محتملًا", "احتفظ بمن يستاهل تبدأ معه حديث"],
       reveal: ["اكشف بريدًا موثّقًا", "رصيد واحد، ويُسترجع إذا ما لقينا شيئًا"],
       request: ["اكتب هدفًا", "نلقى لك الأشخاص ونكتب أول رسالة"],
-      activate: ["فعّل الإرسال", "أرسل رسائلك الأولى باسمك"],
       pending: "قيد المراجعة",
     },
     quick: "مين تبي توصل له؟", quickPh: "مثال: رؤساء المشتريات في المستشفيات الخاصة بالرياض", quickGo: "ابحث",
-    companies: "الجهات", people: "الأشخاص",
+    companies: "الجهات", people: "الأشخاص", person: "شخص محدد", news: "الأخبار",
+    flow: "كيف يترابط كل شي", flowSub: "كل اللي تلقاه ينحفظ في مكان واحد.",
+    flowSteps: { searches: ["البحوث", "شركات، أشخاص، شخص محدد أو أخبار"], leads: ["العملاء المحفوظون", "احتفظ باللي يستاهلون التواصل"], revealed: ["البريد الموثّق", "اعرف كيف توصلهم"], requests: ["الطلبات", "اعطنا هدفًا كاملًا ونجهّزه"] },
     starters: "ابدأ من هدف", startersSub: "كل هدف يفتح لك بحثًا جاهزًا تقدر تعدّله.",
     own: "اكتب هدفك الخاص", ownSub: "جملة وحدة، والباقي علينا",
     recentReq: "طلباتك", recentLeads: "عملاؤك المحتملون", all: "عرض الكل",
@@ -81,7 +83,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     { key: "lead", done: stats.leads > 0, href: `/search?lang=${lang}` },
     { key: "reveal", done: stats.revealed > 0, href: stats.leads > 0 ? `/leads?lang=${lang}` : `/search?lang=${lang}` },
     { key: "request", done: stats.requests > 0, href: `/new?lang=${lang}` },
-    { key: "activate", done: account.state !== "observer", pending: Boolean(account.activationRequestedAt), href: "/activate" },
   ] as const;
   const done = checklist.filter((c) => c.done).length;
 
@@ -91,10 +92,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <PageHeader
           title={welcome ? t.hiNew(first) : t.hi(first)}
           sub={t.sub}
-          actions={<><Btn href={`/search?lang=${lang}`} variant="secondary" icon="search">{t.search}</Btn><Btn href={`/new?lang=${lang}`} icon="plus">{t.newReq}</Btn></>}
         />
 
-        {welcome && <Tip icon="sparkles" title={lang === "ar" ? "حسابك جاهز" : "Your account is ready"}>{t.welcome}</Tip>}
+        {welcome && <Tip icon="sparkles" title={lang === "ar" ? "حسابك جاهز" : "Your account is ready"}>{t.welcome(credits)}</Tip>}
 
         <form action="/search" method="get" className="flex flex-col gap-2.5 rounded-[20px] bg-white p-3 shadow-[0_18px_40px_-28px_#1416134d] outline outline-1 -outline-offset-1 outline-line sm:flex-row sm:items-center">
           <input type="hidden" name="lang" value={lang} />
@@ -103,8 +103,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             <Icon name="search" className="text-subtle" />
             <input name="q" required dir="auto" placeholder={t.quickPh} aria-label={t.quick} className="min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-subtle" />
           </label>
-          <div className="flex gap-2">
-            {(["people", "companies"] as const).map((m, i) => (
+          <div className="flex flex-wrap gap-2">
+            {(["people", "companies", "person", "news"] as const).map((m, i) => (
               <label key={m} className="flex h-12 cursor-pointer items-center rounded-[14px] px-3.5 text-[13.5px] font-medium text-ink-2 outline outline-1 -outline-offset-1 outline-line has-[:checked]:bg-mint has-[:checked]:text-brand has-[:checked]:outline-brand/40">
                 <input type="radio" name="mode" value={m} defaultChecked={i === 0} className="sr-only" />{t[m]}
               </label>
@@ -112,6 +112,30 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             <button type="submit" className="flex h-12 cursor-pointer items-center gap-2 rounded-[14px] bg-brand px-5 text-[15px] font-medium text-white hover:bg-brand-2">{t.quickGo}</button>
           </div>
         </form>
+
+        <section aria-labelledby="flow-heading" className="flex flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
+            <h2 id="flow-heading" className="text-[17px] font-semibold text-ink">{t.flow}</h2>
+            <span className="text-[13.5px] text-muted">{t.flowSub}</span>
+          </div>
+          <ol className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {([
+              ["searches", stats.searches, `/search?lang=${lang}`, "search"],
+              ["leads", stats.leads, `/leads?lang=${lang}`, "users"],
+              ["revealed", stats.revealed, `/leads?lang=${lang}`, "at-sign"],
+              ["requests", stats.requests, `/requests?lang=${lang}`, "file-text"],
+            ] as const).map(([key, n, href, icon], i) => (
+              <li key={key} className="relative">
+                <a href={href} className="flex h-full flex-col gap-2 rounded-[16px] bg-white p-4 outline outline-1 -outline-offset-1 outline-line transition-colors hover:bg-surface-3">
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-muted"><Icon name={icon} size={14} className="text-brand" />{t.flowSteps[key][0]}</span>
+                  <span className="font-display text-[28px] leading-none font-medium tracking-[-0.8px] text-ink">{n}</span>
+                  <span className="text-[12.5px] leading-[18px] text-subtle">{t.flowSteps[key][1]}</span>
+                </a>
+                {i < 3 && <Icon name="arrow-right" size={14} flip className="absolute top-1/2 -end-[11px] z-10 hidden -translate-y-1/2 rounded-full bg-surface-3 text-faint lg:block" />}
+              </li>
+            ))}
+          </ol>
+        </section>
 
         {done < checklist.length && (
           <Card as="section" className="p-5 sm:p-6">

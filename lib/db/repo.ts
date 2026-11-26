@@ -4,7 +4,7 @@ import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
   accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
-  pipelines, requests, searchCache, searchLog, sendAttempts,
+  pipelines, requests, searchCache, searchLog, sendAttempts, signups,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
@@ -1015,4 +1015,47 @@ export async function platformEconomics(database: Database = defaultDb) {
     revenueSar: Number(o?.halalas ?? 0) / 100, ordersPaid: Number(o?.n ?? 0), creditsSold: Number(o?.credits ?? 0), creditsUsed: Number(used?.n ?? 0),
     cacheEntries: Number(cache?.rows ?? 0), cacheHits: Number(cache?.hits ?? 0),
   };
+}
+
+// ── Sign-ups ──────────────────────────────────────────────────
+
+/**
+ * A sign-in code was requested. One row per address per hour at most, so a
+ * visitor pressing "resend" does not fill the list with duplicates.
+ */
+export async function recordSignup(
+  input: { email: string; pending?: string; lang?: string; referrer?: string },
+  database: Database = defaultDb,
+): Promise<void> {
+  const email = input.email.trim().toLowerCase().slice(0, 254);
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const [recent] = await database.select({ id: signups.id, pending: signups.pending }).from(signups)
+    .where(and(eq(signups.email, email), sql`${signups.createdAt} > ${hourAgo}`)).limit(1);
+  if (recent) {
+    if (input.pending && !recent.pending) await database.update(signups).set({ pending: input.pending }).where(eq(signups.id, recent.id));
+    return;
+  }
+  await database.insert(signups).values({
+    email,
+    pending: input.pending?.slice(0, 1000),
+    lang: input.lang === "en" ? "en" : input.lang === "ar" ? "ar" : undefined,
+    referrer: input.referrer?.slice(0, 500),
+  });
+}
+
+/** First sign-in: the address proved it is theirs. */
+export async function linkSignup(email: string, accountId: string, database: Database = defaultDb): Promise<void> {
+  await database.update(signups).set({ accountId, verifiedAt: nowIso() })
+    .where(and(eq(signups.email, email.toLowerCase()), sql`${signups.accountId} IS NULL`));
+}
+
+export async function markSignupOnboarded(accountId: string, database: Database = defaultDb): Promise<void> {
+  await database.update(signups).set({ onboardedAt: nowIso() })
+    .where(and(eq(signups.accountId, accountId), sql`${signups.onboardedAt} IS NULL`));
+}
+
+export type SignupRow = typeof signups.$inferSelect;
+
+export async function listSignups(limit = 200, database: Database = defaultDb): Promise<SignupRow[]> {
+  return database.select().from(signups).orderBy(sql`${signups.createdAt} DESC`).limit(limit);
 }
