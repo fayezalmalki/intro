@@ -13,6 +13,9 @@ describe("isProtected", () => {
   it("protects intake", () => {
     // A request belongs to an account the moment it is created.
     expect(isProtected("/new")).toBe(true);
+    expect(isProtected("/home")).toBe(true);
+    expect(isProtected("/search")).toBe(true);
+    expect(isProtected("/leads")).toBe(true);
   });
 
   it("protects the requester and account-manager areas", () => {
