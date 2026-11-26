@@ -11,11 +11,20 @@ const API = "https://api.moyasar.com/v1";
 export type InvoiceStatus = "initiated" | "paid" | "failed" | "refunded" | "canceled" | "on_hold" | "expired" | "voided";
 export interface Invoice { id: string; status: InvoiceStatus; amount: number; currency: string; url: string; metadata?: Record<string, string> | null }
 
-/** The secret key, or null while payments aren't configured (a placeholder value counts as unset). */
+/**
+ * The secret key for the current mode, or null while payments aren't set up.
+ * MOYASAR_MODE=live uses MOYASAR_LIVE_SECRET_KEY (real charges); anything else
+ * uses MOYASAR_SECRET_KEY (test). Flipping one secret switches production
+ * between test and live without a deploy. Both are the MVP.sa account's keys.
+ */
 export function moyasarKey(): string | null {
-  const key = (env as unknown as { MOYASAR_SECRET_KEY?: string }).MOYASAR_SECRET_KEY;
-  return key && /^sk_(test|live)_/.test(key) ? key : null;
+  const e = env as unknown as { MOYASAR_MODE?: string; MOYASAR_SECRET_KEY?: string; MOYASAR_LIVE_SECRET_KEY?: string };
+  const live = e.MOYASAR_MODE === "live";
+  const key = live ? e.MOYASAR_LIVE_SECRET_KEY : e.MOYASAR_SECRET_KEY;
+  return key && (live ? /^sk_live_/ : /^sk_test_/).test(key) ? key : null;
 }
+
+export const moyasarIsLive = () => (env as unknown as { MOYASAR_MODE?: string }).MOYASAR_MODE === "live" && Boolean(moyasarKey());
 
 function auth(key: string) {
   return { authorization: `Basic ${btoa(`${key}:`)}`, "content-type": "application/json" };

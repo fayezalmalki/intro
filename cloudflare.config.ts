@@ -47,9 +47,12 @@ export default defineConfig({
       ANTHROPIC_API_KEY: bindings.secret(),
       // A capped treg agent token (`treg org agent-new intro-prod --cap …`). Unset → seeded fixtures.
       TREG_TOKEN: bindings.secret(),
-      // Moyasar secret key (sk_live_… / sk_test_…). Any other value means card
-      // payments are off and top-ups go to the admins by email (lib/billing).
+      // Moyasar test key (sk_test_…). Without a usable key for the current
+      // mode, top-ups go to the admins by email instead (lib/billing).
       MOYASAR_SECRET_KEY: bindings.secret(),
+      // MVP.sa's live key, used only when MOYASAR_MODE is "live".
+      MOYASAR_LIVE_SECRET_KEY: bindings.secret(),
+      MOYASAR_MODE: bindings.secret(),
       BETTER_AUTH_SECRET: bindings.secret(),
       BETTER_AUTH_URL: bindings.secret(),
       // Comma-separated emails provisioned as admin on first sign-in (lib/session.ts).

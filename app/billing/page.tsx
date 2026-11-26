@@ -5,7 +5,7 @@ import { Badge, Card, PageHeader, Tip } from "@/components/app/ui";
 import { pickLang } from "@/components/site/AuthShell";
 import { Icon, cx } from "@/components/site/ui";
 import { buyCredits } from "@/lib/actions";
-import { moyasarKey } from "@/lib/billing/moyasar";
+import { moyasarIsLive, moyasarKey } from "@/lib/billing/moyasar";
 import { PACKAGES } from "@/lib/billing/packages";
 import * as repo from "@/lib/db/repo";
 import { pageAccount } from "@/lib/session";
@@ -58,6 +58,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   const t = C[lang];
   const [credits, ledger] = await Promise.all([repo.creditBalance(account.id), repo.recentLedger(account.id)]);
   const live = Boolean(moyasarKey());
+  const testMode = live && !moyasarIsLive();
 
   return (
     <AppShell account={account} lang={lang} on="home" credits={credits}>
@@ -85,6 +86,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         <section className="flex flex-col gap-3.5">
           <h2 className="text-[18px] font-semibold text-ink">{t.packs}</h2>
           {!live && <Tip icon="clock" tone="sand">{t.soon}</Tip>}
+          {testMode && <Tip icon="shield-check" tone="sand">{lang === "ar" ? "وضع التجربة: استخدم بطاقة اختبار ميسّر، وما يُخصم أي مبلغ حقيقي." : "Test mode: use a Moyasar test card — no real money is charged."}</Tip>}
           <ul className="grid gap-3 md:grid-cols-3">
             {PACKAGES.map((p) => (
               <li key={p.id}>
