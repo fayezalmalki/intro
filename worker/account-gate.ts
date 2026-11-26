@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { dbFrom } from "../lib/db";
-import { recordSend, reserveReveal, type SendOutcome } from "../lib/db/repo";
+import { recordSend, reserveCredit, reserveReveal, type SendOutcome } from "../lib/db/repo";
 import type { SendRequest } from "../lib/gate";
 
 interface GateEnv {
@@ -23,6 +23,15 @@ export class AccountGate extends DurableObject<GateEnv> {
     let outcome: SendOutcome = { ok: false, reason: "not processed" };
     await this.ctx.blockConcurrencyWhile(async () => {
       outcome = await recordSend(input, dbFrom(this.env.DB));
+    });
+    return outcome;
+  }
+
+  /** Reserves one credit for a search, serialised like a send. */
+  async charge(input: { accountId: string; reason: "search"; ref: string }) {
+    let outcome: Awaited<ReturnType<typeof reserveCredit>> = { ok: false, reason: "insufficient_credits" };
+    await this.ctx.blockConcurrencyWhile(async () => {
+      outcome = await reserveCredit(input, dbFrom(this.env.DB));
     });
     return outcome;
   }

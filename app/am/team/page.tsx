@@ -184,15 +184,15 @@ export default async function TeamPage({
                               </span>
                             </>
                           )}
-                          <button
-                            type="submit"
-                            className="btn btn-sm"
-                            title={`يفعّل الإرسال ويضيف ${VERIFY_GRANT} رسائل للرصيد`}
-                          >
-                            {observer
-                              ? `فعّل وامنح ${ar(VERIFY_GRANT)} رسائل`
-                              : `امنح ${ar(VERIFY_GRANT)} رسائل`}
-                          </button>
+                          <div className="row g6">
+                            {/* Manual top-ups: match the pack someone requested. */}
+                            <select name="amount" defaultValue={VERIFY_GRANT} aria-label="الرصيد الممنوح" className="btn btn-sm" style={{ paddingInline: 8 }}>
+                              {[10, 100, 300, 1000].map((n) => <option key={n} value={n}>{ar(n)}</option>)}
+                            </select>
+                            <button type="submit" className="btn btn-sm" title="يفعّل الإرسال ويضيف الرصيد المختار">
+                              {observer ? "فعّل وامنح" : "امنح الرصيد"}
+                            </button>
+                          </div>
                         </form>
                       );
                     })()}

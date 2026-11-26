@@ -3,7 +3,7 @@ import type { BatchItem } from "drizzle-orm/batch";
 import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
-  accounts, auditEvents, leads, ledger, listMembers, outreach, people, pipelineItems,
+  accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
   pipelines, requests, searchLog, sendAttempts,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
@@ -787,15 +787,30 @@ export async function reserveReveal(
   input: { accountId: string; personId: string },
   database: Database = defaultDb,
 ): Promise<{ ok: true; charged: boolean } | { ok: false; reason: "insufficient_credits" }> {
-  const ref = `reveal:${input.personId}`;
+  return reserveCredit({ accountId: input.accountId, reason: "reveal", ref: `reveal:${input.personId}` }, database);
+}
+
+/**
+ * Takes one credit for `reason`/`ref`, or refuses at zero. Idempotent on the
+ * ref (ledger_idempotency_idx): asking again for the same ref is free. Called
+ * only inside the AccountGate Durable Object, so two calls from one account
+ * never race for the last credit.
+ */
+export async function reserveCredit(
+  input: { accountId: string; reason: "reveal" | "search"; ref: string },
+  database: Database = defaultDb,
+): Promise<{ ok: true; charged: boolean } | { ok: false; reason: "insufficient_credits" }> {
   const [already] = await database.select({ id: ledger.id }).from(ledger)
-    .where(and(eq(ledger.accountId, input.accountId), eq(ledger.reason, "reveal"), eq(ledger.ref, ref))).limit(1);
+    .where(and(eq(ledger.accountId, input.accountId), eq(ledger.reason, input.reason), eq(ledger.ref, input.ref))).limit(1);
   if (already) return { ok: true, charged: false };
-  const [bal] = await database.select({ balance: sql<number>`coalesce(sum(${ledger.delta}), 0)` })
-    .from(ledger).where(eq(ledger.accountId, input.accountId));
-  if (Number(bal?.balance ?? 0) < 1) return { ok: false, reason: "insufficient_credits" };
-  await database.insert(ledger).values({ accountId: input.accountId, delta: -1, reason: "reveal", ref }).onConflictDoNothing();
+  if ((await creditBalance(input.accountId, database)) < 1) return { ok: false, reason: "insufficient_credits" };
+  await database.insert(ledger).values({ accountId: input.accountId, delta: -1, reason: input.reason, ref: input.ref }).onConflictDoNothing();
   return { ok: true, charged: true };
+}
+
+/** Gives back a search's credit (nothing found, or the provider failed). */
+export async function refundSearch(accountId: string, ref: string, database: Database = defaultDb): Promise<void> {
+  await database.insert(ledger).values({ accountId, delta: 1, reason: "refund_search", ref }).onConflictDoNothing();
 }
 
 /** Records what the reveal found, and refunds the credit when nothing usable was. */
@@ -819,8 +834,8 @@ export async function recordReveal(
   await commit(database, statements);
 }
 
-/** A few free reveals on finishing onboarding, so search pays off on day one. */
-export const WELCOME_CREDITS = 3;
+/** Starter credits on finishing onboarding — enough for a real first session of searches and reveals. */
+export const WELCOME_CREDITS = 20;
 export async function grantWelcomeCredits(accountId: string, database: Database = defaultDb): Promise<void> {
   await database.insert(ledger)
     .values({ accountId, delta: WELCOME_CREDITS, reason: "grant", ref: "welcome" })
@@ -863,4 +878,67 @@ export async function journeyStats(accountId: string, database: Database = defau
   }).from(leads).where(eq(leads.accountId, accountId));
   const [r] = await database.select({ n: sql<number>`count(*)` }).from(requests).where(eq(requests.accountId, accountId));
   return { searches: Number(s?.n ?? 0), leads: Number(l?.n ?? 0), revealed: Number(l?.revealed ?? 0), requests: Number(r?.n ?? 0) };
+}
+
+
+// ── Billing ───────────────────────────────────────────────────
+
+export type CreditOrder = typeof creditOrders.$inferSelect;
+
+export async function createOrder(input: { accountId: string; package: string; credits: number; amountHalalas: number }, database: Database = defaultDb): Promise<string> {
+  const id = crypto.randomUUID();
+  await database.insert(creditOrders).values({ id, ...input });
+  return id;
+}
+
+export async function attachInvoice(orderId: string, invoiceId: string, database: Database = defaultDb): Promise<void> {
+  await database.update(creditOrders).set({ invoiceId, status: "initiated" }).where(eq(creditOrders.id, orderId));
+}
+
+export async function getOrder(id: string, database: Database = defaultDb): Promise<CreditOrder | null> {
+  const [o] = await database.select().from(creditOrders).where(eq(creditOrders.id, id)).limit(1);
+  return o ?? null;
+}
+
+export async function orderByInvoice(invoiceId: string, database: Database = defaultDb): Promise<CreditOrder | null> {
+  const [o] = await database.select().from(creditOrders).where(eq(creditOrders.invoiceId, invoiceId)).limit(1);
+  return o ?? null;
+}
+
+/**
+ * Applies what Moyasar's API says about an order's invoice. Credits are
+ * granted once: the ledger row's ref is the invoice id, and the idempotency
+ * index absorbs a second settle (return page and callback can both arrive).
+ */
+export async function settleOrder(
+  order: CreditOrder,
+  invoice: { id: string; status: string; amount: number; currency: string },
+  database: Database = defaultDb,
+): Promise<"paid" | "pending" | "failed"> {
+  if (invoice.id !== order.invoiceId) return "failed";
+  if (invoice.status === "paid") {
+    // Never grant for a different amount than the order was created for.
+    if (invoice.amount !== order.amountHalalas || invoice.currency !== "SAR") return "failed";
+    await commit(database, [
+      database.insert(ledger).values({ accountId: order.accountId, delta: order.credits, reason: "purchase", ref: `moyasar:${invoice.id}` }).onConflictDoNothing(),
+      database.update(creditOrders).set({ status: "paid", paidAt: order.paidAt ?? nowIso() }).where(eq(creditOrders.id, order.id)),
+      audit(database, order.accountId, order.id, "credits.purchased", `${order.credits} credits · ${order.amountHalalas / 100} SAR`),
+    ]);
+    return "paid";
+  }
+  const terminal = ["failed", "expired", "canceled", "voided"].includes(invoice.status);
+  if (terminal) {
+    await database.update(creditOrders).set({ status: invoice.status === "voided" ? "canceled" : (invoice.status as "failed" | "expired" | "canceled") }).where(eq(creditOrders.id, order.id));
+    return "failed";
+  }
+  return "pending";
+}
+
+export async function listOrders(accountId: string, database: Database = defaultDb): Promise<CreditOrder[]> {
+  return database.select().from(creditOrders).where(eq(creditOrders.accountId, accountId)).orderBy(sql`${creditOrders.createdAt} desc`).limit(20);
+}
+
+/** Recent credit movements, for the billing page. */
+export async function recentLedger(accountId: string, database: Database = defaultDb) {
+  return database.select().from(ledger).where(eq(ledger.accountId, accountId)).orderBy(sql`${ledger.at} desc`).limit(30);
 }

@@ -4,7 +4,7 @@
  * Kept apart from middleware.ts so it can be tested without pulling Better Auth
  * (and, through it, the Edge runtime shims) into the test environment.
  */
-const PROTECTED_PREFIXES = ["/home", "/requests", "/am", "/new", "/welcome", "/activate", "/search", "/leads"];
+const PROTECTED_PREFIXES = ["/home", "/requests", "/am", "/new", "/welcome", "/activate", "/search", "/leads", "/billing"];
 
 /**
  * "/" is the public landing and stays open — it is the entire pitch, and a

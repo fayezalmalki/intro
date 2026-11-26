@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Allow: /ar
+Disallow: /api/
+Disallow: /home
+Disallow: /search
+Disallow: /leads
+Disallow: /requests
+Disallow: /billing
+Disallow: /am
+Disallow: /welcome
+Disallow: /activate

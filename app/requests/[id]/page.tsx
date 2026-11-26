@@ -6,7 +6,9 @@ import { Badge, Btn, Card, Empty, PageHeader, Steps, Tip } from "@/components/ap
 import { SendButton } from "@/components/SendButton";
 import { pickLang } from "@/components/site/AuthShell";
 import { Icon } from "@/components/site/ui";
-import { devVerifyAndGrant } from "@/lib/actions";
+import { devVerifyAndGrant, retrySourcing } from "@/lib/actions";
+import * as repo from "@/lib/db/repo";
+import { SubmitButton } from "@/components/app/SubmitButton";
 import { FIT_LABEL, OUTREACH_LABEL } from "@/lib/app-copy";
 import { balanceOf } from "@/lib/credits";
 import { loadRequestContext } from "@/lib/db/loaders";
@@ -39,6 +41,8 @@ const C = {
     review: "Your account manager is reviewing your list.", reviewSub: "Matches are ready and being checked before they reach you — usually within a business day.",
     none: "We couldn't find strong matches for this one.", noneSub: "Try naming the role and sector more specifically, or widen the market. You can also search directly.",
     refine: "Refine the request", yourRequest: "Your request",
+    stalled: "This is taking longer than usual.", stalledSub: "The search didn't finish. Run it again, or search directly while we look into it.",
+    retry: "Run the search again", retrying: "Restarting…",
   },
   ar: {
     steps: ["هدفك", "التأكيد", "البحث", "النتائج", "التواصل"],
@@ -59,6 +63,8 @@ const C = {
     review: "مدير حسابك يراجع قائمتك.", reviewSub: "المطابقات جاهزة وتُراجع قبل ما توصلك، وعادةً خلال يوم عمل.",
     none: "ما لقينا مطابقات قوية لهذا الطلب.", noneSub: "جرّب تحدد المنصب والقطاع بشكل أوضح، أو وسّع السوق. وتقدر تبحث مباشرة.",
     refine: "عدّل الطلب", yourRequest: "طلبك",
+    stalled: "البحث تأخر أكثر من المعتاد.", stalledSub: "ما اكتمل البحث. شغّله مرة ثانية، أو ابحث مباشرة.",
+    retry: "شغّل البحث مرة ثانية", retrying: "نعيد التشغيل…",
   },
 };
 
@@ -87,7 +93,14 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   if (!published) {
     const draft = mine.find((p) => p.status === "draft");
     const managed = account.state === "managed";
+    // A self-serve draft with results publishes on sight — this un-sticks
+    // requests sourced before auto-publish existed, or whose publish step failed.
+    if (!managed && draft && draft.items.some((i) => i.evidence.length > 0) && req.accountId === account.id) {
+      await repo.autoPublish(draft.id, "AI");
+      redirect(`/requests/${id}?lang=${lang}`);
+    }
     const emptyDraft = draft && draft.items.length === 0;
+    const stalled = !draft && req.confirmedAt && Date.now() - new Date(req.confirmedAt).getTime() > 5 * 60_000;
     return shell(
       <>
         <Steps steps={t.steps.map((s, i) => ({ label: s, state: i < 2 ? "done" : i === 2 ? (emptyDraft ? "done" : "active") : i === 3 && emptyDraft ? "active" : "pending" }))} />
@@ -100,6 +113,13 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
           </Empty>
         ) : managed ? (
           <PageHeader title={t.review} sub={t.reviewSub} />
+        ) : stalled ? (
+          <Empty icon="clock" title={t.stalled} body={t.stalledSub}>
+            <div className="flex flex-wrap gap-2">
+              <form action={retrySourcing}><input type="hidden" name="requestId" value={id} /><SubmitButton pending={t.retrying} icon="refresh">{t.retry}</SubmitButton></form>
+              <Btn href={`/search?lang=${lang}&mode=people&run=1&describe=${encodeURIComponent(req.rawText)}`} variant="secondary" icon="search">{t.searchNow}</Btn>
+            </div>
+          </Empty>
         ) : (
           <>
             {/* Self-serve sourcing publishes itself; refresh until it lands. */}

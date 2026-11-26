@@ -220,6 +220,13 @@ await page.locator("main section a[target=_blank]").first().waitFor();
 step("lead page", `${await page.locator("main section a[target=_blank]").count()} news items · opener ${(await page.locator("textarea").inputValue()).length} chars`);
 await shot("16-lead");
 
+// 12. billing: balance, packs; without a payment key a pack is requested from the team
+await page.goto(`${BASE}/billing?lang=en`, { waitUntil: "networkidle" });
+step("billing balance", (await page.locator("[data-credits]").last().innerText()).trim());
+await Promise.all([page.waitForURL(/requested=starter/), page.click("[data-testid=buy-starter]")]);
+step("credit pack requested", new URL(page.url()).search);
+await shot("17-billing");
+
 await browser.close();
 
 console.log(`\n${log.length} steps passed`);

@@ -65,7 +65,8 @@ export class TregProvider implements SourcingProvider {
       : query.industry
         ? { industry: query.industry, country: query.country, limit: query.limit }
         : { q: query.q, country: query.country, limit: query.limit };
-    const r = await this.call<{ companies?: RawCompany[] }>("treg.companies.search", body, options);
+    // wiza answered a Saudi sector search with one unrelated company for $0.0127.
+    const r = await this.call<{ companies?: RawCompany[] }>("treg.companies.search", body, options, { "x-treg-route-exclude": "wiza" });
     const companies = (r.output.companies ?? [])
       .filter((c) => !c.country || c.country.toUpperCase() === query.country)
       .map(toCompany)
@@ -104,10 +105,11 @@ export class TregProvider implements SourcingProvider {
     const strict: Record<string, string> = !query.q && query.country ? { "x-treg-route-strict-filters": "1" } : {};
     const r = await this.call<{ people?: RawPerson[] }>("treg.people.search", body, options, strict);
     const people = (r.output.people ?? [])
-      .filter((p) => p.name && p.title)
+      // A name lookup's provider returns name, location and profile only.
+      .filter((p) => p.name && (p.title || query.fullName))
       .map((p) => ({
         name: p.name!.trim(),
-        title: p.title!.trim(),
+        title: (p.title ?? "").trim(),
         company: p.company ?? "",
         companyDomain: p.company_domain ?? query.companyDomain ?? "",
         profileUrl: cleanUrl(p.profile_url ?? p.linkedin_url),

@@ -13,7 +13,7 @@ const C = {
     news: "What's happening", getNews: "Find recent news", gettingNews: "Searching news…", noNews: "No recent news found.",
     opener: "First message", openerHint: "Edit it, then copy it or open it in your email.", openMail: "Open in email", copyMsg: "Copy message",
     subject: (c: string) => `Quick question about ${c}`,
-    errors: { insufficient_credits: "No credits left. Activate sending to get more.", unavailable: "Live data isn't connected yet.", budget: "Today's search limit is reached.", upstream: "Our providers didn't answer — try again." } as Record<string, string>,
+    errors: { insufficient_credits: "You're out of credits — top up from Billing.", unavailable: "Live data isn't connected yet.", budget: "Today's search limit is reached.", upstream: "Our providers didn't answer — try again." } as Record<string, string>,
   },
   ar: {
     email: "البريد", reveal: "اكشف البريد الموثّق · رصيد واحد", revealing: "نبحث عن البريد…", copy: "نسخ", copied: "تم النسخ",
@@ -21,7 +21,7 @@ const C = {
     news: "وش الجديد", getNews: "ابحث عن آخر الأخبار", gettingNews: "نبحث في الأخبار…", noNews: "ما لقينا أخبارًا حديثة.",
     opener: "أول رسالة", openerHint: "عدّلها، ثم انسخها أو افتحها في بريدك.", openMail: "افتح في البريد", copyMsg: "انسخ الرسالة",
     subject: (c: string) => `سؤال سريع بخصوص ${c}`,
-    errors: { insufficient_credits: "خلص رصيدك. فعّل الإرسال عشان تحصل على رصيد إضافي.", unavailable: "البيانات الحية ما تفعّلت بعد.", budget: "وصلت لحد البحث اليومي.", upstream: "مزوّدو البيانات ما ردّوا، جرّب مرة ثانية." } as Record<string, string>,
+    errors: { insufficient_credits: "خلص رصيدك. اشحنه من صفحة الرصيد.", unavailable: "البيانات الحية ما تفعّلت بعد.", budget: "وصلت لحد البحث اليومي.", upstream: "مزوّدو البيانات ما ردّوا، جرّب مرة ثانية." } as Record<string, string>,
   },
 };
 

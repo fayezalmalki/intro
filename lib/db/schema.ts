@@ -315,6 +315,28 @@ export const leads = sqliteTable("leads", {
   index("leads_account_idx").on(t.accountId),
 ]);
 
+// ── Billing ───────────────────────────────────────────────────
+
+/**
+ * A credit purchase. Created before the Moyasar invoice, so the return URL can
+ * name our order; credits are granted once, when Moyasar's own API says the
+ * invoice is paid (never on the strength of a redirect or a callback body).
+ */
+export const creditOrders = sqliteTable("credit_orders", {
+  id: id(),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  package: text("package").notNull(),
+  credits: integer("credits").notNull(),
+  amountHalalas: integer("amount_halalas").notNull(),
+  invoiceId: text("invoice_id"),
+  status: text("status").$type<"created" | "initiated" | "paid" | "failed" | "expired" | "canceled">().notNull().default("created"),
+  createdAt: isoNow("created_at"),
+  paidAt: text("paid_at"),
+}, (t) => [
+  index("credit_orders_account_idx").on(t.accountId),
+  uniqueIndex("credit_orders_invoice_idx").on(t.invoiceId),
+]);
+
 // ── Audit ─────────────────────────────────────────────────────
 
 export const auditEvents = sqliteTable("audit_events", {

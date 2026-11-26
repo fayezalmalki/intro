@@ -27,6 +27,7 @@ describe("search, leads and reveals", () => {
   const person = { name: "Faisal Alotaibi", title: "Chief Digital Officer", company: "Qimma", companyDomain: "qimma.example", linkedinUrl: "https://www.linkedin.com/in/faisal", seniority: "cxo" };
 
   it("searches through the offline provider and logs every search", async () => {
+    await repo.grantWelcomeCredits(accountId, db);
     const companies = await searchCompanies(accountId, { sector: "Insurance", market: "SA" });
     expect(companies.length).toBeGreaterThan(0);
     const people = await searchPeople(accountId, { companyDomain: companies[0].domain, title: "Chief", market: "SA" });
@@ -105,6 +106,79 @@ describe("search, leads and reveals", () => {
     expect(await repo.autoPublish(pipelineId!, "AI", db)).toBe(requestId);
     const [p] = await db.select().from(pipelines).where(eq(pipelines.id, pipelineId!));
     expect(p.status).toBe("published");
+  });
+});
+
+describe("credits for searches", () => {
+  let db: Database;
+  let accountId: string;
+  beforeEach(async () => {
+    db = await testDb();
+    await reset(db);
+    const [user] = await db.insert(authUsers).values({ email: "c@x.sa", name: "c" }).returning();
+    const [account] = await db.insert(accounts).values({ userId: user.id, displayName: "C", initial: "C", email: "c@x.sa", state: "observer" }).returning();
+    accountId = account.id;
+  });
+
+  it("refuses a search at zero credits, before calling any provider", async () => {
+    await expect(searchCompanies(accountId, { sector: "Insurance", market: "SA" })).rejects.toMatchObject({ code: "insufficient_credits" });
+    expect(await db.select().from(searchLog)).toHaveLength(0);
+  });
+
+  it("charges one credit per search that finds something", async () => {
+    await repo.grantWelcomeCredits(accountId, db);
+    await searchCompanies(accountId, { sector: "Insurance", market: "SA" });
+    expect(await repo.creditBalance(accountId, db)).toBe(repo.WELCOME_CREDITS - 1);
+  });
+
+  it("refunds a search's credit when the refund is recorded", async () => {
+    await repo.grantWelcomeCredits(accountId, db);
+    await repo.reserveCredit({ accountId, reason: "search", ref: "search:x" }, db);
+    await repo.refundSearch(accountId, "search:x", db);
+    await repo.refundSearch(accountId, "search:x", db); // a second refund is absorbed
+    expect(await repo.creditBalance(accountId, db)).toBe(repo.WELCOME_CREDITS);
+  });
+});
+
+describe("credit orders", () => {
+  let db: Database;
+  let accountId: string;
+  beforeEach(async () => {
+    db = await testDb();
+    await reset(db);
+    const [user] = await db.insert(authUsers).values({ email: "b@x.sa", name: "b" }).returning();
+    const [account] = await db.insert(accounts).values({ userId: user.id, displayName: "B", initial: "B", email: "b@x.sa", state: "observer" }).returning();
+    accountId = account.id;
+  });
+
+  const invoiceId = "11111111-2222-3333-4444-555555555555";
+
+  it("grants a paid order's credits exactly once", async () => {
+    const orderId = await repo.createOrder({ accountId, package: "starter", credits: 100, amountHalalas: 9900 }, db);
+    await repo.attachInvoice(orderId, invoiceId, db);
+    const order = (await repo.getOrder(orderId, db))!;
+    const paid = { id: invoiceId, status: "paid", amount: 9900, currency: "SAR" };
+    expect(await repo.settleOrder(order, paid, db)).toBe("paid");
+    expect(await repo.settleOrder((await repo.getOrder(orderId, db))!, paid, db)).toBe("paid");
+    expect(await repo.creditBalance(accountId, db)).toBe(100);
+  });
+
+  it("refuses a paid invoice for a different amount or invoice", async () => {
+    const orderId = await repo.createOrder({ accountId, package: "starter", credits: 100, amountHalalas: 9900 }, db);
+    await repo.attachInvoice(orderId, invoiceId, db);
+    const order = (await repo.getOrder(orderId, db))!;
+    expect(await repo.settleOrder(order, { id: invoiceId, status: "paid", amount: 100, currency: "SAR" }, db)).toBe("failed");
+    expect(await repo.settleOrder(order, { id: "other", status: "paid", amount: 9900, currency: "SAR" }, db)).toBe("failed");
+    expect(await repo.creditBalance(accountId, db)).toBe(0);
+  });
+
+  it("marks expired invoices and leaves pending ones pending", async () => {
+    const orderId = await repo.createOrder({ accountId, package: "starter", credits: 100, amountHalalas: 9900 }, db);
+    await repo.attachInvoice(orderId, invoiceId, db);
+    const order = (await repo.getOrder(orderId, db))!;
+    expect(await repo.settleOrder(order, { id: invoiceId, status: "initiated", amount: 9900, currency: "SAR" }, db)).toBe("pending");
+    expect(await repo.settleOrder(order, { id: invoiceId, status: "expired", amount: 9900, currency: "SAR" }, db)).toBe("failed");
+    expect((await repo.getOrder(orderId, db))!.status).toBe("expired");
   });
 });
 

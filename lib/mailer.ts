@@ -119,3 +119,16 @@ export async function sendActivated(to: string, name: string, locale: "ar" | "en
     `تم تفعيل الإرسال في intro.sa وأضفنا ${credits} رصيد. ${SITE}/requests`,
   );
 }
+
+/** To the admins: someone wants credits while card payments aren't set up. */
+export async function sendCreditRequest(admins: string[], account: { displayName: string; email: string; company?: string }, pack: string): Promise<void> {
+  if (admins.length === 0) return;
+  await send(
+    admins,
+    `طلب رصيد: ${account.displayName} (${pack})`,
+    layout("rtl", `<h1 style="font-size:20px;margin:0 0 10px;color:#141613">طلب شحن رصيد</h1>
+      <p style="color:#575B54;line-height:1.8;margin:0 0 18px" dir="auto">${esc(account.displayName)} · ${esc(account.email)}${account.company ? ` · ${esc(account.company)}` : ""}<br>الباقة: ${esc(pack)}</p>
+      ${button(`${SITE}/am/team`, "امنح الرصيد")}`),
+    `طلب رصيد من ${account.displayName} <${account.email}> — ${pack}. ${SITE}/am/team`,
+  );
+}
