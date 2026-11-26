@@ -89,7 +89,7 @@ export function Wordmark({ className, lang = "en", tone = "ink" }: { className?:
     <img
       src={`/logo/intro-${lang}-${tone}.svg`}
       alt={lang === "ar" ? "انترو" : "Intro"}
-      className={cx("block w-auto shrink-0", lang === "ar" ? "h-[34px]" : "h-[26px]", className)}
+      className={cx("block w-auto shrink-0", className ?? (lang === "ar" ? "h-[34px]" : "h-[26px]"))}
     />
   );
 }

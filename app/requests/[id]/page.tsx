@@ -202,7 +202,7 @@ function Result({ t, lang, db, requestId, item, published, isNew }: {
             <span className="text-[12px] font-medium text-subtle">{t.why}</span>
             <p className="text-[14px] leading-[21px] text-ink rtl:leading-[24px]" dir="auto">{item.why}</p>
           </div>
-          {item.whyNow && (
+          {item.whyNow && !/^[\s—-]*$/.test(item.whyNow) && (
             <div className="flex flex-col gap-1 rounded-[12px] bg-surface-3 p-3">
               <span className="text-[12px] font-medium text-subtle">{t.whyNow}</span>
               <p className="text-[14px] leading-[21px] text-ink rtl:leading-[24px]" dir="auto">{item.whyNow}</p>

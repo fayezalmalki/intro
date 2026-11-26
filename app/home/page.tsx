@@ -157,8 +157,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </ul>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card as="section" className="flex flex-col gap-3 p-5">
+        <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+          <Card as="section" className="flex min-w-0 flex-col gap-3 p-5">
             <div className="flex items-center justify-between"><h2 className="text-[16px] font-semibold text-ink">{t.recentReq}</h2><a href={`/requests?lang=${lang}`} className="text-[13px] font-medium text-brand">{t.all}</a></div>
             {recentRequests.length === 0 ? <p className="text-[14px] text-muted">{t.noReq}</p> : (
               <ul className="flex flex-col gap-1.5">
@@ -176,7 +176,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               </ul>
             )}
           </Card>
-          <Card as="section" className="flex flex-col gap-3 p-5">
+          <Card as="section" className="flex min-w-0 flex-col gap-3 p-5">
             <div className="flex items-center justify-between"><h2 className="text-[16px] font-semibold text-ink">{t.recentLeads}</h2><a href={`/leads?lang=${lang}`} className="text-[13px] font-medium text-brand">{t.all}</a></div>
             {recentLeads.length === 0 ? <p className="text-[14px] text-muted">{t.noLeads}</p> : (
               <ul className="flex flex-col gap-1.5">

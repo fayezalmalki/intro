@@ -28,8 +28,8 @@ export function AppShell({
   return (
     <div lang={lang} dir={rtl ? "rtl" : "ltr"} data-dir={rtl ? "rtl" : "ltr"} className={`site ${geist.variable} ${interTight.variable} min-h-dvh bg-surface-3`}>
       <header className="sticky top-0 z-20 border-b border-line bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center gap-6 px-4 sm:px-6">
-          <a href={`/home?lang=${lang}`} aria-label={rtl ? "الرئيسية" : "Home"}><Wordmark lang={lang} /></a>
+        <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center gap-2 px-3 sm:gap-4 sm:px-6 lg:gap-6">
+          <a href={`/home?lang=${lang}`} aria-label={rtl ? "الرئيسية" : "Home"} className="shrink-0"><Wordmark lang={lang} className={rtl ? "h-[28px] sm:h-[34px]" : "h-[22px] sm:h-[26px]"} /></a>
           <nav className="flex items-center gap-0.5 sm:gap-1" aria-label={rtl ? "التنقل" : "Primary"}>
             {NAV.map((n) => (
               <a key={n.id} href={`${n.href}?lang=${lang}`} aria-current={on === n.id ? "page" : undefined} title={rtl ? n.ar : n.en} className={cx("flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[14px] font-medium transition-colors md:px-3", on === n.id ? "bg-mint text-brand" : "text-muted hover:bg-surface hover:text-ink")}>
@@ -52,7 +52,7 @@ export function AppShell({
             <Icon name="plus" size={13} />{rtl ? "طلب جديد" : "New request"}
           </a>
           <a href={`?lang=${other}`} lang={other} className={cx("text-[13px] font-medium text-muted hover:text-ink", rtl ? "font-latin" : "font-ar")}>{rtl ? "EN" : "ع"}</a>
-          <a href="/signout" className="flex size-8 items-center justify-center rounded-full bg-avatar text-[13px] font-semibold text-ink" title={rtl ? "تسجيل الخروج" : "Sign out"}>
+          <a href="/signout" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-avatar text-[13px] font-semibold text-ink" title={rtl ? "تسجيل الخروج" : "Sign out"}>
             {account.initial}
           </a>
         </div>
