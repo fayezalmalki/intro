@@ -1,195 +1,127 @@
-import Link from "next/link";
-import { AppBar, DirectionBadge, ar } from "@/components/Chrome";
-import { pageAccount } from "@/lib/session";
+import type { Metadata } from "next";
+import { AppShell } from "@/components/app/AppShell";
+import { Badge, Btn, Card, Empty, PageHeader, Starter, Tip } from "@/components/app/ui";
+import { pickLang } from "@/components/site/AuthShell";
+import { Icon } from "@/components/site/ui";
+import { GOAL_LABEL, REQUEST_STATUS } from "@/lib/app-copy";
+import { balanceOf } from "@/lib/credits";
 import { loadMyRequests } from "@/lib/db/loaders";
-import type { Db, IntroRequest, RequestStatus } from "@/lib/types";
+import { presetHref } from "@/lib/search/presets";
+import { pageAccount } from "@/lib/session";
+import { ar as arDict } from "@/lib/site/ar";
+import { en as enDict } from "@/lib/site/en";
+import type { Db } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Requests · intro" };
 
-/**
- * The requester's own list, on the handoff's dashboard layout: a KPI row over
- * a table of requests.
- *
- * Until this screen existed the app had no index at all — /requests/[id] was
- * reachable only from the redirect that created it, so signing back in later
- * left someone on an empty /new box with their work behind a URL they had to
- * have kept.
- *
- * The artboard puts a right rail here carrying market signals and a concierge
- * cross-sell. Neither is built: there is no signals table and no concierge
- * service, and a rail of invented rows would be the one thing on this page
- * that does not describe the account looking at it. The table takes the width.
- */
-
-/**
- * The same five states as the account manager's queue, told from the other
- * side of the desk. Deliberately a second map rather than a shared one — «مسودة
- * جاهزة» is news to an account manager and means nothing to the person waiting.
- */
-const STATE: Record<RequestStatus, { label: string; dot: string }> = {
-  intent_review: { label: "بانتظار تأكيدك", dot: "var(--accent)" },
-  in_sourcing: { label: "فريقنا يجهّز قائمتك", dot: "var(--line-2)" },
-  pipeline_ready: { label: "قائمتك جاهزة", dot: "var(--accent)" },
-  outreach: { label: "التواصل جارٍ", dot: "var(--warn-line)" },
-  closed: { label: "مغلق", dot: "var(--line)" },
+const C = {
+  en: {
+    title: "Your requests", sub: "Every goal you've described, and where it stands.", newReq: "New request",
+    open: "Open", people: (n: number) => `${n} people`, sent: (n: number) => `${n} contacted`,
+    kpis: { open: "Open", matched: "People found", sent: "Contacted", replies: "Reply rate" },
+    empty: "No requests yet", emptySub: "Describe a goal in one sentence — we'll find the people, explain why each matters now, and draft the first message.",
+    write: "Write a goal", orStart: "Or start from one of these",
+    observer: "Activate sending to reach out under your name.", observerPending: "Activation is under review — we'll email you.",
+    observerSub: "You can still create requests, see matches, and reveal verified emails.", activate: "Activate sending",
+  },
+  ar: {
+    title: "طلباتك", sub: "كل هدف كتبته، ووين وصل.", newReq: "طلب جديد",
+    open: "افتح", people: (n: number) => `${n} أشخاص`, sent: (n: number) => `تواصلت مع ${n}`,
+    kpis: { open: "مفتوحة", matched: "أشخاص مرشّحون", sent: "تم التواصل", replies: "نسبة الرد" },
+    empty: "ما عندك طلبات بعد", emptySub: "اكتب هدفك في جملة، ونلقى لك الأشخاص، ونوضح ليش كل واحد مهم الحين، ونكتب أول رسالة.",
+    write: "اكتب هدفًا", orStart: "أو ابدأ من واحد من هذي",
+    observer: "فعّل الإرسال عشان تتواصل باسمك.", observerPending: "طلب التفعيل قيد المراجعة، ونراسلك أول ما يتفعّل.",
+    observerSub: "تقدر من الحين تنشئ الطلبات وتشوف المطابقات وتكشف البريد الموثّق.", activate: "فعّل الإرسال",
+  },
 };
 
-export default async function MyRequestsPage() {
+export default async function MyRequestsPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
+  const { lang: l } = await searchParams;
   const account = await pageAccount("/requests");
+  const lang = pickLang(l, undefined, account.locale ?? "ar");
+  const t = C[lang];
   const db = await loadMyRequests(account.id);
   const rows = [...db.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const credits = balanceOf(db, account.id);
+  const dict = lang === "ar" ? arDict : enDict;
 
   return (
-    <>
-      <AppBar account={account} />
-      <div className="wrap mid stack g20">
-        <div className="console-bar">
-          <h1>طلباتي</h1>
-          <div className="grow" />
-          <Link href="/new" className="btn btn-primary btn-sm">
-            طلب جديد
-          </Link>
-        </div>
+    <AppShell account={account} lang={lang} on="requests" credits={credits}>
+      <div className="flex flex-col gap-6">
+        <PageHeader title={t.title} sub={t.sub} actions={<Btn href={`/new?lang=${lang}`} icon="plus">{t.newReq}</Btn>} />
 
         {account.state === "observer" && (
-          <div className="card row between g14">
-            <div className="stack g4">
-              <strong className="sm">
-                {account.activationRequestedAt ? "طلب تفعيل الإرسال قيد المراجعة." : "فعّل الإرسال عشان تتواصل باسمك."}
-              </strong>
-              <span className="sm muted">
-                {account.activationRequestedAt
-                  ? "نراسلك أول ما يتفعّل، وعادةً خلال يوم عمل. وفي الوقت نفسه تقدر تنشئ طلباتك وتراجع مطابقاتك."
-                  : "تقدر تنشئ الطلبات وتشوف المطابقات من الحين. الإرسال يحتاج تحقق سريع من حسابك."}
-              </span>
-            </div>
-            {account.activationRequestedAt ? (
-              <span className="chip">قيد المراجعة</span>
-            ) : (
-              <Link href="/activate" className="btn btn-strong btn-sm">فعّل الإرسال</Link>
-            )}
-          </div>
+          <Tip icon="shield-check" tone="sand" title={account.activationRequestedAt ? t.observerPending : t.observer}
+            action={account.activationRequestedAt ? undefined : <Btn href="/activate" size="sm">{t.activate}</Btn>}>
+            {t.observerSub}
+          </Tip>
         )}
 
         {rows.length === 0 ? (
-          <div className="card stack g10">
-            <strong>ما عندك طلبات بعد.</strong>
-            <span className="sm muted">
-              اكتب سطر واحد عن الشخص اللي تبي توصله، ونتكفّل بالباقي —{" "}
-              <Link href="/new">ابدأ طلبك الأول</Link>.
-            </span>
-          </div>
+          <Empty icon="file-text" title={t.empty} body={t.emptySub}>
+            <Btn href={`/new?lang=${lang}`} icon="sparkles">{t.write}</Btn>
+            <span className="pt-2 text-[13px] font-medium text-subtle">{t.orStart}</span>
+            <ul className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {dict.useCases.items.map((u, i) => <li key={u.id}><Starter href={presetHref(u.id, lang)} icon={u.icon} title={u.name} body={u.example} tone={i} /></li>)}
+            </ul>
+          </Empty>
         ) : (
           <>
-            <Kpis db={db} rows={rows} />
-
-            <div className="tbl">
-              <div className="tr head tr-req">
-                <span>الطلب</span>
-                <span>النوع</span>
-                <span>الترشيحات</span>
-                <span>الحالة</span>
-                <span />
-              </div>
+            <Kpis db={db} t={t} />
+            <ul className="flex flex-col gap-2">
               {rows.map((r) => {
-                const s = STATE[r.status];
-                const version = publishedVersion(db, r.id);
+                const s = REQUEST_STATUS[r.status];
+                const matched = matchedIn(db, r.id);
+                const contacted = db.outreach.filter((o) => o.requestId === r.id && o.status !== "none").length;
                 return (
-                  <div className="tr tr-req" key={r.id}>
-                    <div className="stack g4">
-                      <strong className="sm">{r.brief?.summaryAr ?? r.rawText}</strong>
-                      <span className="xs dim">«{r.rawText}»</span>
-                    </div>
-                    <span>{r.brief && <DirectionBadge goal={r.brief.goalType} />}</span>
-                    <span className="sm muted">
-                      {matchedIn(db, r.id) > 0 ? ar(matchedIn(db, r.id)) : "—"}
-                    </span>
-                    <div className="row g6">
-                      <span className="dot" style={{ background: s.dot }} />
-                      <span className="sm muted">
-                        {s.label}
-                        {version > 0 ? ` · النسخة ${ar(version)}` : ""}
+                  <li key={r.id}>
+                    <a data-testid="request-row" href={r.status === "intent_review" ? `/requests/${r.id}/confirm?lang=${lang}` : `/requests/${r.id}?lang=${lang}`}
+                      className="flex flex-wrap items-center gap-3 rounded-[16px] bg-white p-4 outline outline-1 -outline-offset-1 outline-line transition-colors hover:bg-surface-3">
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="truncate text-[15px] font-medium text-ink" dir="auto">{r.brief?.summaryAr ?? r.rawText}</span>
+                        <span className="flex flex-wrap items-center gap-2 text-[12.5px] text-subtle">
+                          {r.brief && <Badge>{GOAL_LABEL[r.brief.goalType]?.[lang] ?? r.brief.goalType}</Badge>}
+                          {matched > 0 && <span>{t.people(matched)}</span>}
+                          {contacted > 0 && <span>· {t.sent(contacted)}</span>}
+                          <span dir="ltr">· {r.createdAt.slice(0, 10)}</span>
+                        </span>
                       </span>
-                    </div>
-                    <Link href={`/requests/${r.id}`} className="btn btn-sm">
-                      افتح ←
-                    </Link>
-                  </div>
+                      <Badge tone={s.tone} dot>{s[lang]}</Badge>
+                      <Icon name="arrow-right" flip className="text-subtle" />
+                    </a>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </>
         )}
       </div>
-    </>
+    </AppShell>
   );
 }
 
-/**
- * Four figures, every one of them computed from rows this account owns.
- *
- * The artboard's fifth idea — a signals count — has no table behind it and is
- * simply not here, rather than being filled with a plausible number.
- */
-function Kpis({ db, rows }: { db: Db; rows: IntroRequest[] }) {
-  const open = rows.filter((r) => r.status !== "closed");
-  const matched = db.pipelines
-    .filter((p) => p.status === "published")
-    .reduce((n, p) => n + p.items.length, 0);
-
+function Kpis({ db, t }: { db: Db; t: (typeof C)["en"] }) {
+  const open = db.requests.filter((r) => r.status !== "closed").length;
+  const matched = db.pipelines.filter((p) => p.status === "published").reduce((n, p) => n + p.items.length, 0);
   const sent = db.outreach.filter((o) => o.status !== "none");
-  const accepted = sent.filter((o) => o.status === "accepted");
-  const answered = sent.filter((o) => o.status === "replied" || o.status === "accepted" || o.status === "declined");
-
+  const answered = sent.filter((o) => ["replied", "accepted", "declined"].includes(o.status)).length;
+  const items = [
+    { k: t.kpis.open, v: String(open) },
+    { k: t.kpis.matched, v: String(matched) },
+    { k: t.kpis.sent, v: String(sent.length) },
+    { k: t.kpis.replies, v: sent.length ? `${Math.round((answered / sent.length) * 100)}%` : "—" },
+  ];
   return (
-    <div className="kpis">
-      <Kpi
-        label="طلبات مفتوحة"
-        figure={ar(open.length)}
-        sub={open.length ? goalBreakdown(open) : "—"}
-      />
-      <Kpi label="أشخاص مرشّحون" figure={ar(matched)} sub={matched ? "عبر القوائم المنشورة" : "—"} />
-      <Kpi
-        label="تعارف تم"
-        figure={ar(accepted.length)}
-        sub={sent.length ? `${ar(Math.round((accepted.length / sent.length) * 100))}٪ من المُرسل` : "—"}
-      />
-      <Kpi
-        label="نسبة الرد"
-        figure={sent.length ? `${ar(Math.round((answered.length / sent.length) * 100))}٪` : "—"}
-        sub={sent.length ? `${ar(answered.length)} من ${ar(sent.length)}` : "ما أرسلت بعد"}
-      />
-    </div>
+    <Card className="grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x rtl:sm:divide-x-reverse">
+      {items.map((i) => (
+        <div key={i.k} className="flex flex-col gap-1 p-4">
+          <span className="text-[12.5px] text-subtle">{i.k}</span>
+          <span className="font-display text-[26px] font-medium tracking-[-0.8px] text-ink">{i.v}</span>
+        </div>
+      ))}
+    </Card>
   );
-}
-
-function Kpi({ label, figure, sub }: { label: string; figure: string; sub: string }) {
-  return (
-    <div className="kpi">
-      <div className="kpi-label">{label}</div>
-      <div className="kpi-figure">{figure}</div>
-      <div className="kpi-sub">{sub}</div>
-    </div>
-  );
-}
-
-const GOAL_SHORT: Record<string, string> = {
-  job: "توظيف",
-  sales: "مبيعات",
-  partnership: "شراكات",
-  investment: "استثمار",
-  person: "شخص",
-};
-
-/** "٢ مبيعات · ١ توظيف" — the artboard's sub-line, from the briefs we hold. */
-function goalBreakdown(rows: IntroRequest[]): string {
-  const counts = new Map<string, number>();
-  for (const r of rows) {
-    const goal = r.brief?.goalType;
-    if (goal) counts.set(goal, (counts.get(goal) ?? 0) + 1);
-  }
-  if (counts.size === 0) return "—";
-  return [...counts].map(([goal, n]) => `${ar(n)} ${GOAL_SHORT[goal] ?? goal}`).join(" · ");
 }
 
 function matchedIn(db: Db, requestId: string): number {
@@ -197,13 +129,4 @@ function matchedIn(db: Db, requestId: string): number {
     .filter((p) => p.requestId === requestId && p.status === "published")
     .sort((a, b) => b.version - a.version)[0];
   return published?.items.length ?? 0;
-}
-
-function publishedVersion(db: Db, requestId: string): number {
-  return Math.max(
-    0,
-    ...db.pipelines
-      .filter((p) => p.requestId === requestId && p.status === "published")
-      .map((p) => p.version),
-  );
 }

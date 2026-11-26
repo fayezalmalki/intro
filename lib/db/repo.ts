@@ -853,3 +853,14 @@ export async function autoPublishLatestDraft(requestId: string, actor: string, d
     .orderBy(sql`${pipelines.version} desc`).limit(1);
   return draft ? autoPublish(draft.id, actor, database) : null;
 }
+
+/** Where an account is in its first-run journey, for the home checklist. */
+export async function journeyStats(accountId: string, database: Database = defaultDb) {
+  const [s] = await database.select({ n: sql<number>`count(*)` }).from(searchLog).where(eq(searchLog.accountId, accountId));
+  const [l] = await database.select({
+    n: sql<number>`count(*)`,
+    revealed: sql<number>`coalesce(sum(case when ${leads.email} is not null then 1 else 0 end), 0)`,
+  }).from(leads).where(eq(leads.accountId, accountId));
+  const [r] = await database.select({ n: sql<number>`count(*)` }).from(requests).where(eq(requests.accountId, accountId));
+  return { searches: Number(s?.n ?? 0), leads: Number(l?.n ?? 0), revealed: Number(l?.revealed ?? 0), requests: Number(r?.n ?? 0) };
+}

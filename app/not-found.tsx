@@ -1,28 +1,15 @@
-import Link from "next/link";
+import { StatusPage, statusBtn } from "@/components/app/StatusPage";
 
-/**
- * Next.js's built-in 404 is English and, rendered inside dir="rtl", puts its
- * full stop on the wrong side — it reads ".This page could not be found404".
- * This replaces it everywhere, including on the redirect chain a signed-out
- * visitor follows.
- */
+/** Replaces Next's English 404 everywhere, including the signed-out redirect chain. */
 export default function NotFound() {
   return (
-    <div className="login-page">
-      <div className="stack g16 narrow" style={{ width: "100%", textAlign: "center" }}>
-        <span className="logo" style={{ fontSize: "var(--text-xl)" }}>
-          intro<span>.</span>
-        </span>
-        <h1>ما لقينا هذي الصفحة.</h1>
-        <span className="sm muted">
-          يمكن الرابط قديم، أو الطلب اللي تدور عليه انحذف.
-        </span>
-        <div className="row g10" style={{ justifyContent: "center" }}>
-          <Link href="/" className="btn btn-primary">
-            ابدأ Intro جديد
-          </Link>
-        </div>
-      </div>
-    </div>
+    <StatusPage
+      icon="search"
+      ar={{ title: "ما لقينا هذي الصفحة", body: "يمكن الرابط قديم، أو الطلب اللي تدور عليه انحذف أو يخص حسابًا آخر." }}
+      en={{ title: "We couldn't find that page", body: "The link may be old, or the request was removed or belongs to another account." }}
+    >
+      <a href="/home" className={`${statusBtn} bg-brand text-white hover:bg-brand-2`}>الرئيسية · Home</a>
+      <a href="/search" className={`${statusBtn} bg-white text-ink outline outline-1 -outline-offset-1 outline-line`}>البحث · Search</a>
+    </StatusPage>
   );
 }

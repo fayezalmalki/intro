@@ -95,14 +95,14 @@ step("intake page loaded", await page.locator("h1").innerText());
 await shot("01-intake");
 
 await page.fill("textarea[name=rawText]", "أدور وظيفة قيادية في الـ Product في شركات تقنية سعودية.");
-await Promise.all([page.waitForURL(/\/confirm$/), page.click("button.btn-primary")]);
+await Promise.all([page.waitForURL(/\/confirm$/), page.click("[data-testid=create-request]")]);
 step("brief extracted", page.url().split("/").slice(-2)[0]);
 
 // 2. confirm
 const summary = await page.locator("textarea[name=summaryAr]").inputValue();
 step("brief summary", summary);
 await shot("02-confirm");
-await Promise.all([page.waitForURL(/\/requests\/[^/]+$/), page.click("button.btn-primary")]);
+await Promise.all([page.waitForURL(/\/requests\/[^/]+$/), page.click("[data-testid=confirm-brief]")]);
 step("confirmed → requester sees", (await page.locator("h1, h2").first().innerText()).trim());
 await shot("03-sourcing");
 
@@ -110,7 +110,7 @@ const requestId = page.url().split("/").pop();
 
 // 3. self-serve: no account-manager wait — v1 publishes itself, with only
 //    the rows a source backs (the evidence gate still holds, automatically).
-const published = page.locator(".narrow > .card").filter({ has: page.locator(".lat") });
+const published = page.locator("[data-testid=result]");
 await published.first().waitFor();
 step("v1 published without waiting", `${await published.count()} evidence-backed people`);
 await shot("04-self-serve-v1");
@@ -126,33 +126,33 @@ await shot("06b-pipeline");
 as("requester");
 // 6. requester sees v1 — but the account is an observer, so the gate holds
 await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
-const peopleCards = page.locator(".narrow > .card").filter({ has: page.locator(".lat") });
+const peopleCards = page.locator("[data-testid=result]");
 await peopleCards.first().waitFor();
 step("requester sees v1", `${await peopleCards.count()} people`);
 
-const firstName = await page.locator(".lat").first().innerText();
-await page.locator("form button.btn-primary").first().click();
-await page.locator(".alert").first().waitFor();
-step("observer blocked at the send gate", (await page.locator(".alert").first().innerText()).trim());
+const firstName = await page.locator("[data-testid=person-name]").first().innerText();
+await page.locator("[data-testid=send]").first().click();
+await page.locator("[data-testid=gate-error]").first().waitFor();
+step("observer blocked at the send gate", (await page.locator("[data-testid=gate-error]").first().innerText()).trim());
 await shot("08a-gate-blocks-observer");
 
 // verify the account (stands in for milestone 1 auth + milestone 5 billing)
-await page.locator('button:has-text("فعّل الإرسال")').click();
-const creditLine = page.locator(".narrow > .row.between.sm.muted");
+await page.locator("[data-testid=activate-send]").click();
+const creditLine = page.locator("[data-testid=send-status]");
 await creditLine.waitFor();
 step("account verified", (await creditLine.innerText()).replace(/\s+/g, " ").trim());
 
 // now the same send succeeds
-await page.locator("form button.btn-primary").first().click();
-await page.locator(".chip", { hasText: /عبر Intro|تواصل مباشر/ }).first().waitFor();
-const sentBadge = await page.locator(".chip", { hasText: /عبر Intro|تواصل مباشر/ }).first().innerText();
+await page.locator("[data-testid=send]").first().click();
+await page.locator("[data-testid=outreach]").first().waitFor();
+const sentBadge = await page.locator("[data-testid=outreach]").first().innerText();
 step("outreach recorded", `${firstName} → ${sentBadge}`);
 step("credits after one send", (await creditLine.innerText()).replace(/\s+/g, " ").trim());
 await shot("08-results-v1-sent");
 
 // the same person, again — one message per person per request
 const second = peopleCards.filter({ hasText: firstName });
-step("repeat send offered again?", String(await second.locator("form button.btn-primary").count()));
+step("repeat send offered again?", String(await second.locator("[data-testid=send]").count()));
 
 as("manager");
 // 7. AM attaches v2 from a predefined list
@@ -172,11 +172,11 @@ await shot("10-published-v2");
 as("requester");
 // 8. requester sees v2 with state preserved
 await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
-const banner = await page.locator(".note").innerText();
+const banner = await page.locator("[data-testid=version-banner]").innerText();
 step("v2 banner", banner.replace(/\s+/g, " ").trim());
-const stillSent = await page.locator(".chip", { hasText: /عبر Intro|تواصل مباشر/ }).count();
+const stillSent = await page.locator("[data-testid=outreach]").count();
 step("outreach surviving the swap", String(stillSent));
-const newTags = await page.locator(".chip.on").count();
+const newTags = await page.locator("[data-testid=new-in-version]").count();
 step("rows marked new in v2", String(newTags));
 await shot("11-results-v2");
 

@@ -1,48 +1,25 @@
 "use client";
 
 import { useEffect } from "react";
+import { StatusPage, statusBtn } from "@/components/app/StatusPage";
 
 /**
- * Logs the real error rather than leaving only a digest, and tells the reader
- * where to look. Production's first failure was a bare digest with no way to
- * tell "database not provisioned" from a genuine bug.
+ * Logs the real error rather than leaving only a digest, and offers a way on.
+ * The digest stays visible: /api/health says whether setup is the cause.
  */
-export default function Error({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error("[app error]", error.digest ?? "", error.message, error.stack);
   }, [error]);
-
   return (
-    <div className="wrap">
-      <div className="narrow stack g20" style={{ paddingTop: 60 }}>
-        <div className="stack g12">
-          <h1>صار خطأ غير متوقع.</h1>
-          <p className="muted">
-            سجّلنا التفاصيل. جرّب مرة ثانية، وإذا تكرر تواصل معنا.
-          </p>
-        </div>
-
-        <div className="row g8">
-          <button onClick={reset} className="btn-primary">
-            حاول مرة ثانية
-          </button>
-          <a href="/" className="btn btn-ghost">
-            العودة للبداية
-          </a>
-        </div>
-
-        {error.digest && (
-          <p className="sm dim lat" style={{ direction: "ltr" }}>
-            digest {error.digest} · /api/health reports whether the database is set up
-          </p>
-        )}
-      </div>
-    </div>
+    <StatusPage
+      icon="refresh"
+      ar={{ title: "صار خطأ غير متوقع", body: "سجّلنا التفاصيل. جرّب مرة ثانية، وإذا تكرر تواصل معنا على hello@intro.sa." }}
+      en={{ title: "Something went wrong", body: "We've logged it. Try again — if it keeps happening, write to hello@intro.sa." }}
+    >
+      <button type="button" onClick={reset} className={`${statusBtn} bg-brand text-white hover:bg-brand-2`}>حاول مرة ثانية · Try again</button>
+      <a href="/home" className={`${statusBtn} bg-white text-ink outline outline-1 -outline-offset-1 outline-line`}>الرئيسية · Home</a>
+      {error.digest && <p className="w-full pt-2 font-latin text-[12px] text-subtle" dir="ltr">ref {error.digest}</p>}
+    </StatusPage>
   );
 }

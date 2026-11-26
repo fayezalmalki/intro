@@ -1,86 +1,100 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { AppBar, Provenance } from "@/components/Chrome";
+import { AppShell } from "@/components/app/AppShell";
+import { SubmitButton } from "@/components/app/SubmitButton";
+import { Badge, Card, PageHeader, Steps, Tip } from "@/components/app/ui";
+import { pickLang } from "@/components/site/AuthShell";
 import { confirmBrief } from "@/lib/actions";
-import { canReadRequest, pageAccount } from "@/lib/session";
+import { GOAL_LABEL } from "@/lib/app-copy";
+import * as repo from "@/lib/db/repo";
 import { loadRequestContext } from "@/lib/db/loaders";
+import { canReadRequest, pageAccount } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Confirm · intro" };
 
-const GOAL_LABEL: Record<string, string> = {
-  job: "وظيفة",
-  sales: "مبيعات",
-  partnership: "شراكة",
-  investment: "استثمار",
-  person: "شخص محدد",
+const C = {
+  en: {
+    eyebrow: "Step 2 · Confirm", title: "Here's what we understood",
+    sub: "Edit the summary if it's off. We only start looking once you confirm.",
+    summary: "Summary", goal: "Goal", roles: "Roles", sectors: "Sectors", markets: "Markets", excludes: "Excludes",
+    confirm: "Looks right — find people", confirming: "Starting the search…",
+    edit: "Start over", steps: ["Your goal", "Confirm", "Find people", "Results"],
+    tip: "Results usually arrive within a minute. You'll see each person with why they fit, why now, and a first line.",
+    by: (c: boolean) => (c ? "Understood by Claude" : "Understood by keyword rules — check it carefully"),
+    original: "You wrote",
+  },
+  ar: {
+    eyebrow: "الخطوة ٢ · التأكيد", title: "هذا اللي فهمناه",
+    sub: "عدّل الملخص إذا فيه شيء غير دقيق. ما نبدأ البحث إلا بعد تأكيدك.",
+    summary: "الملخص", goal: "الهدف", roles: "المناصب", sectors: "القطاعات", markets: "الأسواق", excludes: "يستثني",
+    confirm: "تمام، ابحث عن الأشخاص", confirming: "نبدأ البحث…",
+    edit: "ابدأ من جديد", steps: ["هدفك", "التأكيد", "البحث", "النتائج"],
+    tip: "النتائج توصل عادةً خلال دقيقة، ومع كل شخص: ليش يناسبك، وليش الحين، وأول سطر.",
+    by: (c: boolean) => (c ? "فهمه Claude" : "فُهم بقواعد الكلمات المفتاحية، راجعه بعناية"),
+    original: "اللي كتبته",
+  },
 };
 
-export default async function ConfirmPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ConfirmPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ lang?: string }> }) {
   const { id } = await params;
+  const { lang: l } = await searchParams;
   const account = await pageAccount(`/requests/${id}/confirm`);
   const req = (await loadRequestContext(id)).requests.find((r) => r.id === id);
   if (!req?.brief || !canReadRequest(account, req.accountId)) notFound();
+  const lang = pickLang(l, undefined, account.locale ?? "ar");
+  const t = C[lang];
   const b = req.brief;
+  const credits = await repo.creditBalance(account.id);
+
+  const rows = [
+    { k: t.roles, v: b.targetRoles },
+    { k: t.sectors, v: b.industries },
+    { k: t.markets, v: b.geos },
+    { k: t.excludes, v: b.exclusions },
+  ].filter((r) => r.v.length > 0);
 
   return (
-    <>
-      <AppBar account={account} />
-      <div className="wrap">
-        <div className="narrow stack g20" style={{ paddingTop: 36 }}>
-          <div className="stack g12">
-            <span className="eyebrow">طلبك</span>
-            <h1>«{req.rawText}»</h1>
-          </div>
+    <AppShell account={account} lang={lang} on="requests" credits={credits}>
+      <div className="mx-auto flex max-w-[760px] flex-col gap-6">
+        <Steps steps={t.steps.map((s, i) => ({ label: s, state: i < 1 ? "done" : i === 1 ? "active" : "pending" }))} />
+        <PageHeader eyebrow={t.eyebrow} title={t.title} sub={t.sub} />
 
-          <form action={confirmBrief} className="card stack g16">
+        <Card className="p-5 sm:p-6">
+          <form action={confirmBrief} className="flex flex-col gap-5">
             <input type="hidden" name="requestId" value={req.id} />
-            <span className="eyebrow">هذا اللي فهمناه</span>
-            <textarea name="summaryAr" rows={3} defaultValue={b.summaryAr} aria-label="ملخص الطلب" />
-
-            <div className="stack g12" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 16 }}>
-              <Field label="الهدف" value={GOAL_LABEL[b.goalType] ?? b.goalType} />
-              {b.targetRoles.length > 0 && <Field label="الأدوار" value={b.targetRoles.join("، ")} />}
-              {b.industries.length > 0 && <Field label="القطاع" value={b.industries.join("، ")} />}
-              {b.geos.length > 0 && <Field label="الموقع" value={b.geos.join("، ")} />}
-              {b.exclusions.length > 0 && (
-                <div className="row g10 wrapx" style={{ alignItems: "baseline" }}>
-                  <span className="xs dim" style={{ width: 74, flex: "none" }}>
-                    يستثني
-                  </span>
-                  <span className="row g6 wrapx">
-                    {b.exclusions.map((x) => (
-                      <span className="chip" key={x}>
-                        {x}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              )}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[12.5px] font-medium text-subtle">{t.original}</span>
+              <p className="text-[15px] text-ink" dir="auto">«{req.rawText}»</p>
             </div>
-
-            <div className="row between" style={{ borderTop: "1px solid var(--line-3)", paddingTop: 16 }}>
-              <Provenance brief={b} />
-              <button type="submit" className="btn-primary">
-                تمام، كمّل
-              </button>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12.5px] font-medium text-subtle">{t.summary}</span>
+              <textarea name="summaryAr" rows={3} defaultValue={b.summaryAr} dir="auto"
+                className="w-full rounded-[14px] bg-surface-2 p-3.5 text-[15.5px] leading-[25px] text-ink outline-none focus:outline-2 focus:outline-brand" />
+            </label>
+            <dl className="flex flex-col gap-3 border-t border-line pt-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <dt className="w-24 text-[13px] text-subtle">{t.goal}</dt>
+                <dd><Badge tone="brand">{GOAL_LABEL[b.goalType]?.[lang] ?? b.goalType}</Badge></dd>
+              </div>
+              {rows.map((r) => (
+                <div key={r.k} className="flex flex-wrap items-center gap-3">
+                  <dt className="w-24 text-[13px] text-subtle">{r.k}</dt>
+                  <dd className="flex flex-wrap gap-1.5">{r.v.map((x) => <Badge key={x}>{x}</Badge>)}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              <span className="text-[12.5px] text-subtle">{t.by(b.extractedBy === "claude")}</span>
+              <div className="flex items-center gap-2">
+                <a href={`/new?lang=${lang}&q=${encodeURIComponent(req.rawText)}`} className="text-[13.5px] font-medium text-muted hover:text-ink">{t.edit}</a>
+                <SubmitButton pending={t.confirming} icon="arrow-right" testId="confirm-brief">{t.confirm}</SubmitButton>
+              </div>
             </div>
           </form>
-
-          <p className="sm dim">
-            عدّل النص فوق إذا ما كان دقيقًا. ما نبدأ التجهيز إلا بعد ما تأكد.
-          </p>
-        </div>
+        </Card>
+        <Tip icon="clock">{t.tip}</Tip>
       </div>
-    </>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="row g10" style={{ alignItems: "baseline" }}>
-      <span className="xs dim" style={{ width: 74, flex: "none" }}>
-        {label}
-      </span>
-      <span className="sm">{value}</span>
-    </div>
+    </AppShell>
   );
 }

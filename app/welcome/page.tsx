@@ -66,7 +66,7 @@ export default async function WelcomePage({
   searchParams: Promise<{ next?: string; lang?: string; missing?: string }>;
 }) {
   const { next: rawNext, lang: langParam, missing } = await searchParams;
-  const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/new";
+  const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/home?welcome=1";
   const account = await currentAccount();
   if (account.onboardedAt && !missing) redirect(next);
 
