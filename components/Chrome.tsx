@@ -28,7 +28,7 @@ export function Console({
   account,
   children,
 }: {
-  on?: "queue" | "team";
+  on?: "queue" | "team" | "signups";
   account: Account;
   children: React.ReactNode;
 }) {
@@ -41,6 +41,9 @@ export function Console({
         <nav className="rail-nav">
           <Link href="/am" className={on === "queue" ? "on" : ""}>
             الطابور
+          </Link>
+          <Link href="/am/signups" className={on === "signups" ? "on" : ""}>
+            التسجيلات
           </Link>
           {/* Only admins can change roles, so only admins are shown the door. */}
           {account.role === "admin" && (

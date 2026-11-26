@@ -23,7 +23,7 @@ export default async function LoginPage({
 
   // Only same-site paths. An open redirect here would let a phishing link send
   // a freshly-signed-in user to an attacker's page carrying our domain's trust.
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/home";
+  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/resume";
 
   if (await getSessionUser(await headers())) redirect(target);
 

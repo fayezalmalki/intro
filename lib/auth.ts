@@ -60,8 +60,24 @@ function createAuth() {
         expiresIn: OTP_TTL_SECONDS,
         allowedAttempts: 5,
         storeOTP: "hashed",
-        async sendVerificationOTP({ email, otp }) {
+        async sendVerificationOTP({ email, otp }, ctx) {
           await sendOtpEmail(email, otp);
+          // Keep the address as a lead from the moment they ask for a code,
+          // with what they were about to do. Never let this block sign-in.
+          try {
+            const headers = ctx?.request?.headers ?? ctx?.headers;
+            const { recordSignup } = await import("./db/repo");
+            const { pendingFromCookieHeader } = await import("./pending");
+            const referer = headers?.get("referer") ?? undefined;
+            await recordSignup({
+              email,
+              pending: pendingFromCookieHeader(headers?.get("cookie")) ?? nextFromReferer(referer),
+              lang: referer?.includes("lang=en") ? "en" : "ar",
+              referrer: referer,
+            });
+          } catch (err) {
+            console.error("recordSignup failed", err);
+          }
         },
       }),
       // Lets server actions set the session cookie. Must stay last.
@@ -93,4 +109,17 @@ export const googleEnabled = () => {
 export async function getSessionUser(requestHeaders: Headers) {
   const session = await getAuth().api.getSession({ headers: requestHeaders });
   return session?.user ?? null;
+}
+
+/** The `next` a sign-in page was opened with, if it points somewhere resumable. */
+function nextFromReferer(referer?: string): string | undefined {
+  if (!referer) return undefined;
+  try {
+    const next = new URL(referer).searchParams.get("next") ?? undefined;
+    if (!next) return undefined;
+    const to = next.startsWith("/resume") ? new URL(next, "https://intro.sa").searchParams.get("to") ?? undefined : next;
+    return to && to.startsWith("/") && !to.startsWith("//") ? to.slice(0, 1000) : undefined;
+  } catch {
+    return undefined;
+  }
 }

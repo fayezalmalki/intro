@@ -72,7 +72,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   const testMode = live && !moyasarIsLive();
 
   return (
-    <AppShell account={account} lang={lang} on="home" credits={credits}>
+    <AppShell account={account} lang={lang} on="billing" credits={credits}>
       <div className="flex flex-col gap-7">
         <PageHeader title={t.title} sub={t.sub} />
         {requested && <Tip icon="check-circle" title={t.requested}>{""}</Tip>}

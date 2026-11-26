@@ -33,7 +33,7 @@ export default async function BillingReturn({ searchParams }: { searchParams: Pr
   }[state];
 
   return (
-    <AppShell account={account} lang={lang} on="home" credits={credits}>
+    <AppShell account={account} lang={lang} on="billing" credits={credits}>
       <div className="mx-auto max-w-[560px]">
         {state === "pending" && <meta httpEquiv="refresh" content="5" />}
         <Empty icon={state === "paid" ? "check-circle" : state === "pending" ? "clock" : "ban"} title={copy[0]} body={copy[1]}>
