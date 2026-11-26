@@ -9,6 +9,7 @@ type Lang = "ar" | "en";
 type Company = { name: string; domain: string; industry?: string; size?: string; linkedinUrl?: string };
 type Person = { name: string; title: string; company: string; companyDomain: string; profileUrl?: string; location?: string; servedBy: string; seniority: string; leader: boolean };
 type Signal = { url: string; title: string; source: string; date?: string };
+type Outcome = { billing: string; cached: boolean; balance: number };
 type LeadState = { leadId?: string; saving?: boolean; revealing?: boolean; email?: string | null; status?: string; error?: string };
 
 const C = {
@@ -49,7 +50,15 @@ const C = {
     newsAt: (c: string) => `Latest at ${c}`,
     roles: "Quick roles",
     credits: (n: number) => `${n} credit${n === 1 ? "" : "s"} left`,
-    cost: "1 credit per search · refunded if nothing is found", topUp: "Top up",
+    cost: "1 credit per search · refunded if nothing is found · repeats are free", topUp: "Top up",
+    outcome: {
+      charged: (n: number) => `1 credit used · ${n} left`,
+      refunded: (n: number) => `Nothing found — your credit was refunded · ${n} left`,
+      free: (n: number) => `You ran this search recently — no charge · ${n} left`,
+      internal: (n: number) => `${n} credits left`,
+    } as Record<string, (n: number) => string>,
+    cachedNote: "from recent results",
+    oneCredit: "1 credit",
   },
   ar: {
     title: "اعثر على الأشخاص الصح",
@@ -88,7 +97,15 @@ const C = {
     newsAt: (c: string) => `آخر أخبار ${c}`,
     roles: "مناصب سريعة",
     credits: (n: number) => `باقي ${n} رصيد`,
-    cost: "رصيد واحد لكل بحث، ويُسترجع إذا ما لقينا شيئًا", topUp: "اشحن رصيدك",
+    cost: "رصيد واحد لكل بحث، ويُسترجع إذا ما لقينا شيئًا، والبحث المكرر مجاني", topUp: "اشحن رصيدك",
+    outcome: {
+      charged: (n: number) => `خُصم رصيد واحد · باقي ${n}`,
+      refunded: (n: number) => `ما لقينا شيئًا، واسترجعنا رصيدك · باقي ${n}`,
+      free: (n: number) => `سويت نفس البحث قبل شوي، فما خصمنا شيئًا · باقي ${n}`,
+      internal: (n: number) => `باقي ${n} رصيد`,
+    } as Record<string, (n: number) => string>,
+    cachedNote: "من نتائج حديثة",
+    oneCredit: "رصيد واحد",
   },
 };
 
@@ -131,8 +148,10 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
   const [people, setPeople] = useState<Person[] | null>(null);
   const [news, setNews] = useState<Signal[] | null>(null);
   const [credits, setCredits] = useState(initialCredits);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const note = (o: Outcome | null) => o ? `${t.outcome[o.billing]?.(o.balance) ?? ""}${o.cached && o.billing !== "refunded" ? ` · ${t.cachedNote}` : ""}` : "";
   const [leads, setLeads] = useState<Record<string, LeadState>>({});
-  const [expanded, setExpanded] = useState<Record<string, { kind: "people" | "news"; busy: boolean; people?: Person[]; news?: Signal[]; error?: string }>>({});
+  const [expanded, setExpanded] = useState<Record<string, { kind: "people" | "news"; busy: boolean; people?: Person[]; news?: Signal[]; error?: string; note?: string }>>({});
   const ran = useRef(false);
 
   const say = (code: string) => t.errors[code] ?? t.errors.upstream;
@@ -141,20 +160,23 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
     event?.preventDefault();
     setBusy(true);
     setError(null);
-    setCompanies(null); setPeople(null); setNews(null); setExpanded({});
+    setCompanies(null); setPeople(null); setNews(null); setExpanded({}); setOutcome(null);
+    const track = (r: { billing?: string; cached?: boolean; balance?: number }) => {
+      if (typeof r.balance === "number") { setCredits(r.balance); setOutcome({ billing: r.billing ?? "charged", cached: Boolean(r.cached), balance: r.balance }); }
+    };
     try {
       if (mode === "companies") {
-        const r = await api<{ results: Company[] }>("/api/search", { kind: "companies", market, sector, keywords, name });
-        setCompanies(r.results);
+        const r = await api<{ results: Company[] } & Partial<Outcome>>("/api/search", { kind: "companies", market, sector, keywords, name });
+        setCompanies(r.results); track(r);
       } else if (mode === "people") {
-        const r = await api<{ results: Person[] }>("/api/search", { kind: "people", market, companyDomain: domain, title: role, keywords, describe });
-        setPeople(r.results);
+        const r = await api<{ results: Person[] } & Partial<Outcome>>("/api/search", { kind: "people", market, companyDomain: domain, title: role, keywords, describe });
+        setPeople(r.results); track(r);
       } else if (mode === "person") {
-        const r = await api<{ results: Person[] }>("/api/search", { kind: "person", market, fullName, company });
-        setPeople(r.results);
+        const r = await api<{ results: Person[] } & Partial<Outcome>>("/api/search", { kind: "person", market, fullName, company });
+        setPeople(r.results); track(r);
       } else {
-        const r = await api<{ results: Signal[] }>("/api/search", { kind: "news", market, company: topic });
-        setNews(r.results);
+        const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: topic });
+        setNews(r.results); track(r);
       }
     } catch (e) {
       setError(say((e as Error).message));
@@ -180,11 +202,13 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
     setExpanded((x) => ({ ...x, [key]: { kind, busy: true } }));
     try {
       if (kind === "people") {
-        const r = await api<{ results: Person[] }>("/api/search", { kind: "people", market, companyDomain: c.domain, title: role || "Chief" });
-        setExpanded((x) => ({ ...x, [key]: { kind, busy: false, people: r.results } }));
+        const r = await api<{ results: Person[] } & Partial<Outcome>>("/api/search", { kind: "people", market, companyDomain: c.domain, title: role || "Chief" });
+        if (typeof r.balance === "number") setCredits(r.balance);
+        setExpanded((x) => ({ ...x, [key]: { kind, busy: false, people: r.results, note: typeof r.balance === "number" ? note({ billing: r.billing ?? "charged", cached: Boolean(r.cached), balance: r.balance }) : undefined } }));
       } else {
-        const r = await api<{ results: Signal[] }>("/api/search", { kind: "news", market, company: c.name });
-        setExpanded((x) => ({ ...x, [key]: { kind, busy: false, news: r.results } }));
+        const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: c.name });
+        if (typeof r.balance === "number") setCredits(r.balance);
+        setExpanded((x) => ({ ...x, [key]: { kind, busy: false, news: r.results, note: typeof r.balance === "number" ? note({ billing: r.billing ?? "charged", cached: Boolean(r.cached), balance: r.balance }) : undefined } }));
       }
     } catch (e) {
       setExpanded((x) => ({ ...x, [key]: { kind, busy: false, error: say((e as Error).message) } }));
@@ -315,6 +339,10 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
         </div>
       </form>
 
+      {outcome && !busy && (
+        <p data-testid="charge-note" className="flex items-center gap-2 text-[13px] text-muted"><Icon name="sparkles" size={12} className="text-accent" />{note(outcome)}</p>
+      )}
+
       {error && (
         <p role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-accent-soft px-4 py-3 text-[14px] text-accent-ink">
           {error}
@@ -347,14 +375,15 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
                     </span>
                   </span>
                   <span className="flex gap-1.5">
-                    <SmallBtn on={x?.kind === "people"} onClick={() => void expand(c, "people")} icon="users">{t.decision}</SmallBtn>
-                    <SmallBtn on={x?.kind === "news"} onClick={() => void expand(c, "news")} icon="file-text">{t.news}</SmallBtn>
+                    <SmallBtn on={x?.kind === "people"} onClick={() => void expand(c, "people")} icon="users" cost={t.oneCredit}>{t.decision}</SmallBtn>
+                    <SmallBtn on={x?.kind === "news"} onClick={() => void expand(c, "news")} icon="file-text" cost={t.oneCredit}>{t.news}</SmallBtn>
                   </span>
                 </div>
                 {x && (
                   <div className="border-t border-line-2 bg-surface-3 p-3 sm:p-4">
                     {x.busy && <div className="h-12 animate-pulse rounded-xl bg-white" />}
                     {x.error && <p className="text-[13.5px] text-accent-ink">{x.error}</p>}
+                    {x.note && <p data-testid="charge-note" className="mb-2 flex items-center gap-1.5 text-[12.5px] text-subtle"><Icon name="sparkles" size={11} className="text-accent" />{x.note}</p>}
                     {x.people && (x.people.length ? (
                       <ul className="flex flex-col gap-2">{x.people.map((p) => <PersonRow key={personKey(p)} p={p} t={t} state={leads[personKey(p)]} onSave={() => void save(p)} onReveal={() => void reveal(p)} lang={lang} />)}</ul>
                     ) : <p className="text-[13.5px] text-muted">{t.none}</p>)}
@@ -399,10 +428,11 @@ function RoleChips({ lang, role, setRole, label }: { lang: Lang; role: string; s
   );
 }
 
-function SmallBtn({ on, onClick, icon, children }: { on?: boolean; onClick: () => void; icon: IconKey; children: ReactNode }) {
+function SmallBtn({ on, onClick, icon, children, cost }: { on?: boolean; onClick: () => void; icon: IconKey; children: ReactNode; cost?: string }) {
   return (
-    <button type="button" onClick={onClick} className={cx("flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors", on ? "bg-brand text-white" : "bg-surface text-ink hover:bg-hover")}>
+    <button type="button" onClick={onClick} title={cost} className={cx("flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors", on ? "bg-brand text-white" : "bg-surface text-ink hover:bg-hover")}>
       <Icon name={icon} size={14} />{children}
+      {cost && <span className={cx("rounded-full px-1.5 text-[10.5px]", on ? "bg-white/20" : "bg-white text-subtle")}>{cost}</span>}
     </button>
   );
 }
@@ -438,7 +468,7 @@ function PersonRow({ p, t, state, onSave, onReveal, lang }: { p: Person; t: (typ
         )}
         {!state?.email && (
           <button type="button" disabled={state?.revealing} onClick={onReveal} className="flex h-9 cursor-pointer items-center gap-1.5 rounded-full bg-brand px-3 text-[13px] font-medium text-white hover:bg-brand-2 disabled:opacity-60">
-            <Icon name="mail" size={14} />{state?.revealing ? t.revealing : t.reveal}
+            <Icon name="mail" size={14} />{state?.revealing ? t.revealing : t.reveal}{!state?.revealing && <span className="rounded-full bg-white/20 px-1.5 text-[10.5px]">{t.oneCredit}</span>}
           </button>
         )}
       </span>

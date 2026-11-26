@@ -5,7 +5,7 @@ import * as repo from "../db/repo";
 import { accounts, authUsers, leads, ledger, pipelineItems, pipelines, searchLog } from "../db/schema";
 import type { Database } from "../db";
 import type { Brief } from "../types";
-import { DAILY_SEARCHES, SearchError, searchCompanies, searchPeople } from "../search/service";
+import { DAILY_SEARCHES, SearchError, cacheKey, searchCompanies, searchPeople, summarize, type Outcome } from "../search/service";
 import { openerFor } from "../search/opener";
 import { verdictOf } from "../sourcing/treg";
 import { presetHref } from "../search/presets";
@@ -33,7 +33,7 @@ describe("search, leads and reveals", () => {
     const people = await searchPeople(accountId, { companyDomain: companies[0].domain, title: "Chief", market: "SA" });
     expect(people[0].leader).toBe(true); // decision makers first
     const logged = await db.select().from(searchLog).where(eq(searchLog.accountId, accountId));
-    expect(logged.map((l) => l.kind)).toEqual(["companies", "people"]);
+    expect(logged.map((l) => l.kind).sort()).toEqual(["companies", "people"]);
   });
 
   it("refuses a search with nothing to search for", async () => {
@@ -137,6 +137,76 @@ describe("credits for searches", () => {
     await repo.refundSearch(accountId, "search:x", db);
     await repo.refundSearch(accountId, "search:x", db); // a second refund is absorbed
     expect(await repo.creditBalance(accountId, db)).toBe(repo.WELCOME_CREDITS);
+  });
+});
+
+describe("cache and repeat searches", () => {
+  let db: Database;
+  let a: string;
+  let b: string;
+  beforeEach(async () => {
+    db = await testDb();
+    await reset(db);
+    const mk = async (email: string) => {
+      const [user] = await db.insert(authUsers).values({ email, name: email }).returning();
+      const [acc] = await db.insert(accounts).values({ userId: user.id, displayName: email, initial: "X", email, state: "observer" }).returning();
+      await repo.grantWelcomeCredits(acc.id, db);
+      return acc.id;
+    };
+    a = await mk("a@x.sa");
+    b = await mk("b@x.sa");
+  });
+
+  it("keys the same question the same way, whatever the case or spacing", async () => {
+    expect(await cacheKey("companies", { industry: "Insurance ", country: "SA", limit: 25 }))
+      .toBe(await cacheKey("companies", { limit: 25, country: "sa", industry: "insurance" }));
+    expect(await cacheKey("companies", { industry: "Banking" })).not.toBe(await cacheKey("companies", { industry: "Insurance" }));
+  });
+
+  it("charges the first search, then serves a repeat free from the cache", async () => {
+    const first: Outcome[] = [];
+    await searchCompanies(a, { sector: "Insurance", market: "SA" }, first);
+    expect(summarize(first)).toEqual({ billing: "charged", cached: false });
+    const again: Outcome[] = [];
+    await searchCompanies(a, { sector: "Insurance", market: "SA" }, again);
+    expect(summarize(again)).toEqual({ billing: "free", cached: true });
+    expect(await repo.creditBalance(a, db)).toBe(repo.WELCOME_CREDITS - 1);
+  });
+
+  it("charges another account for the same question, answered from the cache", async () => {
+    await searchCompanies(a, { sector: "Insurance", market: "SA" });
+    const trail: Outcome[] = [];
+    await searchCompanies(b, { sector: "Insurance", market: "SA" }, trail);
+    expect(summarize(trail)).toEqual({ billing: "charged", cached: true });
+    expect(await repo.creditBalance(b, db)).toBe(repo.WELCOME_CREDITS - 1);
+    const logged = await db.select().from(searchLog).where(eq(searchLog.accountId, b));
+    expect(logged[0].costMicro).toBe(0);
+    expect(logged[0].servedBy).toBe("cache");
+  });
+
+  it("charges a request's credits once and refunds them once", async () => {
+    expect(await repo.reserveCredit({ accountId: a, reason: "request", ref: "request:r1", amount: repo.REQUEST_CREDITS }, db)).toEqual({ ok: true, charged: true });
+    expect(await repo.reserveCredit({ accountId: a, reason: "request", ref: "request:r1", amount: repo.REQUEST_CREDITS }, db)).toEqual({ ok: true, charged: false });
+    expect(await repo.creditBalance(a, db)).toBe(repo.WELCOME_CREDITS - repo.REQUEST_CREDITS);
+    await repo.refundRequest(a, "r1", db);
+    await repo.refundRequest(a, "r1", db);
+    expect(await repo.creditBalance(a, db)).toBe(repo.WELCOME_CREDITS);
+  });
+
+  it("refuses a request without enough credits", async () => {
+    const [user] = await db.insert(authUsers).values({ email: "poor@x.sa", name: "p" }).returning();
+    const [poor] = await db.insert(accounts).values({ userId: user.id, displayName: "p", initial: "P", email: "poor@x.sa", state: "observer" }).returning();
+    await db.insert(ledger).values({ accountId: poor.id, delta: 4, reason: "grant", ref: "g" });
+    expect(await repo.reserveCredit({ accountId: poor.id, reason: "request", ref: "request:r2", amount: repo.REQUEST_CREDITS }, db)).toEqual({ ok: false, reason: "insufficient_credits" });
+  });
+
+  it("reports this month's usage net of refunds", async () => {
+    await searchCompanies(a, { sector: "Insurance", market: "SA" });
+    await searchCompanies(a, { sector: "Insurance", market: "SA" }); // free repeat
+    const u = await repo.usageThisMonth(a, db);
+    expect(u.searches).toBe(1);
+    expect(u.searchesFree).toBe(1);
+    expect(u.added).toBe(repo.WELCOME_CREDITS);
   });
 });
 

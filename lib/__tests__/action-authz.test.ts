@@ -21,7 +21,10 @@ vi.mock("../db/repo", () => ({
   attachPipeline: vi.fn(async () => { repoCalls.push("attachPipeline"); }),
   createRequest: vi.fn(async () => { repoCalls.push("createRequest"); return "r1"; }),
   confirmBrief: vi.fn(async () => { repoCalls.push("confirmBrief"); }),
-  autoPublishLatestDraft: vi.fn(async () => null),
+  autoPublishLatestDraft: vi.fn(async () => "r1"),
+  refundRequest: vi.fn(async () => {}),
+  reserveCredit: vi.fn(async () => ({ ok: true, charged: true })),
+  REQUEST_CREDITS: 5,
   grantWelcomeCredits: vi.fn(async () => {}),
   recordSend: vi.fn(async () => { repoCalls.push("recordSend"); return { ok: true }; }),
   verifyAndGrant: vi.fn(async () => { repoCalls.push("verifyAndGrant"); }),
@@ -30,6 +33,9 @@ vi.mock("../db/repo", () => ({
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// Charging credits is the AccountGate's job (tested in search.test.ts); here
+// it only has to let the owner through.
+vi.mock("../charge", () => ({ chargeThroughGate: vi.fn(async () => true) }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
 const account = (role: Account["role"]): Account => ({

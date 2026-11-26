@@ -1,7 +1,7 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { dbFrom } from "../lib/db";
-import { autoPublish, writeSourcedPipeline, type SourcedPerson } from "../lib/db/repo";
+import { autoPublish, refundRequest, writeSourcedPipeline, type SourcedPerson } from "../lib/db/repo";
 import { accounts, requests } from "../lib/db/schema";
 import { runSourcing, type Step } from "../lib/sourcing/run";
 import { TregProvider } from "../lib/sourcing/treg";
@@ -35,7 +35,7 @@ export class RequestWorkflow extends WorkflowEntrypoint<WorkflowEnv, RequestWork
       const [row] = await database.select().from(requests).where(eq(requests.id, requestId)).limit(1);
       if (!row?.brief) return null;
       const [owner] = await database.select({ state: accounts.state }).from(accounts).where(eq(accounts.id, row.accountId)).limit(1);
-      return { brief: row.brief as Brief, rawText: row.rawText, sectors: row.sectors ?? [], managed: owner?.state === "managed" };
+      return { accountId: row.accountId, brief: row.brief as Brief, rawText: row.rawText, sectors: row.sectors ?? [], managed: owner?.state === "managed" };
     });
     if (!request) return { skipped: "no request or brief" };
 
@@ -74,6 +74,9 @@ export class RequestWorkflow extends WorkflowEntrypoint<WorkflowEnv, RequestWork
         note: result.note,
         createdBy: result.scoredBy === "claude" ? "AI · Claude" : "AI",
       }, database));
+
+    // Found nobody: the request's credits go back (idempotent on the request).
+    if (result.items.length === 0) await step.do("refund", () => refundRequest(request.accountId, requestId));
 
     // Self-serve: the requester sees results now. Managed: their AM reviews first.
     const published = !request.managed && pipelineId

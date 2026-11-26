@@ -1,7 +1,7 @@
 import * as repo from "@/lib/db/repo";
 import { apiAccount, apiError } from "@/lib/search/http";
 import { isMarket } from "@/lib/search/markets";
-import { findPerson, searchCompanies, searchNews, searchPeople } from "@/lib/search/service";
+import { findPerson, searchCompanies, searchNews, searchPeople, summarize, type Outcome } from "@/lib/search/service";
 
 export const dynamic = "force-dynamic";
 
@@ -17,16 +17,17 @@ export async function POST(request: Request) {
   if (account instanceof Response) return account;
   const body = (await request.json().catch(() => ({}))) as Record<string, string>;
   const market = isMarket(body.market) ? body.market : "SA";
+  const trail: Outcome[] = [];
   try {
     switch (body.kind) {
       case "companies":
-        return withBalance(account.id, await searchCompanies(account.id, { sector: body.sector, keywords: body.keywords, name: body.name, market }));
+        return withBalance(account.id, trail, await searchCompanies(account.id, { sector: body.sector, keywords: body.keywords, name: body.name, market }, trail));
       case "people":
-        return withBalance(account.id, await searchPeople(account.id, { companyDomain: body.companyDomain, title: body.title, keywords: body.keywords, describe: body.describe, market }));
+        return withBalance(account.id, trail, await searchPeople(account.id, { companyDomain: body.companyDomain, title: body.title, keywords: body.keywords, describe: body.describe, market }, trail));
       case "person":
-        return withBalance(account.id, await findPerson(account.id, { fullName: body.fullName, company: body.company, market }));
+        return withBalance(account.id, trail, await findPerson(account.id, { fullName: body.fullName, company: body.company, market }, trail));
       case "news":
-        return withBalance(account.id, await searchNews(account.id, { company: body.company, topic: body.topic, market }));
+        return withBalance(account.id, trail, await searchNews(account.id, { company: body.company, topic: body.topic, market }, trail));
       default:
         return Response.json({ error: "bad_query" }, { status: 400 });
     }
@@ -36,6 +37,6 @@ export async function POST(request: Request) {
 }
 
 /** Every search costs a credit, so every answer carries the new balance. */
-async function withBalance(accountId: string, results: unknown) {
-  return Response.json({ results, balance: await repo.creditBalance(accountId) });
+async function withBalance(accountId: string, trail: Outcome[], results: unknown) {
+  return Response.json({ results, balance: await repo.creditBalance(accountId), ...summarize(trail) });
 }
