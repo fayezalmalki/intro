@@ -291,8 +291,33 @@ export const searchLog = sqliteTable("search_log", {
   results: integer("results").notNull().default(0),
   costMicro: integer("cost_micro").notNull().default(0),
   servedBy: text("served_by"),
+  // What the same question is keyed on (see search_cache), and how the
+  // account was billed for it: charged, refunded (nothing found), or free
+  // (a repeat of its own recent search).
+  cacheKey: text("cache_key"),
+  billing: text("billing").$type<"charged" | "refunded" | "free" | "internal">(),
+  cached: bool("cached").notNull().default(false),
   createdAt: isoNow("created_at"),
-}, (t) => [index("search_log_account_day_idx").on(t.accountId, t.createdAt)]);
+}, (t) => [
+  index("search_log_account_day_idx").on(t.accountId, t.createdAt),
+  index("search_log_account_key_idx").on(t.accountId, t.cacheKey),
+]);
+
+/**
+ * Recent answers to the same question (kind + normalised query), shared
+ * across accounts. A hit costs us nothing at treg; it expires so news and
+ * job moves stay fresh.
+ */
+export const searchCache = sqliteTable("search_cache", {
+  key: text("key").primaryKey(),
+  kind: text("kind").notNull(),
+  results: text("results", { mode: "json" }).$type<unknown[]>().notNull(),
+  count: integer("count").notNull(),
+  costMicro: integer("cost_micro").notNull().default(0),
+  hits: integer("hits").notNull().default(0),
+  createdAt: isoNow("created_at"),
+  expiresAt: text("expires_at").notNull(),
+});
 
 /**
  * A person an account saved from search. The email is bought only when they

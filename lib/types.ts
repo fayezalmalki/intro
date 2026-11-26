@@ -39,7 +39,10 @@ export type LedgerReason =
   | "refund_reveal"
   // A search (lib/search), and its refund when it finds nothing or fails.
   | "search"
-  | "refund_search";
+  | "refund_search"
+  // A request (goal → ranked list), and its refund when it finds nobody.
+  | "request"
+  | "refund_request";
 
 export type RequestStatus =
   | "intent_review"

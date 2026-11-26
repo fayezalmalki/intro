@@ -9,6 +9,7 @@ import { parseRows } from "./parse";
 import * as repo from "./db/repo";
 import { sendThroughGate } from "./send";
 import { liveWorkflow, startSourcing } from "./sourcing/live";
+import { chargeThroughGate } from "./charge";
 import { adminEmails, currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
 import { sendActivated, sendActivationRequested, sendCreditRequest } from "./mailer";
 import { packageById } from "./billing/packages";
@@ -58,7 +59,13 @@ export async function confirmBrief(formData: FormData): Promise<void> {
   // A server action is a POST endpoint anyone can invoke without ever loading
   // the page, so the check on the confirm screen is not the boundary. Without
   // this, any signed-in account could rewrite anyone's brief.
-  await requireRequestOwner(requestId, "confirm this request");
+  const owner = await requireRequestOwner(requestId, "confirm this request");
+
+  // A request runs a whole sourcing pass, so it costs REQUEST_CREDITS —
+  // reserved in the AccountGate, once per request (the ref is the request),
+  // and refunded if the search finds nobody.
+  const charged = await chargeThroughGate({ accountId: owner.id, reason: "request", ref: `request:${requestId}`, amount: repo.REQUEST_CREDITS });
+  if (!charged) redirect(`/billing?need=request&next=${encodeURIComponent(`/requests/${requestId}/confirm`)}`);
 
   const workflow = liveWorkflow();
   if (workflow) {
@@ -71,8 +78,10 @@ export async function confirmBrief(formData: FormData): Promise<void> {
     await repo.confirmBrief(requestId, summary || undefined);
     // Without live sourcing the draft is written inline; publish it for
     // self-serve accounts the same way the workflow does.
-    const account = await currentAccount();
-    if (account.state !== "managed") await repo.autoPublishLatestDraft(requestId, "AI");
+    if (owner.state !== "managed") {
+      const published = await repo.autoPublishLatestDraft(requestId, "AI");
+      if (!published) await repo.refundRequest(owner.id, requestId);
+    }
   }
 
   revalidatePath("/am");

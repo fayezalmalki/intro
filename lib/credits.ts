@@ -29,6 +29,8 @@ const DELTA: Record<LedgerReason, number> = {
   refund_reveal: 1,
   search: -1,
   refund_search: 1,
+  request: -5,
+  refund_request: 5,
 };
 
 /**

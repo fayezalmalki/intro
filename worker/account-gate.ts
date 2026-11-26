@@ -27,8 +27,8 @@ export class AccountGate extends DurableObject<GateEnv> {
     return outcome;
   }
 
-  /** Reserves one credit for a search, serialised like a send. */
-  async charge(input: { accountId: string; reason: "search"; ref: string }) {
+  /** Reserves credits for a search or a request, serialised like a send. */
+  async charge(input: { accountId: string; reason: "search" | "request"; ref: string; amount?: number }) {
     let outcome: Awaited<ReturnType<typeof reserveCredit>> = { ok: false, reason: "insufficient_credits" };
     await this.ctx.blockConcurrencyWhile(async () => {
       outcome = await reserveCredit(input, dbFrom(this.env.DB));

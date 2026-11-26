@@ -4,7 +4,7 @@ import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
   accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
-  pipelines, requests, searchLog, sendAttempts,
+  pipelines, requests, searchCache, searchLog, sendAttempts,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
@@ -692,10 +692,37 @@ export async function requestActivation(
 // ── Search and leads ──────────────────────────────────────────
 
 export async function logSearch(
-  input: { accountId: string; kind: "companies" | "people" | "person" | "news" | "email"; query: Record<string, unknown>; results: number; costMicro: number; servedBy?: string },
+  input: {
+    accountId: string; kind: "companies" | "people" | "person" | "news" | "email"; query: Record<string, unknown>;
+    results: number; costMicro: number; servedBy?: string;
+    cacheKey?: string; billing?: "charged" | "refunded" | "free" | "internal"; cached?: boolean;
+  },
   database: Database = defaultDb,
 ): Promise<void> {
-  await database.insert(searchLog).values({ ...input, servedBy: input.servedBy ?? null });
+  await database.insert(searchLog).values({ ...input, servedBy: input.servedBy ?? null, cacheKey: input.cacheKey ?? null, billing: input.billing ?? null, cached: input.cached ?? false });
+}
+
+/** A fresh cached answer for this question, or null. */
+export async function getCached(key: string, database: Database = defaultDb): Promise<unknown[] | null> {
+  const [row] = await database.select().from(searchCache)
+    .where(and(eq(searchCache.key, key), sql`${searchCache.expiresAt} > ${nowIso()}`)).limit(1);
+  if (!row) return null;
+  await database.update(searchCache).set({ hits: sql`${searchCache.hits} + 1` }).where(eq(searchCache.key, key));
+  return row.results;
+}
+
+export async function putCached(key: string, kind: string, results: unknown[], costMicro: number, ttlHours: number, database: Database = defaultDb) {
+  const expiresAt = new Date(Date.now() + ttlHours * 3600_000).toISOString();
+  await database.insert(searchCache).values({ key, kind, results, count: results.length, costMicro, expiresAt, createdAt: nowIso(), hits: 0 })
+    .onConflictDoUpdate({ target: searchCache.key, set: { results, count: results.length, costMicro, expiresAt, createdAt: nowIso(), hits: 0 } });
+}
+
+/** Did this account already pay for (or get) this exact question within the window? Then it's free. */
+export async function ownRecentSearch(accountId: string, key: string, sinceIso: string, database: Database = defaultDb): Promise<boolean> {
+  const [row] = await database.select({ id: searchLog.id }).from(searchLog)
+    .where(and(eq(searchLog.accountId, accountId), eq(searchLog.cacheKey, key), sql`${searchLog.results} > 0`,
+      sql`${searchLog.billing} in ('charged','free')`, sql`${searchLog.createdAt} >= ${sinceIso}`)).limit(1);
+  return Boolean(row);
 }
 
 /** Searches run and micro-USD spent by an account since UTC midnight. */
@@ -797,14 +824,15 @@ export async function reserveReveal(
  * never race for the last credit.
  */
 export async function reserveCredit(
-  input: { accountId: string; reason: "reveal" | "search"; ref: string },
+  input: { accountId: string; reason: "reveal" | "search" | "request"; ref: string; amount?: number },
   database: Database = defaultDb,
 ): Promise<{ ok: true; charged: boolean } | { ok: false; reason: "insufficient_credits" }> {
   const [already] = await database.select({ id: ledger.id }).from(ledger)
     .where(and(eq(ledger.accountId, input.accountId), eq(ledger.reason, input.reason), eq(ledger.ref, input.ref))).limit(1);
   if (already) return { ok: true, charged: false };
-  if ((await creditBalance(input.accountId, database)) < 1) return { ok: false, reason: "insufficient_credits" };
-  await database.insert(ledger).values({ accountId: input.accountId, delta: -1, reason: input.reason, ref: input.ref }).onConflictDoNothing();
+  const amount = input.amount ?? 1;
+  if ((await creditBalance(input.accountId, database)) < amount) return { ok: false, reason: "insufficient_credits" };
+  await database.insert(ledger).values({ accountId: input.accountId, delta: -amount, reason: input.reason, ref: input.ref }).onConflictDoNothing();
   return { ok: true, charged: true };
 }
 
@@ -941,4 +969,50 @@ export async function listOrders(accountId: string, database: Database = default
 /** Recent credit movements, for the billing page. */
 export async function recentLedger(accountId: string, database: Database = defaultDb) {
   return database.select().from(ledger).where(eq(ledger.accountId, accountId)).orderBy(sql`${ledger.at} desc`).limit(30);
+}
+
+
+/** Credits a request costs: it runs a whole sourcing pass (up to the $0.25 budget). */
+export const REQUEST_CREDITS = 5;
+
+export async function refundRequest(accountId: string, requestId: string, database: Database = defaultDb): Promise<void> {
+  await database.insert(ledger).values({ accountId, delta: REQUEST_CREDITS, reason: "refund_request", ref: `request:${requestId}` }).onConflictDoNothing();
+}
+
+/** This month's credit use for one account, by what it was spent on. */
+export async function usageThisMonth(accountId: string, database: Database = defaultDb) {
+  const since = `${new Date().toISOString().slice(0, 7)}-01T00:00:00.000Z`;
+  const rows = await database.select({ reason: ledger.reason, n: sql<number>`count(*)`, delta: sql<number>`sum(${ledger.delta})` })
+    .from(ledger).where(and(eq(ledger.accountId, accountId), sql`${ledger.at} >= ${since}`)).groupBy(ledger.reason);
+  const by = Object.fromEntries(rows.map((r) => [r.reason, { n: Number(r.n), delta: Number(r.delta) }]));
+  const [free] = await database.select({ n: sql<number>`count(*)` }).from(searchLog)
+    .where(and(eq(searchLog.accountId, accountId), eq(searchLog.billing, "free"), sql`${searchLog.createdAt} >= ${since}`));
+  const net = (spend: string, refund: string) => Math.max(0, -(by[spend]?.delta ?? 0) - (by[refund]?.delta ?? 0));
+  return {
+    searches: net("search", "refund_search"), searchesRefunded: by.refund_search?.n ?? 0, searchesFree: Number(free?.n ?? 0),
+    reveals: net("reveal", "refund_reveal"), requests: net("request", "refund_request"), sends: -(by.send?.delta ?? 0),
+    added: Object.entries(by).filter(([r]) => r === "purchase" || r === "grant").reduce((n, [, v]) => n + v.delta, 0),
+  };
+}
+
+/** Platform economics for admins, over the last 30 days. */
+export async function platformEconomics(database: Database = defaultDb) {
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const [s] = await database.select({
+    n: sql<number>`count(*)`, cost: sql<number>`coalesce(sum(${searchLog.costMicro}), 0)`,
+    cached: sql<number>`coalesce(sum(case when ${searchLog.cached} then 1 else 0 end), 0)`,
+    empty: sql<number>`coalesce(sum(case when ${searchLog.results} = 0 then 1 else 0 end), 0)`,
+  }).from(searchLog).where(sql`${searchLog.createdAt} >= ${since}`);
+  const [r] = await database.select({ cost: sql<number>`coalesce(sum(${requests.sourcingCostMicro}), 0)` }).from(requests).where(sql`${requests.createdAt} >= ${since}`);
+  const [o] = await database.select({ halalas: sql<number>`coalesce(sum(${creditOrders.amountHalalas}), 0)`, credits: sql<number>`coalesce(sum(${creditOrders.credits}), 0)`, n: sql<number>`count(*)` })
+    .from(creditOrders).where(and(eq(creditOrders.status, "paid"), sql`${creditOrders.createdAt} >= ${since}`));
+  const [used] = await database.select({ n: sql<number>`coalesce(-sum(${ledger.delta}), 0)` }).from(ledger)
+    .where(and(sql`${ledger.at} >= ${since}`, sql`${ledger.reason} in ('search','refund_search','reveal','refund_reveal','request','refund_request','send','refund_bounce','refund_suppressed')`));
+  const [cache] = await database.select({ rows: sql<number>`count(*)`, hits: sql<number>`coalesce(sum(${searchCache.hits}), 0)` }).from(searchCache);
+  return {
+    searches: Number(s?.n ?? 0), cachedSearches: Number(s?.cached ?? 0), emptySearches: Number(s?.empty ?? 0),
+    tregUsd: (Number(s?.cost ?? 0) + Number(r?.cost ?? 0)) / 1e6,
+    revenueSar: Number(o?.halalas ?? 0) / 100, ordersPaid: Number(o?.n ?? 0), creditsSold: Number(o?.credits ?? 0), creditsUsed: Number(used?.n ?? 0),
+    cacheEntries: Number(cache?.rows ?? 0), cacheHits: Number(cache?.hits ?? 0),
+  };
 }

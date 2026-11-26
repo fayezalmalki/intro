@@ -21,6 +21,7 @@ const C = {
     confirm: "Looks right — find people", confirming: "Starting the search…",
     edit: "Start over", steps: ["Your goal", "Confirm", "Find people", "Results"],
     tip: "Results usually arrive within a minute. You'll see each person with why they fit, why now, and a first line.",
+    cost: (n: number) => `Running this request uses 5 credits — refunded if we find nobody. You have ${n}.`,
     by: (c: boolean) => (c ? "Understood by Claude" : "Understood by keyword rules — check it carefully"),
     original: "You wrote",
   },
@@ -31,6 +32,7 @@ const C = {
     confirm: "تمام، ابحث عن الأشخاص", confirming: "نبدأ البحث…",
     edit: "ابدأ من جديد", steps: ["هدفك", "التأكيد", "البحث", "النتائج"],
     tip: "النتائج توصل عادةً خلال دقيقة، ومع كل شخص: ليش يناسبك، وليش الحين، وأول سطر.",
+    cost: (n: number) => `تشغيل هذا الطلب يستخدم ٥ أرصدة، وتُسترجع إذا ما لقينا أحدًا. رصيدك ${n}.`,
     by: (c: boolean) => (c ? "فهمه Claude" : "فُهم بقواعد الكلمات المفتاحية، راجعه بعناية"),
     original: "اللي كتبته",
   },
@@ -93,6 +95,7 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
             </div>
           </form>
         </Card>
+        <Tip icon="sparkles" tone={credits < 5 ? "peach" : "mint"} action={credits < 5 ? <a href={`/billing?lang=${lang}`} className="text-[13.5px] font-medium text-brand">{lang === "ar" ? "اشحن رصيدك" : "Top up"}</a> : undefined}>{t.cost(credits)}</Tip>
         <Tip icon="clock">{t.tip}</Tip>
       </div>
     </AppShell>
