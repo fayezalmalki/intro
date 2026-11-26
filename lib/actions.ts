@@ -1,5 +1,7 @@
 "use server";
 
+import { env } from "cloudflare:workers";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { extractBrief } from "./intent";
@@ -8,7 +10,9 @@ import * as repo from "./db/repo";
 import { sendThroughGate } from "./send";
 import { liveWorkflow, startSourcing } from "./sourcing/live";
 import { adminEmails, currentAccount, requireAccountManager, requireAdmin, requireRequestOwner } from "./session";
-import { sendActivated, sendActivationRequested } from "./mailer";
+import { sendActivated, sendActivationRequested, sendCreditRequest } from "./mailer";
+import { packageById } from "./billing/packages";
+import { createInvoice, moyasarKey } from "./billing/moyasar";
 import { db } from "./db";
 import { accounts } from "./db/schema";
 import { eq } from "drizzle-orm";
@@ -220,9 +224,12 @@ export async function verifyAccount(formData: FormData): Promise<void> {
   // absorbed by ledger_idempotency_idx instead of doubling the credits.
   const grants = Number(formData.get("grants") ?? 0);
 
+  // The amount an admin picked (manual top-ups: a requested pack), else the default grant.
+  const picked = Number(formData.get("amount"));
+  const amount = [10, 100, 300, 1000].includes(picked) ? picked : VERIFY_GRANT;
   const result = await repo.verifyAndCredit({
     accountId: targetAccountId,
-    amount: VERIFY_GRANT,
+    amount,
     ref: `admin-grant:${Number.isFinite(grants) ? grants : 0}`,
     actor: admin.displayName,
   });
@@ -233,7 +240,7 @@ export async function verifyAccount(formData: FormData): Promise<void> {
   // Tell them. A failed email must not undo a verification that committed.
   const [target] = await db.select().from(accounts).where(eq(accounts.id, targetAccountId)).limit(1);
   if (target && result.granted) {
-    await sendActivated(target.email, target.displayName, target.locale, VERIFY_GRANT).catch((error) =>
+    await sendActivated(target.email, target.displayName, target.locale, amount).catch((error) =>
       console.error("[verifyAccount] activation email failed", error));
   }
 }
@@ -312,4 +319,59 @@ export async function requestActivation(formData: FormData): Promise<void> {
   }
   revalidatePath("/requests");
   redirect(`/activate?sent=1&next=${encodeURIComponent(next)}`);
+}
+
+/**
+ * Restarts live sourcing for a request that never produced a list (the run
+ * failed or stalled). A fresh workflow instance id, since the first one
+ * exists; writeSourcedPipeline is idempotent on v1 if both ever finish.
+ */
+export async function retrySourcing(formData: FormData): Promise<void> {
+  const requestId = String(formData.get("requestId"));
+  await requireRequestOwner(requestId, "retry this request");
+  const workflow = liveWorkflow();
+  if (workflow) await workflow.create({ id: `${requestId}-${Date.now()}`, params: { requestId } });
+  redirect(`/requests/${requestId}`);
+}
+
+
+// ── Billing ───────────────────────────────────────────────────
+
+function siteOrigin(): string {
+  const url = (env as unknown as { BETTER_AUTH_URL?: string }).BETTER_AUTH_URL;
+  return url?.replace(/\/$/, "") || "https://intro.sa";
+}
+
+/**
+ * Buys a credit pack: an order row first (so the return URL can name it),
+ * then a Moyasar invoice, then off to Moyasar's hosted checkout. Without a
+ * Moyasar key, the request goes to the admins to grant by hand instead.
+ */
+export async function buyCredits(formData: FormData): Promise<void> {
+  const account = await currentAccount();
+  const pack = packageById(String(formData.get("package") ?? ""));
+  const lang = formData.get("lang") === "en" ? "en" : "ar";
+  if (!pack) redirect(`/billing?lang=${lang}`);
+
+  const key = moyasarKey();
+  if (!key) {
+    const granted = await db.select({ email: accounts.email }).from(accounts).where(eq(accounts.role, "admin"));
+    const admins = [...new Set([...adminEmails(), ...granted.map((a) => a.email.toLowerCase())])];
+    await sendCreditRequest(admins, { displayName: account.displayName, email: account.email, company: account.company }, `${pack.en} · ${pack.credits} credits · ${pack.sar} SAR`)
+      .catch((error) => console.error("[buyCredits] admin email failed", error));
+    redirect(`/billing?lang=${lang}&requested=${pack.id}`);
+  }
+
+  const orderId = await repo.createOrder({ accountId: account.id, package: pack.id, credits: pack.credits, amountHalalas: pack.sar * 100 });
+  const origin = siteOrigin();
+  const invoice = await createInvoice(key, {
+    amountHalalas: pack.sar * 100,
+    description: `intro.sa — ${pack.credits} credits (${pack.en})`,
+    successUrl: `${origin}/billing/return?order=${orderId}&lang=${lang}`,
+    backUrl: `${origin}/billing?lang=${lang}`,
+    callbackUrl: `${origin}/api/billing/moyasar`,
+    metadata: { order_id: orderId, account_id: account.id },
+  });
+  await repo.attachInvoice(orderId, invoice.id);
+  redirect(invoice.url);
 }

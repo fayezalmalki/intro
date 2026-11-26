@@ -39,7 +39,7 @@ export function AppShell({
             ))}
           </nav>
           <span className="flex-1" />
-          <a href={rtl ? "/leads?lang=ar" : "/leads?lang=en"} className="hidden items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[13px] font-medium text-ink-2 sm:flex" title={rtl ? "رصيدك لكشف البريد والإرسال" : "Credits for email reveals and sends"}>
+          <a href={`/billing?lang=${lang}`} className="hidden items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:bg-hover sm:flex" title={rtl ? "رصيدك للبحث وكشف البريد والإرسال · اشحن" : "Credits for searches, reveals and sends · top up"}>
             <Icon name="sparkles" size={13} className="text-accent" />
             <span data-credits>{credits}</span>{rtl ? " رصيد" : " credits"}
           </a>

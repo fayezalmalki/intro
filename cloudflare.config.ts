@@ -22,6 +22,9 @@ export default defineConfig({
     // Cloudflare creates the DNS records and certificates on deploy.
     domains: ["intro.sa", "www.intro.sa", "app.intro.sa"],
     workersDev: false,
+    // Persisted logs and real-time Issues, so production errors are visible.
+    // Query strings are redacted: search and sign-in URLs can carry personal data.
+    observability: { enabled: true, redactQueryString: true, issues: { enabled: true } },
     compatibilityDate: "2026-11-25",
     compatibilityFlags: ["nodejs_compat"],
     assets: {
@@ -44,6 +47,12 @@ export default defineConfig({
       ANTHROPIC_API_KEY: bindings.secret(),
       // A capped treg agent token (`treg org agent-new intro-prod --cap …`). Unset → seeded fixtures.
       TREG_TOKEN: bindings.secret(),
+      // Moyasar test key (sk_test_…). Without a usable key for the current
+      // mode, top-ups go to the admins by email instead (lib/billing).
+      MOYASAR_SECRET_KEY: bindings.secret(),
+      // MVP.sa's live key, used only when MOYASAR_MODE is "live".
+      MOYASAR_LIVE_SECRET_KEY: bindings.secret(),
+      MOYASAR_MODE: bindings.secret(),
       BETTER_AUTH_SECRET: bindings.secret(),
       BETTER_AUTH_URL: bindings.secret(),
       // Comma-separated emails provisioned as admin on first sign-in (lib/session.ts).

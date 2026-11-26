@@ -42,13 +42,14 @@ const C = {
       budget: "You've reached today's search limit. It resets at midnight UTC.",
       bad_query: "Add a bit more to search with.",
       upstream: "Our data providers didn't answer. Try again in a moment.",
-      insufficient_credits: "No credits left. Activate sending to get more.",
+      insufficient_credits: "You're out of credits. Top up to keep searching.",
       unauthenticated: "Your session ended. Sign in again.",
     } as Record<string, string>,
     peopleAt: (c: string) => `Decision makers at ${c}`,
     newsAt: (c: string) => `Latest at ${c}`,
     roles: "Quick roles",
     credits: (n: number) => `${n} credit${n === 1 ? "" : "s"} left`,
+    cost: "1 credit per search · refunded if nothing is found", topUp: "Top up",
   },
   ar: {
     title: "اعثر على الأشخاص الصح",
@@ -80,13 +81,14 @@ const C = {
       budget: "وصلت لحد البحث اليومي، ويتجدد منتصف الليل بتوقيت غرينتش.",
       bad_query: "أضف تفاصيل أكثر عشان نبحث.",
       upstream: "مزوّدو البيانات ما ردّوا. جرّب بعد لحظات.",
-      insufficient_credits: "خلص رصيدك. فعّل الإرسال عشان تحصل على رصيد إضافي.",
+      insufficient_credits: "خلص رصيدك. اشحن رصيدك عشان تكمل البحث.",
       unauthenticated: "انتهت جلستك. سجّل دخولك مرة ثانية.",
     } as Record<string, string>,
     peopleAt: (c: string) => `أصحاب القرار في ${c}`,
     newsAt: (c: string) => `آخر أخبار ${c}`,
     roles: "مناصب سريعة",
     credits: (n: number) => `باقي ${n} رصيد`,
+    cost: "رصيد واحد لكل بحث، ويُسترجع إذا ما لقينا شيئًا", topUp: "اشحن رصيدك",
   },
 };
 
@@ -97,10 +99,16 @@ export interface SearchDefaults {
   name?: string; fullName?: string; company?: string; topic?: string; run?: boolean;
 }
 
+function syncCredits(balance: unknown) {
+  if (typeof balance !== "number") return;
+  document.querySelectorAll("[data-credits]").forEach((el) => { el.textContent = String(balance); });
+}
+
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
   const json = (await r.json().catch(() => ({}))) as T & { error?: string };
   if (!r.ok) throw new Error(json.error ?? "upstream");
+  syncCredits((json as { balance?: number }).balance);
   return json;
 }
 
@@ -296,7 +304,10 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
         )}
 
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[13px] text-subtle">{busy ? t.searching : results ? t.found(results.length) : t.start}</span>
+          <span className="flex flex-col text-[13px] text-subtle">
+            <span>{busy ? t.searching : results ? t.found(results.length) : t.start}</span>
+            <span className="text-[12px] text-faint">{t.cost}</span>
+          </span>
           <button type="submit" disabled={busy} className="flex h-11 cursor-pointer items-center gap-2 rounded-full bg-brand px-6 text-[15px] font-medium text-white hover:bg-brand-2 disabled:opacity-60">
             <Icon name="search" size={15} />
             {busy ? t.searching : t.search}
@@ -304,7 +315,12 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
         </div>
       </form>
 
-      {error && <p role="alert" className="rounded-xl bg-accent-soft px-4 py-3 text-[14px] text-accent-ink">{error}</p>}
+      {error && (
+        <p role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-accent-soft px-4 py-3 text-[14px] text-accent-ink">
+          {error}
+          {error === t.errors.insufficient_credits && <a href={`/billing?lang=${lang}`} className="rounded-full bg-brand px-3.5 py-1.5 text-[13px] font-medium text-white">{t.topUp}</a>}
+        </p>
+      )}
 
       {busy && (
         <ul className="flex flex-col gap-2.5" aria-hidden="true">
