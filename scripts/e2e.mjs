@@ -197,17 +197,18 @@ await shot("13-published-v3");
 as("requester");
 // 10. instant search: a use-case preset runs on arrival (offline provider in dev)
 await page.goto(`${BASE}/search?preset=sell&lang=en`, { waitUntil: "networkidle" });
-const companyRows = page.locator("main li").filter({ has: page.getByRole("button", { name: "Decision makers" }) });
+const companyRows = page.locator("main li button[aria-expanded]");
 await companyRows.first().waitFor();
 step("search preset ran", `${await companyRows.count()} companies`);
 await shot("14-search-companies");
 
-await companyRows.first().getByRole("button", { name: "Decision makers" }).click();
+// The first company opens in the detail pane; "Find" lists who decides there.
+await page.getByRole("button", { name: /^Find/ }).first().click();
 const revealBtn = page.getByRole("button", { name: "Reveal email" }).first();
 await revealBtn.waitFor();
 step("decision makers listed", String(await page.getByRole("button", { name: "Reveal email" }).count()));
 await revealBtn.click();
-const revealed = page.locator("main li span.font-latin").filter({ hasText: "@" }).first();
+const revealed = page.locator("main li span.font-latin:visible").filter({ hasText: "@" }).first();
 await revealed.waitFor();
 step("email revealed", await revealed.innerText());
 await shot("15-search-revealed");

@@ -22,25 +22,31 @@ const C = {
     edit: "Start over", steps: ["Your goal", "Confirm", "Find people", "Results"],
     tip: "Results usually arrive within a minute. You'll see each person with why they fit, why now, and a first line.",
     cost: (n: number) => `Running this request uses 5 credits — refunded if we find nobody. You have ${n}.`,
-    by: (c: boolean) => (c ? "Understood by Claude" : "Understood by keyword rules — check it carefully"),
+    by: (c: boolean) => (c ? "Read automatically — edit anything that's off" : "Check this carefully before you run it"),
     original: "You wrote",
+    vague: "This goal is quite broad. Add the sector, the role, or what you want from them — e.g. \"partnerships with Saudi banks for an open-banking app\" — so the results are worth the credits.",
+    refine: "Make it more specific",
+    unavailable: "Sourcing is unavailable right now, so we didn't run this request. Your credits were returned — try again shortly, or search directly.",
   },
   ar: {
-    eyebrow: "الخطوة ٢ · التأكيد", title: "هذا اللي فهمناه",
+    eyebrow: "الخطوة 2 · التأكيد", title: "هذا اللي فهمناه",
     sub: "عدّل الملخص إذا فيه شيء غير دقيق. ما نبدأ البحث إلا بعد تأكيدك.",
     summary: "الملخص", goal: "الهدف", roles: "المناصب", sectors: "القطاعات", markets: "الأسواق", excludes: "يستثني",
     confirm: "تمام، ابحث عن الأشخاص", confirming: "نبدأ البحث…",
     edit: "ابدأ من جديد", steps: ["هدفك", "التأكيد", "البحث", "النتائج"],
     tip: "النتائج توصل عادةً خلال دقيقة، ومع كل شخص: ليش يناسبك، وليش الحين، وأول سطر.",
-    cost: (n: number) => `تشغيل هذا الطلب يستخدم ٥ أرصدة، وتُسترجع إذا ما لقينا أحدًا. رصيدك ${n}.`,
-    by: (c: boolean) => (c ? "فهمه Claude" : "فُهم بقواعد الكلمات المفتاحية، راجعه بعناية"),
+    cost: (n: number) => `تشغيل هذا الطلب يستخدم 5 رصيد، ويرجع لك إذا ما لقينا أحد. رصيدك ${n}.`,
+    by: (c: boolean) => (c ? "قرأناه آليًا، عدّل أي شي مو دقيق" : "راجعه بعناية قبل التشغيل"),
     original: "اللي كتبته",
+    vague: "هدفك عام شوي. أضف القطاع أو المنصب أو وش تبي منهم، مثل: «شراكات مع البنوك السعودية لتطبيق Open Banking»، عشان تطلع النتائج تستاهل الرصيد.",
+    refine: "خلّه أدق",
+    unavailable: "البحث غير متاح الحين، فما شغّلنا الطلب ورجّعنا رصيدك. جرّب بعد شوي، أو ابحث مباشرة.",
   },
 };
 
-export default async function ConfirmPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ lang?: string }> }) {
+export default async function ConfirmPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ lang?: string; unavailable?: string }> }) {
   const { id } = await params;
-  const { lang: l } = await searchParams;
+  const { lang: l, unavailable } = await searchParams;
   const account = await pageAccount(`/requests/${id}/confirm`);
   const req = (await loadRequestContext(id)).requests.find((r) => r.id === id);
   if (!req?.brief || !canReadRequest(account, req.accountId)) notFound();
@@ -48,6 +54,8 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
   const t = C[lang];
   const b = req.brief;
   const credits = await repo.creditBalance(account.id);
+  // A one- or two-word goal with nothing but a role ("شراكات") sources poorly.
+  const vague = (b.confidence ?? 1) < 0.5 || (req.rawText.trim().split(/\s+/).length < 3 && b.industries.length === 0);
 
   const rows = [
     { k: t.roles, v: b.targetRoles },
@@ -61,6 +69,10 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
       <div className="mx-auto flex max-w-[760px] flex-col gap-6">
         <Steps steps={t.steps.map((s, i) => ({ label: s, state: i < 1 ? "done" : i === 1 ? "active" : "pending" }))} />
         <PageHeader eyebrow={t.eyebrow} title={t.title} sub={t.sub} />
+        {unavailable && <Tip icon="clock" tone="peach">{t.unavailable}</Tip>}
+        {vague && (
+          <Tip icon="target" tone="sand" action={<a href={`/new?lang=${lang}&q=${encodeURIComponent(req.rawText)}`} className="text-[13.5px] font-medium text-brand">{t.refine}</a>}>{t.vague}</Tip>
+        )}
 
         <Card className="p-5 sm:p-6">
           <form action={confirmBrief} className="flex flex-col gap-5">

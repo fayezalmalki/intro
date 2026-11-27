@@ -4,6 +4,7 @@ import { TregError, TregProvider, type EmailVerdict } from "../sourcing/treg";
 import type { Company, FoundPerson, Priced, Signal } from "../sourcing/provider";
 import { LEADERSHIP, seniorityOf } from "../sourcing/vocabulary";
 import { devToolsEnabled } from "../env";
+import { hasArabic, toProviderTerms } from "./arabic";
 import { MARKETS, type Market } from "./markets";
 import { FakeSearch } from "./fake";
 import { chargeThroughGate } from "../charge";
@@ -150,10 +151,16 @@ const withSeniority = (people: FoundPerson[]): PersonResult[] =>
     .sort((a, b) => Number(b.leader) - Number(a.leader));
 
 export async function searchCompanies(accountId: string, input: { sector?: string; keywords?: string; name?: string; market: Market }, trail?: Outcome[]) {
-  const sector = clean(input.sector);
-  const keywords = clean(input.keywords);
   const name = clean(input.name);
+  let sector = clean(input.sector);
+  let keywords = clean(input.keywords);
   if (!sector && !keywords && !name) throw new SearchError("bad_query", "a sector, keywords or a company name");
+  // Providers index in English: «شركة تقنية» becomes the Technology industry.
+  if (hasArabic(keywords)) {
+    const t = toProviderTerms(keywords);
+    sector ||= t.industry ?? "";
+    keywords = t.terms || (sector ? "" : keywords);
+  }
   const m = MARKETS[input.market];
   const query = name
     ? { name, country: input.market, limit: 25 }
@@ -197,7 +204,13 @@ export async function searchPeople(
 ) {
   let domain = asDomain(clean(input.companyDomain));
   const title = clean(input.title, 60);
-  const describe = clean(input.describe, 200);
+  let describe = clean(input.describe, 200);
+  // «مدراء المشتريات في المستشفيات» → "Procurement Hospital & Health Care …": providers read English.
+  if (hasArabic(describe)) {
+    const t = toProviderTerms(describe);
+    const english = [t.titles.join(" "), t.industry, t.terms].filter(Boolean).join(" ");
+    if (english) describe = english;
+  }
   const keywords = clean(input.keywords).split(/[,،]/).map((k) => k.trim()).filter(Boolean).slice(0, 5);
   if (!domain && !title && !describe) throw new SearchError("bad_query", "a company, a role or a description");
   const m = MARKETS[input.market];
