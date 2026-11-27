@@ -51,8 +51,14 @@ export interface SourcingProvider {
     query: { industry?: string; q?: string; country: string; limit: number },
     options: CallOptions,
   ): Promise<Priced<Company[]>>;
+  /** People at one company. Without a title: everyone the provider lists (we filter). */
   findPeople(
-    query: { companyDomain: string; title: string; country: string; limit: number },
+    query: { companyDomain: string; title?: string; country: string; limit: number },
+    options: CallOptions,
+  ): Promise<Priced<FoundPerson[]>>;
+  /** People in a role across a whole sector, when company-by-company finds too few. */
+  findPeopleInSector?(
+    query: { title: string; industry: string; country: string; limit: number },
     options: CallOptions,
   ): Promise<Priced<FoundPerson[]>>;
   findSignals(query: { q: string; limit: number }, options: CallOptions): Promise<Priced<Signal[]>>;
