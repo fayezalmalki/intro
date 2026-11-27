@@ -36,6 +36,13 @@ const C = {
     noneArabic: "Nothing matched these Arabic words. Company data is indexed in English — pick a sector above, or try English keywords (e.g. software, logistics, fintech).",
     start: "Pick a way to search, set the market, and go.",
     decision: "Decision makers", news: "News", website: "Website",
+    ws: {
+      to: "To", find: (c: string) => <>Find <b>who decides</b> at {c}</>, findBtn: "Find", whoLabel: "Who",
+      roles: { decision: "Decision maker", hiring: "Hiring", procurement: "Procurement", partnerships: "Partnerships", sales: "Sales" } as Record<string, string>,
+      happening: "What's happening", happeningBtn: "Check the news", noPeople: "No one found for this role — try another.", noNews: "No recent news.",
+      edit: "Edit search", results: (n: number) => (n === 1 ? "1 company" : `${n} companies`), people: (n: number) => (n === 1 ? "1 person" : `${n} people`), pick: "Pick a company to see who to talk to.",
+      steps: ["Reading your search", "Searching business data", "Ranking who decides"],
+    },
     save: "Save lead", saved: "Saved", reveal: "Reveal email", revealing: "Looking up…", openLead: "Open lead",
     leader: "Decision maker", copy: "Copy",
     status: { valid: "Verified", risky: "Unconfirmed", invalid: "Invalid", not_found: "Not found — credit refunded" } as Record<string, string>,
@@ -79,6 +86,13 @@ const C = {
     fullName: "الاسم الكامل", fullNamePh: "مثال: Noura Alsaud", company: "الجهة (اختياري)", companyPh: "الاسم أو الموقع",
     topic: "الجهة أو الموضوع", topicPh: "مثال: لومن باي، أو منافسات التأمين",
     search: "ابحث", searching: "نبحث…",
+    ws: {
+      to: "إلى", find: (c: string) => <>لاقِ <b>صاحب القرار</b> في {c}</>, findBtn: "ابحث", whoLabel: "مين",
+      roles: { decision: "صاحب القرار", hiring: "التوظيف", procurement: "المشتريات", partnerships: "الشراكات", sales: "المبيعات" } as Record<string, string>,
+      happening: "وش الجديد عندهم", happeningBtn: "شوف الأخبار", noPeople: "ما لقينا أحد بهذا الدور، جرّب دور ثاني.", noNews: "ما فيه أخبار حديثة.",
+      edit: "عدّل البحث", results: (n: number) => `${n} جهة`, people: (n: number) => `${n} شخص`, pick: "اختر جهة عشان تشوف مين تكلّم.",
+      steps: ["نقرأ بحثك", "نبحث في بيانات الأعمال", "نرتّب حسب صاحب القرار"],
+    },
     found: (n: number) => `${n} نتيجة`,
     none: "ما لقينا تطابق. جرّب قطاعًا أوسع، أو كلمات أقل، أو سوقًا آخر.",
     noneArabic: "ما لقينا تطابق لهذي الكلمات. بيانات الشركات مفهرسة بالإنجليزي، فاختر قطاعًا من فوق، أو جرّب كلمات إنجليزية (مثل software أو logistics أو fintech).",
@@ -153,7 +167,9 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const note = (o: Outcome | null) => o ? `${t.outcome[o.billing]?.(o.balance) ?? ""}${o.cached && o.billing !== "refunded" ? ` · ${t.cachedNote}` : ""}` : "";
   const [leads, setLeads] = useState<Record<string, LeadState>>({});
-  const [expanded, setExpanded] = useState<Record<string, { kind: "people" | "news"; busy: boolean; people?: Person[]; news?: Signal[]; error?: string; note?: string }>>({});
+  const [detail, setDetail] = useState<Record<string, Detail>>({});
+  const [selected, setSelected] = useState<string | null>(null);
+  const [editing, setEditing] = useState(true);
   const ran = useRef(false);
 
   const say = (code: string) => t.errors[code] ?? t.errors.upstream;
@@ -162,14 +178,14 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
     event?.preventDefault();
     setBusy(true);
     setError(null);
-    setCompanies(null); setPeople(null); setNews(null); setExpanded({}); setOutcome(null);
+    setCompanies(null); setPeople(null); setNews(null); setDetail({}); setSelected(null); setOutcome(null);
     const track = (r: { billing?: string; cached?: boolean; balance?: number }) => {
       if (typeof r.balance === "number") { setCredits(r.balance); setOutcome({ billing: r.billing ?? "charged", cached: Boolean(r.cached), balance: r.balance }); }
     };
     try {
       if (mode === "companies") {
         const r = await api<{ results: Company[] } & Partial<Outcome>>("/api/search", { kind: "companies", market, sector, keywords, name });
-        setCompanies(r.results); track(r);
+        setCompanies(r.results); setSelected(r.results[0]?.domain ?? null); track(r);
       } else if (mode === "people") {
         const r = await api<{ results: Person[] } & Partial<Outcome>>("/api/search", { kind: "people", market, companyDomain: domain, title: role, keywords, describe });
         setPeople(r.results); track(r);
@@ -180,6 +196,7 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
         const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: topic });
         setNews(r.results); track(r);
       }
+      setEditing(false);
     } catch (e) {
       setError(say((e as Error).message));
     } finally {
@@ -195,25 +212,30 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function expand(c: Company, kind: "people" | "news") {
+  const ROLE_TITLE: Record<string, string> = { decision: "Chief", hiring: "Talent Acquisition", procurement: "Procurement", partnerships: "Partnerships", sales: "Sales" };
+
+  async function findPeople(c: Company, who: string) {
     const key = c.domain;
-    if (expanded[key]?.kind === kind && !expanded[key].busy) {
-      setExpanded((x) => { const n = { ...x }; delete n[key]; return n; });
-      return;
-    }
-    setExpanded((x) => ({ ...x, [key]: { kind, busy: true } }));
+    setDetail((x) => ({ ...x, [key]: { ...x[key], who, peopleBusy: true, peopleError: undefined } }));
     try {
-      if (kind === "people") {
-        const r = await api<{ results: Person[] } & Partial<Outcome>>("/api/search", { kind: "people", market, companyDomain: c.domain, title: role || "Chief" });
-        if (typeof r.balance === "number") setCredits(r.balance);
-        setExpanded((x) => ({ ...x, [key]: { kind, busy: false, people: r.results, note: typeof r.balance === "number" ? note({ billing: r.billing ?? "charged", cached: Boolean(r.cached), balance: r.balance }) : undefined } }));
-      } else {
-        const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: c.name });
-        if (typeof r.balance === "number") setCredits(r.balance);
-        setExpanded((x) => ({ ...x, [key]: { kind, busy: false, news: r.results, note: typeof r.balance === "number" ? note({ billing: r.billing ?? "charged", cached: Boolean(r.cached), balance: r.balance }) : undefined } }));
-      }
+      const title = who === "decision" ? role || ROLE_TITLE.decision : ROLE_TITLE[who];
+      const r = await api<{ results: Person[] } & Partial<Outcome>>("/api/search", { kind: "people", market, companyDomain: c.domain, title });
+      if (typeof r.balance === "number") setCredits(r.balance);
+      setDetail((x) => ({ ...x, [key]: { ...x[key], peopleBusy: false, people: r.results, peopleNote: typeof r.balance === "number" ? note({ billing: r.billing ?? "charged", cached: Boolean(r.cached), balance: r.balance }) : undefined } }));
     } catch (e) {
-      setExpanded((x) => ({ ...x, [key]: { kind, busy: false, error: say((e as Error).message) } }));
+      setDetail((x) => ({ ...x, [key]: { ...x[key], peopleBusy: false, peopleError: say((e as Error).message) } }));
+    }
+  }
+
+  async function findNews(c: Company) {
+    const key = c.domain;
+    setDetail((x) => ({ ...x, [key]: { ...x[key], newsBusy: true, newsError: undefined } }));
+    try {
+      const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: c.name });
+      if (typeof r.balance === "number") setCredits(r.balance);
+      setDetail((x) => ({ ...x, [key]: { ...x[key], newsBusy: false, news: r.results } }));
+    } catch (e) {
+      setDetail((x) => ({ ...x, [key]: { ...x[key], newsBusy: false, newsError: say((e as Error).message) } }));
     }
   }
 
@@ -251,6 +273,12 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
   const input = "h-11 w-full rounded-xl bg-white px-3.5 text-[14.5px] text-ink outline outline-1 -outline-offset-1 outline-line placeholder:text-faint focus:outline-2 focus:outline-brand";
   const label = "text-[12.5px] font-medium text-subtle";
   const results = mode === "companies" ? companies : mode === "news" ? news : people;
+  const summaryOf = () => {
+    const sectorLabel = SECTOR_OPTIONS.find((x) => x.id === sector)?.[lang];
+    const bits = mode === "companies" ? [sectorLabel, keywords, name] : mode === "people" ? [domain, role, describe, keywords] : mode === "person" ? [fullName, company] : [topic];
+    const text = bits.filter(Boolean).join(" · ");
+    return text ? ` · ${text}` : "";
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -261,6 +289,15 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
         </div>
       </div>
 
+      {results && !editing && !busy ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-[16px] bg-white px-4 py-3 outline outline-1 -outline-offset-1 outline-line">
+          <Icon name={MODE_ICON[mode]} size={15} className="text-brand" />
+          <span className="min-w-0 flex-1 truncate text-[14px] text-ink" dir="auto">
+            <b className="font-semibold">{t.modes[mode]}</b> · {MARKETS[market][lang]}{summaryOf()}
+          </span>
+          <button type="button" onClick={() => setEditing(true)} className="flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3.5 text-[13.5px] font-medium text-brand outline outline-1 -outline-offset-1 outline-line hover:bg-surface">{t.ws.edit}</button>
+        </div>
+      ) : (
       <form onSubmit={runSearch} className="flex flex-col gap-5 rounded-[22px] bg-white p-5 shadow-[0_18px_48px_-30px_#14161340] outline outline-1 -outline-offset-1 outline-line sm:p-6">
         <div role="tablist" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {(Object.keys(t.modes) as SearchMode[]).map((m) => (
@@ -340,6 +377,7 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
           </button>
         </div>
       </form>
+      )}
 
       {outcome && !busy && (
         <p data-testid="charge-note" className="flex items-center gap-2 text-[13px] text-muted"><Icon name="sparkles" size={12} className="text-accent" />{note(outcome)}</p>
@@ -352,50 +390,48 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
         </p>
       )}
 
-      {busy && (
-        <ul className="flex flex-col gap-2.5" aria-hidden="true">
-          {[0, 1, 2].map((i) => <li key={i} className="h-[76px] animate-pulse rounded-[16px] bg-white outline outline-1 -outline-offset-1 outline-line" />)}
-        </ul>
-      )}
+      {busy && <Progress steps={t.ws.steps} summary={`${t.modes[mode]} · ${MARKETS[market][lang]}${summaryOf()}`} />}
 
       {!busy && results && results.length === 0 && <p className="rounded-xl bg-white px-4 py-6 text-center text-[14.5px] leading-[23px] text-muted outline outline-1 -outline-offset-1 outline-line">{/[\u0600-\u06FF]/.test(`${keywords} ${describe}`) ? t.noneArabic : t.none}</p>}
 
       {!busy && companies && companies.length > 0 && (
-        <ul className="flex flex-col gap-2.5">
-          {companies.map((c) => {
-            const x = expanded[c.domain];
-            return (
-              <li key={c.domain} className="rounded-[16px] bg-white outline outline-1 -outline-offset-1 outline-line">
-                <div className="flex flex-wrap items-center gap-3 p-4">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-mint text-[15px] font-bold text-brand">{c.name[0]}</span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-[15px] font-semibold text-ink" dir="auto">{c.name}</span>
-                    <span className="flex flex-wrap gap-x-2 text-[12.5px] text-subtle">
-                      <a href={`https://${c.domain}`} target="_blank" rel="noreferrer" className="font-latin hover:text-ink" dir="ltr">{c.domain}</a>
-                      {c.industry && <span>· {c.industry}</span>}
-                      {c.size && <span dir="ltr">· {c.size}</span>}
-                    </span>
-                  </span>
-                  <span className="flex gap-1.5">
-                    <SmallBtn on={x?.kind === "people"} onClick={() => void expand(c, "people")} icon="users" cost={t.oneCredit}>{t.decision}</SmallBtn>
-                    <SmallBtn on={x?.kind === "news"} onClick={() => void expand(c, "news")} icon="file-text" cost={t.oneCredit}>{t.news}</SmallBtn>
-                  </span>
-                </div>
-                {x && (
-                  <div className="border-t border-line-2 bg-surface-3 p-3 sm:p-4">
-                    {x.busy && <div className="h-12 animate-pulse rounded-xl bg-white" />}
-                    {x.error && <p className="text-[13.5px] text-accent-ink">{x.error}</p>}
-                    {x.note && <p data-testid="charge-note" className="mb-2 flex items-center gap-1.5 text-[12.5px] text-subtle"><Icon name="sparkles" size={11} className="text-accent" />{x.note}</p>}
-                    {x.people && (x.people.length ? (
-                      <ul className="flex flex-col gap-2">{x.people.map((p) => <PersonRow key={personKey(p)} p={p} t={t} state={leads[personKey(p)]} onSave={() => void save(p)} onReveal={() => void reveal(p)} lang={lang} />)}</ul>
-                    ) : <p className="text-[13.5px] text-muted">{t.none}</p>)}
-                    {x.news && (x.news.length ? <NewsList items={x.news} /> : <p className="text-[13.5px] text-muted">{t.none}</p>)}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start">
+          <div className="flex flex-col gap-1.5">
+            <span className="px-1 pb-1 text-[12.5px] font-medium text-subtle">{t.ws.results(companies.length)}</span>
+            <ul className="flex flex-col gap-1.5">
+              {companies.map((c) => {
+                const on = selected === c.domain;
+                const d = detail[c.domain];
+                return (
+                  <li key={c.domain}>
+                    <button type="button" onClick={() => setSelected(on ? null : c.domain)} aria-expanded={on}
+                      className={cx("flex w-full cursor-pointer items-center gap-3 rounded-[14px] p-3 text-start transition-colors", on ? "bg-white shadow-[0_1px_3px_#0000001a] outline outline-1 -outline-offset-1 outline-brand/30" : "hover:bg-white")}>
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-white text-[15px] font-bold text-brand outline outline-1 -outline-offset-1 outline-line">{c.name[0]}</span>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[14.5px] font-semibold text-ink" dir="auto">{c.name}</span>
+                        <span className="truncate text-[12.5px] text-subtle">{[c.industry, c.size].filter(Boolean).join(" · ") || c.domain}</span>
+                      </span>
+                      {d?.people && d.people.length > 0 && <span className="shrink-0 rounded-full bg-mint px-2 py-0.5 text-[11px] font-medium text-brand">{t.ws.people(d.people.length)}</span>}
+                    </button>
+                    {on && (
+                      <div className="mt-1.5 lg:hidden">
+                        <CompanyDetail c={c} d={d} t={t} lang={lang} leads={leads} personKey={personKey} onFind={(who) => void findPeople(c, who)} onNews={() => void findNews(c)} onSave={(p) => void save(p)} onReveal={(p) => void reveal(p)} />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="sticky top-6 hidden lg:block">
+            {(() => {
+              const c = companies.find((x) => x.domain === selected);
+              return c
+                ? <CompanyDetail c={c} d={detail[c.domain]} t={t} lang={lang} leads={leads} personKey={personKey} onFind={(who) => void findPeople(c, who)} onNews={() => void findNews(c)} onSave={(p) => void save(p)} onReveal={(p) => void reveal(p)} />
+                : <p className="rounded-[18px] bg-white px-5 py-10 text-center text-[14.5px] text-muted outline outline-1 -outline-offset-1 outline-line">{t.ws.pick}</p>;
+            })()}
+          </div>
+        </div>
       )}
 
       {!busy && people && people.length > 0 && (
@@ -404,6 +440,91 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
 
       {!busy && news && news.length > 0 && <NewsList items={news} />}
     </div>
+  );
+}
+
+type Detail = { who?: string; people?: Person[]; peopleBusy?: boolean; peopleError?: string; peopleNote?: string; news?: Signal[]; newsBusy?: boolean; newsError?: string };
+
+/** One company, opened: who decides there (by role), with emails to reveal, and what's happening. */
+function CompanyDetail({ c, d, t, lang, leads, personKey, onFind, onNews, onSave, onReveal }: {
+  c: Company; d?: Detail; t: (typeof C)["en"]; lang: Lang; leads: Record<string, LeadState>; personKey: (p: Person) => string;
+  onFind: (who: string) => void; onNews: () => void; onSave: (p: Person) => void; onReveal: (p: Person) => void;
+}) {
+  const [who, setWho] = useState(d?.who ?? "decision");
+  return (
+    <section className="flex flex-col gap-4 rounded-[20px] bg-gradient-to-b from-mint to-white to-[140px] p-5 outline outline-1 -outline-offset-1 outline-line sm:p-6">
+      <div className="flex items-start gap-3.5">
+        <span className="flex size-14 shrink-0 items-center justify-center rounded-[16px] bg-white text-[22px] font-bold text-brand outline outline-1 -outline-offset-1 outline-line">{c.name[0]}</span>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h2 className="display font-display text-[26px] leading-[1.15] font-medium tracking-[-0.6px] text-ink" dir="auto">{c.name}</h2>
+          <span className="flex flex-wrap gap-x-2 text-[13px] text-muted">
+            <a href={`https://${c.domain}`} target="_blank" rel="noreferrer" className="font-latin hover:text-ink" dir="ltr">{c.domain} ↗</a>
+            {c.industry && <span>· {c.industry}</span>}
+            {c.size && <span dir="ltr">· {c.size}</span>}
+            {c.linkedinUrl && <a href={c.linkedinUrl} target="_blank" rel="noreferrer" className="font-medium text-brand" dir="ltr">· LinkedIn ↗</a>}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-[16px] bg-white p-4 outline outline-1 -outline-offset-1 outline-line">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px] text-subtle">{t.ws.to}</span>
+          <span className="min-w-0 flex-1 text-[14.5px] text-ink">{t.ws.find(c.name)}</span>
+          <button type="button" disabled={d?.peopleBusy} onClick={() => onFind(who)} className="flex h-9 cursor-pointer items-center gap-1.5 rounded-full bg-accent px-4 text-[13.5px] font-medium text-white hover:opacity-90 disabled:opacity-60">
+            <Icon name="search" size={13} />{d?.peopleBusy ? t.searching : t.ws.findBtn}<span className="rounded-full bg-white/20 px-1.5 text-[10.5px]">{t.oneCredit}</span>
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[12.5px] text-subtle">{t.ws.whoLabel}</span>
+          {Object.entries(t.ws.roles).map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setWho(id)} className={cx("cursor-pointer rounded-full px-3 py-1 text-[12.5px] font-medium", who === id ? "bg-ink text-white" : "bg-surface text-ink-2 hover:bg-hover")}>{label}</button>
+          ))}
+        </div>
+        {d?.peopleBusy && <div className="h-14 animate-pulse rounded-xl bg-surface-3" />}
+        {d?.peopleError && <p className="text-[13.5px] text-accent-ink">{d.peopleError}</p>}
+        {d?.peopleNote && <p data-testid="charge-note" className="flex items-center gap-1.5 text-[12.5px] text-subtle"><Icon name="sparkles" size={11} className="text-accent" />{d.peopleNote}</p>}
+        {d?.people && !d.peopleBusy && (d.people.length ? (
+          <ul className="flex flex-col gap-2">{d.people.map((p) => <PersonRow key={personKey(p)} p={p} t={t} state={leads[personKey(p)]} onSave={() => onSave(p)} onReveal={() => onReveal(p)} lang={lang} />)}</ul>
+        ) : <p className="text-[13.5px] text-muted">{t.ws.noPeople}</p>)}
+      </div>
+
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-2">
+          <span className="flex-1 text-[13px] font-semibold text-ink-2">{t.ws.happening}</span>
+          {!d?.news && <button type="button" disabled={d?.newsBusy} onClick={onNews} className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full bg-surface px-3 text-[12.5px] font-medium text-ink hover:bg-hover disabled:opacity-60"><Icon name="file-text" size={13} />{d?.newsBusy ? t.searching : t.ws.happeningBtn}<span className="rounded-full bg-white px-1.5 text-[10.5px] text-subtle">{t.oneCredit}</span></button>}
+        </div>
+        {d?.newsError && <p className="text-[13.5px] text-accent-ink">{d.newsError}</p>}
+        {d?.news && (d.news.length ? <NewsList items={d.news} /> : <p className="text-[13.5px] text-muted">{t.ws.noNews}</p>)}
+      </div>
+    </section>
+  );
+}
+
+/** What is happening while a search runs, step by step — not a blank skeleton. */
+function Progress({ steps, summary }: { steps: string[]; summary: string }) {
+  const [at, setAt] = useState(1);
+  useEffect(() => {
+    const a = setTimeout(() => setAt(2), 900);
+    return () => clearTimeout(a);
+  }, []);
+  return (
+    <ol aria-live="polite" className="flex flex-col divide-y divide-dashed divide-line overflow-hidden rounded-[18px] bg-white outline outline-1 -outline-offset-1 outline-line">
+      {steps.map((s, i) => {
+        const state = i < at ? "done" : i === at ? "active" : "pending";
+        return (
+          <li key={s} className="flex items-center gap-3 px-4 py-3.5">
+            <span className={cx("flex size-8 shrink-0 items-center justify-center rounded-[10px]", state === "done" ? "bg-mint text-brand" : state === "active" ? "bg-sand text-ink" : "bg-surface text-faint")}>
+              <Icon name={state === "done" ? "check" : i === 1 ? "search" : i === 2 ? "users" : "file-text"} size={14} />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className={cx("text-[14px] font-medium", state === "pending" ? "text-faint" : "text-ink")}>{s}</span>
+              {i === 0 && <span className="truncate text-[12.5px] text-subtle" dir="auto">{summary}</span>}
+            </span>
+            {state === "active" && <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-brand" />}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -427,15 +548,6 @@ function RoleChips({ lang, role, setRole, label }: { lang: Lang; role: string; s
         {SENIORITY_OPTIONS.map((s) => <Chip key={s.id} on={role === s.id} onClick={() => setRole(role === s.id ? "" : s.id)}>{s[lang]}</Chip>)}
       </div>
     </div>
-  );
-}
-
-function SmallBtn({ on, onClick, icon, children, cost }: { on?: boolean; onClick: () => void; icon: IconKey; children: ReactNode; cost?: string }) {
-  return (
-    <button type="button" onClick={onClick} title={cost} className={cx("flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors", on ? "bg-brand text-white" : "bg-surface text-ink hover:bg-hover")}>
-      <Icon name={icon} size={14} />{children}
-      {cost && <span className={cx("rounded-full px-1.5 text-[10.5px]", on ? "bg-white/20" : "bg-white text-subtle")}>{cost}</span>}
-    </button>
   );
 }
 
