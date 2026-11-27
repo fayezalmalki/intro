@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST { subject, body } → sends this lead's next message through intro
- * (send.intro.sa), if every check passes. Refusals come back with reasons in
+ * (reach.intro.sa), if every check passes. Refusals come back with reasons in
  * the user's language and are recorded; a delivery failure can pause the
  * account's sending through intro (lib/db/repo.ts recordOutbound).
  */

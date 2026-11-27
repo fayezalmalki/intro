@@ -1,7 +1,7 @@
 import { NEAR_DUPLICATE_THRESHOLD, similarity } from "./gate";
 
 /**
- * Sending through intro (send.intro.sa) — the checks that protect the domain.
+ * Sending through intro (reach.intro.sa) — the checks that protect the domain.
  *
  * Users can always send from their own email; sending through intro is earned
  * and bounded. Every check here runs before a message reaches the provider,
