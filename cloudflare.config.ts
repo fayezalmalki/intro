@@ -55,6 +55,10 @@ export default defineConfig({
       // MVP.sa's live key, used only when MOYASAR_MODE is "live".
       MOYASAR_LIVE_SECRET_KEY: bindings.secret(),
       MOYASAR_MODE: bindings.secret(),
+      // ImprovMX SMTP login for intro.sa (e.g. noreply@intro.sa) — transactional
+      // mail to any recipient (lib/mailer.ts). Cloudflare Email Service is the fallback.
+      IMPROVMX_SMTP_USER: bindings.secret(),
+      IMPROVMX_SMTP_PASSWORD: bindings.secret(),
       BETTER_AUTH_SECRET: bindings.secret(),
       BETTER_AUTH_URL: bindings.secret(),
       // Comma-separated emails provisioned as admin on first sign-in (lib/session.ts).

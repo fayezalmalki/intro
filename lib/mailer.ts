@@ -11,13 +11,35 @@ import { env } from "cloudflare:workers";
 const FROM = { name: "intro.sa", email: "noreply@intro.sa" };
 const SITE = "https://intro.sa";
 
+interface MailEnv { EMAIL?: SendEmail; IMPROVMX_SMTP_USER?: string; IMPROVMX_SMTP_PASSWORD?: string }
+
 /**
- * Without the binding (unit tests, or local dev with email disabled) the
- * message is logged instead, so the sign-in code is still visible.
+ * ImprovMX SMTP (smtp.improvmx.com, implicit TLS on 465) when its credentials
+ * are set — it can send to any recipient. Otherwise Cloudflare Email Service
+ * (the EMAIL binding), which on the Workers Free plan only reaches verified
+ * addresses. Without either (unit tests, local dev) the message is logged, so
+ * the sign-in code is still visible.
  */
+export function transportFor(e: MailEnv): "smtp" | "binding" | "log" {
+  if (e.IMPROVMX_SMTP_USER && e.IMPROVMX_SMTP_PASSWORD) return "smtp";
+  return e.EMAIL ? "binding" : "log";
+}
+
 async function send(to: string | string[], subject: string, html: string, text: string): Promise<void> {
-  const mail = (env as unknown as { EMAIL?: SendEmail }).EMAIL;
+  const e = env as unknown as MailEnv;
   const recipients = Array.isArray(to) ? to : [to];
+  if (transportFor(e) === "smtp" && e.IMPROVMX_SMTP_USER && e.IMPROVMX_SMTP_PASSWORD) {
+    const { WorkerMailer } = await import("worker-mailer");
+    const from = e.IMPROVMX_SMTP_USER.includes("@") ? { name: FROM.name, email: e.IMPROVMX_SMTP_USER } : FROM;
+    for (const recipient of recipients) {
+      await WorkerMailer.send(
+        { host: "smtp.improvmx.com", port: 465, secure: true, credentials: { username: e.IMPROVMX_SMTP_USER, password: e.IMPROVMX_SMTP_PASSWORD }, authType: ["plain", "login"] },
+        { from, to: recipient, subject, html, text },
+      );
+    }
+    return;
+  }
+  const mail = e.EMAIL;
   if (!mail) {
     console.log(`[mailer] ${subject} → ${recipients.join(", ")}\n${text}`);
     return;
