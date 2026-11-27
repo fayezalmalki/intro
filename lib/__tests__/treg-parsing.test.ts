@@ -28,3 +28,16 @@ describe("treg answers in odd shapes", () => {
     expect(news.value.map((n) => n.title)).toEqual(["Raised a round"]);
   });
 });
+
+describe("TregProvider default fetch", () => {
+  it("calls the global fetch unbound (Workers rejects fetch called as a method)", async () => {
+    const { TregProvider } = await import("../sourcing/treg");
+    const original = globalThis.fetch;
+    let self: unknown = "unset";
+    globalThis.fetch = function (this: unknown) { self = this; return Promise.resolve(new Response(JSON.stringify({ output: { companies: [] } }), { status: 200, headers: { "x-treg-cost-micro": "0" } })); } as typeof fetch;
+    try {
+      await new TregProvider("t").findCompanies({ industry: "Banking", country: "SA", limit: 5 }, { maxCostUsd: 0.01, idempotencyKey: "k" });
+    } finally { globalThis.fetch = original; }
+    expect(self).not.toBeInstanceOf(TregProvider);
+  });
+});
