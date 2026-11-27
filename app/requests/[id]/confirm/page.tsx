@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Confirm · intro" };
 const C = {
   en: {
     eyebrow: "Step 2 · Confirm", title: "Here's what we understood",
-    sub: "Edit the summary if it's off. We only start looking once you confirm.",
+    sub: "Check the picks. Anything off? Edit them — we only start looking once you confirm.",
     summary: "Summary", goal: "Goal", roles: "Roles", sectors: "Sectors", markets: "Markets", excludes: "Excludes",
     confirm: "Looks right — find people", confirming: "Starting the search…",
     edit: "Edit picks", steps: ["Your goal", "Confirm", "Find people", "Results"],
@@ -30,7 +30,7 @@ const C = {
   },
   ar: {
     eyebrow: "الخطوة 2 · التأكيد", title: "هذا اللي فهمناه",
-    sub: "عدّل الملخص إذا فيه شيء غير دقيق. ما نبدأ البحث إلا بعد تأكيدك.",
+    sub: "راجع الاختيارات، وإذا فيه شيء غير دقيق عدّله. ما نبدأ البحث إلا بعد تأكيدك.",
     summary: "الملخص", goal: "الهدف", roles: "المناصب", sectors: "القطاعات", markets: "الأسواق", excludes: "يستثني",
     confirm: "تمام، ابحث عن الأشخاص", confirming: "نبدأ البحث…",
     edit: "عدّل الاختيارات", steps: ["هدفك", "التأكيد", "البحث", "النتائج"],
@@ -81,11 +81,12 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
               <span className="text-[12.5px] font-medium text-subtle">{t.original}</span>
               <p className="text-[15px] text-ink" dir="auto">«{req.rawText}»</p>
             </div>
-            <label className="flex flex-col gap-1.5">
+            {/* Read-only: the search runs on the picks below, so editing a sentence
+                here would change nothing. "Edit picks" is the way to change it. */}
+            <div className="flex flex-col gap-1.5">
               <span className="text-[12.5px] font-medium text-subtle">{t.summary}</span>
-              <textarea name="summaryAr" rows={3} defaultValue={b.summaryAr} dir="auto"
-                className="w-full rounded-[14px] bg-surface-2 p-3.5 text-[15.5px] leading-[25px] text-ink outline-none focus:outline-2 focus:outline-brand" />
-            </label>
+              <p data-testid="brief-summary" className="rounded-[14px] bg-surface-2 p-3.5 text-[15.5px] leading-[25px] text-ink" dir="auto">{b.summaryAr}</p>
+            </div>
             <dl className="flex flex-col gap-3 border-t border-line pt-4">
               <div className="flex flex-wrap items-center gap-3">
                 <dt className="w-24 text-[13px] text-subtle">{t.goal}</dt>
@@ -101,7 +102,7 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
               <span className="text-[12.5px] text-subtle">{t.by(b.extractedBy !== "rules")}</span>
               <div className="flex items-center gap-2">
-                <a href={`/new?lang=${lang}&edit=${req.id}`} data-testid="edit-picks" className="text-[13.5px] font-medium text-muted hover:text-ink">{t.edit}</a>
+                <a href={`/new?lang=${lang}&edit=${req.id}`} data-testid="edit-picks" className="flex h-10 items-center rounded-full bg-white px-4 text-[13.5px] font-medium text-ink outline outline-1 -outline-offset-1 outline-line hover:bg-surface">{t.edit}</a>
                 <SubmitButton pending={t.confirming} icon="arrow-right" testId="confirm-brief">{t.confirm}</SubmitButton>
               </div>
             </div>

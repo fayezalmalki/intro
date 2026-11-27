@@ -49,6 +49,7 @@ const C = {
       edit: "Edit search", results: (n: number) => (n === 1 ? "1 company" : `${n} companies`), people: (n: number) => (n === 1 ? "1 person" : `${n} people`), pick: "Pick a company to see who to talk to.",
       steps: ["Reading your search", "Searching business data", "Ranking who decides"],
     },
+    bulk: { saveAll: (n: number) => `Save all ${n}`, saveLeaders: (n: number) => `Save the ${n} decision makers`, saving: "Saving…", done: (n: number) => `${n} saved to your leads`, csv: "Download CSV", hint: "Free — saving and downloading contact no one." },
     save: "Save lead", saved: "Saved", reveal: "Reveal email", revealing: "Looking up…", openLead: "Open lead",
     leader: "Decision maker", copy: "Copy",
     status: { valid: "Verified", risky: "Unconfirmed", invalid: "Invalid", not_found: "Not found — credit refunded" } as Record<string, string>,
@@ -109,6 +110,7 @@ const C = {
     noneArabic: "ما لقينا تطابق لهذي الكلمات. بيانات الشركات مفهرسة بالإنجليزي، فاختر قطاعًا من فوق، أو جرّب كلمات إنجليزية (مثل software أو logistics أو fintech).",
     start: "اختر طريقة البحث، وحدد السوق، وابدأ.",
     decision: "أصحاب القرار", news: "الأخبار", website: "الموقع",
+    bulk: { saveAll: (n: number) => `احفظ الكل (${n})`, saveLeaders: (n: number) => `احفظ أصحاب القرار (${n})`, saving: "نحفظ…", done: (n: number) => `حفظنا ${n} في عملائك`, csv: "تنزيل CSV", hint: "مجاني، الحفظ والتنزيل ما يتواصل مع أحد." },
     save: "احفظ", saved: "محفوظ", reveal: "اكشف البريد", revealing: "نبحث عن البريد…", openLead: "افتح",
     leader: "صاحب قرار", copy: "نسخ",
     status: { valid: "موثّق", risky: "غير مؤكد", invalid: "غير صالح", not_found: "ما لقيناه، واسترجعنا الرصيد" } as Record<string, string>,
@@ -536,6 +538,9 @@ export function SearchApp({ lang, defaults, initialCredits, saved: initialSaved 
       )}
 
       {!busy && people && people.length > 0 && (
+        <BulkBar t={t} people={people} leads={leads} personKey={personKey} save={save} />
+      )}
+      {!busy && people && people.length > 0 && (
         <ul className="flex flex-col gap-2">{people.map((p) => <PersonRow key={personKey(p)} p={p} t={t} state={leads[personKey(p)]} onSave={() => void save(p)} onReveal={() => void reveal(p)} lang={lang} />)}</ul>
       )}
 
@@ -602,6 +607,41 @@ function CompanyDetail({ c, d, t, lang, leads, personKey, onFind, onNews, onSave
 }
 
 /** What is happening while a search runs, step by step — not a blank skeleton. */
+/** Save many people as leads at once, or take the results away as a CSV. */
+function BulkBar({ t, people, leads, personKey, save }: {
+  t: (typeof C)["en"]; people: Person[]; leads: Record<string, LeadState>; personKey: (p: Person) => string; save: (p: Person) => Promise<string | undefined>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<number | null>(null);
+  const unsaved = people.filter((p) => !leads[personKey(p)]?.leadId);
+  const leaders = unsaved.filter((p) => p.leader);
+  async function saveMany(list: Person[]) {
+    setBusy(true); let n = 0;
+    for (const p of list) if (await save(p)) n++;
+    setBusy(false); setDone(n);
+  }
+  function csv() {
+    const cell = (v?: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [["name", "title", "company", "company domain", "linkedin", "location"], ...people.map((p) => [p.name, p.title, p.company, p.companyDomain, p.profileUrl, p.location])];
+    const blob = new Blob(["\uFEFF" + rows.map((r) => r.map(cell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `intro-people-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  const btn = "flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium disabled:opacity-50";
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="bulk-bar">
+      {leaders.length > 0 && leaders.length < unsaved.length && (
+        <button type="button" disabled={busy} onClick={() => void saveMany(leaders)} className={`${btn} bg-brand text-white`}>{busy ? t.bulk.saving : t.bulk.saveLeaders(leaders.length)}</button>
+      )}
+      {unsaved.length > 0 && (
+        <button type="button" disabled={busy} data-testid="save-all" onClick={() => void saveMany(unsaved)} className={`${btn} ${leaders.length > 0 && leaders.length < unsaved.length ? "bg-white text-ink outline outline-1 -outline-offset-1 outline-line" : "bg-brand text-white"}`}>{busy ? t.bulk.saving : t.bulk.saveAll(unsaved.length)}</button>
+      )}
+      <button type="button" onClick={csv} className={`${btn} bg-white text-ink outline outline-1 -outline-offset-1 outline-line`}>{t.bulk.csv}</button>
+      <span className="text-[12.5px] text-subtle">{done !== null ? t.bulk.done(done) : t.bulk.hint}</span>
+    </div>
+  );
+}
+
 function Progress({ steps, summary }: { steps: string[]; summary: string }) {
   const [at, setAt] = useState(1);
   useEffect(() => {

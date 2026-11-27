@@ -529,3 +529,12 @@ export async function logActivityAction(formData: FormData): Promise<void> {
   revalidatePath(`/leads/${leadId}`);
   redirect(`/leads/${leadId}?lang=${leadLang(formData)}#activity`);
 }
+
+/** Throws away a request that was never confirmed. */
+export async function discardRequestAction(formData: FormData): Promise<void> {
+  const account = await currentAccount();
+  const requestId = String(formData.get("requestId") ?? "");
+  await repo.discardRequest(requestId, account.id);
+  revalidatePath("/requests"); revalidatePath("/home");
+  redirect(`/requests?lang=${String(formData.get("lang") ?? "") === "en" ? "en" : "ar"}`);
+}

@@ -111,7 +111,7 @@ await Promise.all([page.waitForURL(/\/confirm/), page.click("[data-testid=create
 step("brief extracted", page.url().split("/").slice(-2)[0]);
 
 // 2. confirm
-const summary = await page.locator("textarea[name=summaryAr]").inputValue();
+const summary = (await page.getByTestId("brief-summary").innerText()).trim();
 step("brief summary", summary);
 await shot("02-confirm");
 await Promise.all([page.waitForURL(/\/requests\/[^/]+$/), page.click("[data-testid=confirm-brief]")]);

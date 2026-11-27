@@ -57,3 +57,17 @@ describe("CRM without sending: storage", () => {
     expect(await repo.updateLeadDetails("someone-else", id, { tags: ["x"] }, db)).toBe(false);
   });
 });
+
+describe("discarding a draft request", () => {
+  it("deletes only the owner's unconfirmed request", async () => {
+    const db = await testDb();
+    await reset(db);
+    const [u] = await db.insert(authUsers).values({ email: "a@b.sa", name: "x" }).returning();
+    const [a] = await db.insert(accounts).values({ userId: u.id, displayName: "A", initial: "A", email: "a@b.sa", locale: "ar" }).returning();
+    const brief: import("../types").Brief = { goalType: "sales", targetRoles: [], seniority: [], industries: [], geos: [], inclusions: [], exclusions: [], summaryAr: "", confidence: 1, extractedBy: "form" };
+    const id = await repo.createRequest({ accountId: a.id, rawText: "x", brief: { ...brief }, slaHours: 24 }, db);
+    expect(await repo.discardRequest(id, "someone-else", db)).toBe(false);
+    expect(await repo.discardRequest(id, a.id, db)).toBe(true);
+    expect(await repo.discardRequest(id, a.id, db)).toBe(false);
+  });
+});

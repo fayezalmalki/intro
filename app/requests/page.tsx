@@ -4,7 +4,8 @@ import { Badge, Btn, Card, Empty, PageHeader, Starter, Tip } from "@/components/
 import { pickLang } from "@/components/site/AuthShell";
 import { Icon } from "@/components/site/ui";
 import { GOAL_LABEL, REQUEST_STATUS } from "@/lib/app-copy";
-import { balanceOf } from "@/lib/credits";
+import * as repo from "@/lib/db/repo";
+import { discardRequestAction } from "@/lib/actions";
 import { loadMyRequests } from "@/lib/db/loaders";
 import { presetHref } from "@/lib/search/presets";
 import { pageAccount } from "@/lib/session";
@@ -43,7 +44,8 @@ export default async function MyRequestsPage({ searchParams }: { searchParams: P
   const t = C[lang];
   const db = await loadMyRequests(account.id);
   const rows = [...db.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const credits = balanceOf(db, account.id);
+  // The request loader doesn't carry the ledger, so its balance read 0.
+  const credits = await repo.creditBalance(account.id);
   const dict = lang === "ar" ? arDict : enDict;
 
   return (
@@ -85,6 +87,12 @@ export default async function MyRequestsPage({ searchParams }: { searchParams: P
                       <Badge tone={s.tone} dot>{s[lang]}</Badge>
                       <Icon name="arrow-right" flip className="text-subtle" />
                     </a>
+                    {r.status === "intent_review" && (
+                      <form action={discardRequestAction} className="flex justify-end px-2 pt-1">
+                        <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="lang" value={lang} />
+                        <button type="submit" data-testid="discard-request" className="cursor-pointer text-[12.5px] text-subtle hover:text-accent-ink">{lang === "ar" ? "احذف المسودة" : "Discard draft"}</button>
+                      </form>
+                    )}
                   </li>
                 );
               })}
