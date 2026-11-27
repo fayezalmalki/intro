@@ -20,7 +20,7 @@ const C = {
   en: {
     title: "What do you want to make happen?",
     sub: "Pick your goal, the sectors and who you want to reach. We show you the brief before we look for anyone.",
-    sentence: "Rather describe it in a sentence?", sentenceSub: "We'll turn it into picks you can check and edit.",
+    sendSentence: "Send the sentence", sentence: "Rather describe it in a sentence?", sentenceSub: "We'll turn it into picks you can check and edit.",
     editing: "Edit your request", needSector: "Pick at least one sector so we know where to look.",
     label: "Your goal",
     placeholder: "e.g. We sell claims-automation software and want meetings with decision makers at Saudi insurers",
@@ -36,7 +36,7 @@ const C = {
   ar: {
     title: "وش تبي تحقق؟",
     sub: "اختر هدفك والقطاعات ومين تبي توصل له. نعرض عليك الملخص قبل ما نبحث عن أي أحد.",
-    sentence: "تفضّل تكتبه في جملة؟", sentenceSub: "نحوّله لاختيارات تراجعها وتعدّلها.",
+    sendSentence: "أرسل الجملة", sentence: "تفضّل تكتبه في جملة؟", sentenceSub: "نحوّله لاختيارات تراجعها وتعدّلها.",
     editing: "عدّل طلبك", needSector: "اختر قطاعًا واحدًا على الأقل عشان نعرف وين نبحث.",
     label: "هدفك",
     placeholder: "مثال: نبيع برمجيات لأتمتة المطالبات ونبي اجتماعات مع أصحاب القرار في شركات التأمين السعودية",
@@ -96,7 +96,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
                 className="w-full resize-y rounded-[14px] bg-surface-2 p-4 text-[15.5px] leading-[25px] text-ink outline-none placeholder:text-faint focus:outline-2 focus:outline-brand"
               />
               <div className="flex justify-end">
-                <SubmitButton pending={t.going} icon="arrow-right" testId="create-request-text">{t.go}</SubmitButton>
+                <SubmitButton pending={t.going} icon="arrow-right" testId="create-request-text">{t.sendSentence}</SubmitButton>
               </div>
             </form>
           </details>
