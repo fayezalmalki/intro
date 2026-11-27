@@ -242,7 +242,7 @@ export async function sendInviteBack(to: string): Promise<void> {
 
 /**
  * Outreach a user sends through intro. A separate sending domain
- * (send.intro.sa) and login, so outreach reputation can never touch sign-in
+ * (reach.intro.sa) and login, so outreach reputation can never touch sign-in
  * mail on intro.sa. "<Name> via intro" as the sender, replies to the user's
  * own address, a one-click opt-out (RFC 8058) and an honest footer.
  */

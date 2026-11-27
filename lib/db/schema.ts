@@ -355,7 +355,7 @@ export const leads = sqliteTable("leads", {
 // ── Outreach sent through intro ───────────────────────────────
 
 /**
- * Every message a user asked intro to send for them (send.intro.sa), and every
+ * Every message a user asked intro to send for them (reach.intro.sa), and every
  * refusal — the record the send checks and the auto-pause read from.
  */
 export const outbound = sqliteTable("outbound", {
