@@ -27,7 +27,7 @@ const COPY = {
     sendFail: "We couldn't send the code. Check the address and try again.",
     offline: "We couldn't reach intro.sa. Check your connection and try again.",
     bad: "That code didn't work, or it's expired. Try again or resend it.",
-    fine: "New here? Signing in creates your account.",
+    fine: "New here? Signing in creates your account and means you agree to our terms and privacy policy.",
   },
   ar: {
     title: "أهلًا بك في انترو",
@@ -49,7 +49,7 @@ const COPY = {
     sendFail: "ما قدرنا نرسل الرمز. تأكد من البريد وجرّب مرة ثانية.",
     offline: "ما قدرنا نتصل بانترو. تأكد من اتصالك وجرّب مرة ثانية.",
     bad: "الرمز غير صحيح أو انتهت صلاحيته. جرّب مرة ثانية أو اطلب رمزًا جديدًا.",
-    fine: "أول مرة هنا؟ الدخول ينشئ حسابك تلقائيًا.",
+    fine: "أول مرة هنا؟ الدخول ينشئ حسابك، ويعني موافقتك على الشروط وسياسة الخصوصية.",
   },
 };
 
@@ -159,7 +159,7 @@ export function LoginForm({ target, providers, lang }: { target: string; provide
             />
             <button type="submit" className={primaryBtn} disabled={!valid || busy}>{busy ? t.wait : t.send}</button>
           </form>
-          <p className="text-[13px] text-subtle">{t.fine}</p>
+          <p className="text-[13px] text-subtle">{t.fine} <a href={`/terms?lang=${lang}`} className="underline hover:text-ink">{lang === "ar" ? "الشروط" : "Terms"}</a> · <a href={`/privacy?lang=${lang}`} className="underline hover:text-ink">{lang === "ar" ? "الخصوصية" : "Privacy"}</a></p>
         </>
       ) : (
         <>

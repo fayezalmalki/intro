@@ -352,12 +352,37 @@ export const leads = sqliteTable("leads", {
   index("leads_account_idx").on(t.accountId),
 ]);
 
+// ── Outreach sent through intro ───────────────────────────────
+
+/**
+ * Every message a user asked intro to send for them (send.intro.sa), and every
+ * refusal — the record the send checks and the auto-pause read from.
+ */
+export const outbound = sqliteTable("outbound", {
+  id: id(),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  leadId: text("lead_id").notNull().references(() => leads.id, { onDelete: "cascade" }),
+  toHash: text("to_hash").notNull(),
+  /** 0 = first message, 1 = follow-up, 2 = last note. */
+  step: integer("step").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  variantHash: text("variant_hash").notNull(),
+  status: text("status").$type<"sent" | "failed" | "refused">().notNull(),
+  failures: text("failures", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  error: text("error"),
+  createdAt: isoNow("created_at"),
+}, (t) => [
+  index("outbound_account_idx").on(t.accountId, t.createdAt),
+  index("outbound_to_idx").on(t.toHash, t.createdAt),
+]);
+
 // ── Email log ─────────────────────────────────────────────────
 
 /** Every email the app tried to send, and how it went (the monitoring page). */
 export const emailLog = sqliteTable("email_log", {
   id: id(),
-  kind: text("kind").$type<"otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back">().notNull(),
+  kind: text("kind").$type<"otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back" | "outreach" | "admin_alert">().notNull(),
   to: text("to").notNull(),
   transport: text("transport").$type<"smtp" | "binding" | "log">().notNull(),
   status: text("status").$type<"sent" | "failed">().notNull(),

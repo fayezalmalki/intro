@@ -5,8 +5,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 IMPROVMX="${IMPROVMX:-$HOME/.local/bin/improvmx}"
+# Usage: setup-improvmx-smtp.sh [user] [domain] [secret prefix]
+#   default:  noreply intro.sa IMPROVMX_SMTP   (sign-in and app mail)
+#   outreach: outreach reach.intro.sa OUTREACH_SMTP   (sending through intro)
 USER_LOCAL="${1:-noreply}"
-DOMAIN="intro.sa"
+DOMAIN="${2:-intro.sa}"
+PREFIX="${3:-IMPROVMX_SMTP}"
 
 "$IMPROVMX" account >/dev/null || { echo "Run: improvmx auth login"; exit 1; }
 PW="$(openssl rand -base64 32 | tr -d '/+=\n' | cut -c1-32)"
@@ -18,7 +22,7 @@ fi
 "$IMPROVMX" smtp add "$DOMAIN" "$USER_LOCAL" "$PW" >/dev/null
 echo "✓ ImprovMX SMTP login created: $USER_LOCAL@$DOMAIN"
 
-npx cf workers secrets update IMPROVMX_SMTP_USER --text "$USER_LOCAL@$DOMAIN" --type secret_text >/dev/null
-npx cf workers secrets update IMPROVMX_SMTP_PASSWORD --text "$PW" --type secret_text >/dev/null
+npx cf workers secrets update "${PREFIX}_USER" --text "$USER_LOCAL@$DOMAIN" --type secret_text >/dev/null
+npx cf workers secrets update "${PREFIX}_PASSWORD" --text "$PW" --type secret_text >/dev/null
 unset PW
-echo "✓ Worker secrets IMPROVMX_SMTP_USER and IMPROVMX_SMTP_PASSWORD set"
+echo "✓ Worker secrets ${PREFIX}_USER and ${PREFIX}_PASSWORD set"

@@ -283,6 +283,8 @@ function Footer({ t }: { t: PitchCopy }) {
         <span className="text-[14px] text-muted">{t.footer.tagline}</span>
         <span className="flex-1" />
         <a href={t.nav.other.href} className="text-[13.5px] font-medium text-muted hover:text-ink">{t.nav.other.label}</a>
+        <a href={`/privacy?lang=${t.locale}`} className="text-[13.5px] font-medium text-muted hover:text-ink">{t.locale === "ar" ? "الخصوصية" : "Privacy"}</a>
+        <a href={`/terms?lang=${t.locale}`} className="text-[13.5px] font-medium text-muted hover:text-ink">{t.locale === "ar" ? "الشروط" : "Terms"}</a>
         <a href={`/login?lang=${t.locale}`} className="text-[13.5px] font-medium text-muted hover:text-ink">{t.nav.signIn}</a>
         <span className="text-[13px] text-subtle">{t.footer.rights}</span>
       </Container>

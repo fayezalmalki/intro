@@ -20,9 +20,13 @@ export default {
     }
     return vinext.fetch!(request, env, ctx);
   },
-  /** Daily at 06:00 UTC (09:00 Riyadh): email each user the follow-ups due today. */
+  /** Daily at 06:00 UTC (09:00 Riyadh): follow-up reminders to users, and an alert to admins if anything failed. */
   async scheduled(_controller, _env, ctx) {
     const { sendDueReminders } = await import("../lib/reminders");
-    ctx.waitUntil(sendDueReminders().then((r) => console.log(`[reminders] ${r.leads} follow-ups across ${r.accounts} accounts`)));
+    const { sendAdminAlerts } = await import("../lib/alerts");
+    ctx.waitUntil(Promise.allSettled([
+      sendDueReminders().then((r) => console.log(`[reminders] ${r.leads} follow-ups across ${r.accounts} accounts`)),
+      sendAdminAlerts().then((sent) => console.log(`[alerts] ${sent ? "sent" : "nothing to report"}`)),
+    ]));
   },
 } satisfies ExportedHandler;

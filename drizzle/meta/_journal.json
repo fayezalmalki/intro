@@ -64,6 +64,13 @@
       "when": 1795796795780,
       "tag": "0008_email_log",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1795799470141,
+      "tag": "0009_outbound",
+      "breakpoints": true
     }
   ]
 }
