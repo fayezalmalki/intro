@@ -4,9 +4,12 @@ import { SubmitButton } from "@/components/app/SubmitButton";
 import { Card, PageHeader, Tip } from "@/components/app/ui";
 import { pickLang } from "@/components/site/AuthShell";
 import { Icon, cx } from "@/components/site/ui";
-import { createRequest } from "@/lib/actions";
+import { IntakeForm } from "@/components/app/IntakeForm";
+import { createRequest, createStructuredRequest } from "@/lib/actions";
+import { loadRequestContext } from "@/lib/db/loaders";
+import { picksFromBrief } from "@/lib/intake";
 import * as repo from "@/lib/db/repo";
-import { pageAccount } from "@/lib/session";
+import { canReadRequest, pageAccount } from "@/lib/session";
 import { ar as arDict } from "@/lib/site/ar";
 import { en as enDict } from "@/lib/site/en";
 
@@ -16,7 +19,9 @@ export const metadata: Metadata = { title: "New request · intro" };
 const C = {
   en: {
     title: "What do you want to make happen?",
-    sub: "Describe the goal in a sentence — in Arabic or English. We'll confirm what we understood before we look for anyone.",
+    sub: "Pick your goal, the sectors and who you want to reach. We show you the brief before we look for anyone.",
+    sentence: "Rather describe it in a sentence?", sentenceSub: "We'll turn it into picks you can check and edit.",
+    editing: "Edit your request", needSector: "Pick at least one sector so we know where to look.",
     label: "Your goal",
     placeholder: "e.g. We sell claims-automation software and want meetings with decision makers at Saudi insurers",
     go: "Continue", going: "Understanding your goal…",
@@ -25,12 +30,14 @@ const C = {
     where: ["Where", "the sector and market — “private hospitals in Riyadh”"],
     why: ["Why", "what you want from them — a meeting, a pilot, a role, an intro"],
     starters: "Or start from a goal", next: "What happens next",
-    flow: ["We turn your sentence into a brief you confirm", "We find companies, people and this week's news", "You get ranked people with a reason and a first line"],
+    flow: ["You confirm the brief built from your picks", "We find companies, people and this week's news", "You get ranked people with a reason and a first line"],
     browse: "Prefer to browse?", browseCta: "Search companies and people directly",
   },
   ar: {
     title: "وش تبي تحقق؟",
-    sub: "اكتب هدفك في جملة، بالعربي أو بالإنجليزي. نعرض عليك اللي فهمناه قبل ما نبحث عن أي أحد.",
+    sub: "اختر هدفك والقطاعات ومين تبي توصل له. نعرض عليك الملخص قبل ما نبحث عن أي أحد.",
+    sentence: "تفضّل تكتبه في جملة؟", sentenceSub: "نحوّله لاختيارات تراجعها وتعدّلها.",
+    editing: "عدّل طلبك", needSector: "اختر قطاعًا واحدًا على الأقل عشان نعرف وين نبحث.",
     label: "هدفك",
     placeholder: "مثال: نبيع برمجيات لأتمتة المطالبات ونبي اجتماعات مع أصحاب القرار في شركات التأمين السعودية",
     go: "متابعة", going: "نفهم هدفك…",
@@ -39,7 +46,7 @@ const C = {
     where: ["وين", "القطاع والسوق، مثل «المستشفيات الخاصة في الرياض»"],
     why: ["ليش", "وش تبي منهم: اجتماع، أو تجربة، أو وظيفة، أو تعارف"],
     starters: "أو ابدأ من هدف", next: "وش يصير بعدها",
-    flow: ["نحوّل جملتك إلى ملخص تأكده", "نلقى الجهات والأشخاص وأخبار هذا الأسبوع", "توصلك قائمة مرتبة، ومع كل شخص سبب وأول سطر"],
+    flow: ["تأكد الملخص المبني من اختياراتك", "نلقى الجهات والأشخاص وأخبار هذا الأسبوع", "توصلك قائمة مرتبة، ومع كل شخص سبب وأول سطر"],
     browse: "تفضّل تتصفح بنفسك؟", browseCta: "ابحث عن الجهات والأشخاص مباشرة",
   },
 };
@@ -48,7 +55,7 @@ const C = {
  * The intake form. `?q=` carries a sentence typed on the landing or a starter
  * picked below, so nothing typed before sign-in is lost.
  */
-export default async function NewRequestPage({ searchParams }: { searchParams: Promise<{ q?: string; company?: string; lang?: string }> }) {
+export default async function NewRequestPage({ searchParams }: { searchParams: Promise<{ q?: string; company?: string; lang?: string; edit?: string; need?: string }> }) {
   const params = await searchParams;
   const carried = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString();
   const account = await pageAccount(`/new${carried ? `?${carried}` : ""}`);
@@ -57,26 +64,42 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
   const dict = lang === "ar" ? arDict : enDict;
   const credits = await repo.creditBalance(account.id);
   const prefill = params.q?.trim() ?? "";
+  // Editing an unconfirmed request, or a sentence carried from the landing / a starter.
+  const editing = params.edit
+    ? (await loadRequestContext(params.edit)).requests.find((r) => r.id === params.edit && canReadRequest(account, r.accountId) && !r.confirmedAt)
+    : undefined;
+  const initial = picksFromBrief(editing?.brief, editing ? editing.rawText : prefill);
 
   return (
     <AppShell account={account} lang={lang} on="requests" credits={credits}>
       <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
         <div className="flex flex-col gap-6">
-          <PageHeader title={t.title} sub={t.sub} />
-          <Card className="p-4 sm:p-5">
-            <form action={createRequest} className="flex flex-col gap-3">
+          <PageHeader title={editing ? t.editing : t.title} sub={t.sub} />
+          {params.need === "sector" && <Tip icon="target" tone="peach">{t.needSector}</Tip>}
+          <Card className="p-4 sm:p-6">
+            <IntakeForm lang={lang} action={createStructuredRequest} initial={initial} requestId={editing?.id} />
+          </Card>
+
+          <details className="group rounded-[16px] bg-white p-4 outline outline-1 -outline-offset-1 outline-line sm:p-5" open={Boolean(prefill) && initial.sectors.length === 0}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[14.5px] font-semibold text-ink">{t.sentence}</span>
+                <span className="text-[12.5px] text-subtle">{t.sentenceSub}</span>
+              </span>
+              <Icon name="chevron-down" size={16} className="text-muted transition-transform group-open:rotate-180" />
+            </summary>
+            <form action={createRequest} className="mt-4 flex flex-col gap-3">
               <label htmlFor="rawText" className="text-[13px] font-medium text-subtle">{t.label}</label>
               <textarea
-                id="rawText" name="rawText" rows={5} required dir="auto" autoFocus={!prefill}
+                id="rawText" name="rawText" rows={4} required dir="auto"
                 defaultValue={prefill} placeholder={t.placeholder}
-                className="w-full resize-y rounded-[14px] bg-surface-2 p-4 text-[16px] leading-[26px] text-ink outline-none placeholder:text-faint focus:outline-2 focus:outline-brand"
+                className="w-full resize-y rounded-[14px] bg-surface-2 p-4 text-[15.5px] leading-[25px] text-ink outline-none placeholder:text-faint focus:outline-2 focus:outline-brand"
               />
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-[13px] text-subtle">{lang === "ar" ? "ما نتواصل مع أي أحد بدون موافقتك." : "Nobody hears from us without your yes."}</span>
-                <SubmitButton pending={t.going} icon="arrow-right" testId="create-request">{t.go}</SubmitButton>
+              <div className="flex justify-end">
+                <SubmitButton pending={t.going} icon="arrow-right" testId="create-request-text">{t.go}</SubmitButton>
               </div>
             </form>
-          </Card>
+          </details>
 
           <section className="flex flex-col gap-3">
             <h2 className="text-[15px] font-semibold text-ink">{t.starters}</h2>
