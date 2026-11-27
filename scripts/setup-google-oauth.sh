@@ -8,15 +8,32 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-read -r -p "Google OAuth Client ID: " CID
-read -r -s -p "Google OAuth Client secret (hidden): " CSECRET; echo
-[[ "$CID" == *.apps.googleusercontent.com ]] || { echo "✗ That doesn't look like a client ID (…apps.googleusercontent.com)"; exit 1; }
-[[ -n "$CSECRET" ]] || { echo "✗ Empty secret"; exit 1; }
-
-npx cf workers secrets update GOOGLE_CLIENT_ID --text "$CID" --type secret_text >/dev/null
-npx cf workers secrets update GOOGLE_CLIENT_SECRET --text "$CSECRET" --type secret_text >/dev/null
-unset CSECRET
-echo "✓ Worker secrets GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET set"
+# Without a terminal to type in (e.g. run from Claude Code with "!"), take each
+# value from the clipboard instead:  setup-google-oauth.sh id | secret | check
+MODE="${1:-prompt}"
+if [[ "$MODE" == "id" ]]; then
+  CID="$(pbpaste | tr -d '[:space:]')"
+  [[ "$CID" == *.apps.googleusercontent.com ]] || { echo "✗ The clipboard doesn't hold a client ID (…apps.googleusercontent.com). Copy it and rerun."; exit 1; }
+  npx cf workers secrets update GOOGLE_CLIENT_ID --text "$CID" --type secret_text >/dev/null
+  echo "✓ GOOGLE_CLIENT_ID set (${CID:0:6}…). Now copy the Client secret and run: setup-google-oauth.sh secret"; exit 0
+elif [[ "$MODE" == "secret" ]]; then
+  CSECRET="$(pbpaste | tr -d '[:space:]')"
+  [[ -n "$CSECRET" && "$CSECRET" != *.apps.googleusercontent.com ]] || { echo "✗ The clipboard doesn't hold the client secret. Copy it and rerun."; exit 1; }
+  npx cf workers secrets update GOOGLE_CLIENT_SECRET --text "$CSECRET" --type secret_text >/dev/null
+  unset CSECRET; printf '' | pbcopy
+  echo "✓ GOOGLE_CLIENT_SECRET set (clipboard cleared). Checking with Google…"
+elif [[ "$MODE" == "check" ]]; then
+  :
+else
+  read -r -p "Google OAuth Client ID: " CID
+  read -r -s -p "Google OAuth Client secret (hidden): " CSECRET; echo
+  [[ "$CID" == *.apps.googleusercontent.com ]] || { echo "✗ That doesn't look like a client ID (…apps.googleusercontent.com)"; exit 1; }
+  [[ -n "$CSECRET" ]] || { echo "✗ Empty secret"; exit 1; }
+  npx cf workers secrets update GOOGLE_CLIENT_ID --text "$CID" --type secret_text >/dev/null
+  npx cf workers secrets update GOOGLE_CLIENT_SECRET --text "$CSECRET" --type secret_text >/dev/null
+  unset CSECRET
+  echo "✓ Worker secrets GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET set"
+fi
 
 sleep 5
 URL=$(curl -s -X POST https://intro.sa/api/auth/sign-in/social -H "content-type: application/json" -H "origin: https://intro.sa" \
