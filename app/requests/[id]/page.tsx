@@ -24,7 +24,7 @@ type Lang = "ar" | "en";
 const C = {
   en: {
     steps: ["Your goal", "Confirm", "Find people", "Results", "Reach out"],
-    results: (n: number) => `${n} people worth reaching`,
+    results: (n: number) => (n === 1 ? "1 person worth reaching" : `${n} people worth reaching`),
     version: (v: number) => `Version ${v}`,
     updated: (v: number, by: string) => `We updated your list — version ${v}${by}.`,
     updatedSub: "Anyone you already contacted keeps their status.",
@@ -46,7 +46,7 @@ const C = {
   },
   ar: {
     steps: ["هدفك", "التأكيد", "البحث", "النتائج", "التواصل"],
-    results: (n: number) => `${n} أشخاص يستحقون التواصل`,
+    results: (n: number) => n === 1 ? "شخص واحد يستحق التواصل" : n === 2 ? "شخصان يستحقان التواصل" : n <= 10 ? `${n} أشخاص يستحقون التواصل` : `${n} شخصًا يستحقون التواصل`,
     version: (v: number) => `النسخة ${v}`,
     updated: (v: number, by: string) => `حدّثنا قائمتك، النسخة ${v}${by}.`,
     updatedSub: "اللي تواصلت معهم قبل، حالتهم محفوظة كما هي.",
@@ -57,7 +57,7 @@ const C = {
     activate: "فعّل الإرسال", sending: (cap: number, credits: number) => `الإرسال مفعّل · ${cap} يوميًا · الرصيد ${credits}`,
     why: "ليش هو", whyNow: "ليش الحين", sources: "المصادر", opener: "أول رسالة مقترحة",
     send: "أرسل", sendIntro: "اطلب تعارف", sendingNow: "نرسل…", linkedin: "LinkedIn", isNew: (v: number) => `جديد في النسخة ${v}`,
-    footnote: "حتى ١٠ رسائل لكل طلب، ورسالة وحدة لكل شخص. ما نرسل شيئًا بدون اختيارك.",
+    footnote: "حتى 10 رسائل لكل طلب، ورسالة وحدة لكل شخص. ما نرسل شيئًا بدون اختيارك.",
     searching: "نبحث الآن عن الأشخاص المناسبين…", searchingSub: "نحدد الجهات، ونلقى صاحب القرار في كل وحدة، ونتحقق من أخبار هذا الأسبوع. النتائج تظهر هنا تلقائيًا، وعادةً خلال دقيقة.",
     dontWait: "ما تبي تنتظر؟", dontWaitSub: "ابحث عن الجهات وأصحاب القرار مباشرة.", searchNow: "ابحث الآن",
     review: "مدير حسابك يراجع قائمتك.", reviewSub: "المطابقات جاهزة وتُراجع قبل ما توصلك، وعادةً خلال يوم عمل.",
@@ -140,7 +140,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   return shell(
     <>
       <Steps steps={t.steps.map((s, i) => ({ label: s, state: i < 3 ? "done" : i === 3 ? (sentAny ? "done" : "active") : sentAny ? "active" : "pending" }))} />
-      <PageHeader title={t.results(published.items.length)} sub={<span dir="auto">«{req.rawText}»</span>} actions={<Badge>{t.version(published.version)}</Badge>} />
+      <PageHeader title={t.results(published.items.length)} sub={<span dir="auto">«{req.rawText}»</span>} actions={published.version > 1 ? <Badge>{t.version(published.version)}</Badge> : undefined} />
 
       {published.version > 1 && (
         <div data-testid="version-banner">
@@ -180,9 +180,7 @@ function SendStatus({ t, account, credits, requestId }: { t: (typeof C)["en"]; a
       <input type="hidden" name="requestId" value={requestId} />
       <button type="submit" data-testid="activate-send" className="flex h-9 cursor-pointer items-center rounded-full bg-brand px-4 text-[13.5px] font-medium text-white">{t.activate}</button>
     </form>
-  ) : account.activationRequestedAt ? (
-    <Badge tone="sand">{t.observerPending.split(/[—،,]/)[0]}</Badge>
-  ) : (
+  ) : account.activationRequestedAt ? undefined : (
     <Btn href={`/activate?next=${encodeURIComponent(`/requests/${requestId}`)}`} size="sm">{t.activate}</Btn>
   );
   return <Tip icon="shield-check" tone="sand" title={account.activationRequestedAt ? t.observerPending : t.observer} action={action}>{t.observerSub}</Tip>;

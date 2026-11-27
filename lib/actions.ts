@@ -17,7 +17,7 @@ import { createInvoice, moyasarKey } from "./billing/moyasar";
 import { db } from "./db";
 import { accounts } from "./db/schema";
 import { eq } from "drizzle-orm";
-import { assertDevTools } from "./env";
+import { assertDevTools, isProduction } from "./env";
 import type { Channel, PipelineSource, Role } from "./types";
 
 const SLA_HOURS = 24;
@@ -74,6 +74,12 @@ export async function confirmBrief(formData: FormData): Promise<void> {
     if (await repo.confirmBriefForSourcing(requestId, summary || undefined)) {
       await startSourcing(workflow, requestId);
     }
+  } else if (isProduction) {
+    // No live sourcing in production (a missing secret or binding). Never
+    // fall back to the seeded demo people for a real account: return the
+    // credits and say so on the confirm screen.
+    await repo.refundRequest(owner.id, requestId);
+    redirect(`/requests/${requestId}/confirm?unavailable=1`);
   } else {
     await repo.confirmBrief(requestId, summary || undefined);
     // Without live sourcing the draft is written inline; publish it for

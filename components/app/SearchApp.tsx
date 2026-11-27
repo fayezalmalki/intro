@@ -33,6 +33,7 @@ const C = {
     search: "Search", searching: "Searching…",
     found: (n: number) => `${n} result${n === 1 ? "" : "s"}`,
     none: "Nothing matched. Try a broader sector, fewer keywords, or another market.",
+    noneArabic: "Nothing matched these Arabic words. Company data is indexed in English — pick a sector above, or try English keywords (e.g. software, logistics, fintech).",
     start: "Pick a way to search, set the market, and go.",
     decision: "Decision makers", news: "News", website: "Website",
     save: "Save lead", saved: "Saved", reveal: "Reveal email", revealing: "Looking up…", openLead: "Open lead",
@@ -80,6 +81,7 @@ const C = {
     search: "ابحث", searching: "نبحث…",
     found: (n: number) => `${n} نتيجة`,
     none: "ما لقينا تطابق. جرّب قطاعًا أوسع، أو كلمات أقل، أو سوقًا آخر.",
+    noneArabic: "ما لقينا تطابق لهذي الكلمات. بيانات الشركات مفهرسة بالإنجليزي، فاختر قطاعًا من فوق، أو جرّب كلمات إنجليزية (مثل software أو logistics أو fintech).",
     start: "اختر طريقة البحث، وحدد السوق، وابدأ.",
     decision: "أصحاب القرار", news: "الأخبار", website: "الموقع",
     save: "احفظ", saved: "محفوظ", reveal: "اكشف البريد", revealing: "نبحث عن البريد…", openLead: "افتح",
@@ -356,7 +358,7 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
         </ul>
       )}
 
-      {!busy && results && results.length === 0 && <p className="rounded-xl bg-white px-4 py-6 text-center text-[14.5px] text-muted outline outline-1 -outline-offset-1 outline-line">{t.none}</p>}
+      {!busy && results && results.length === 0 && <p className="rounded-xl bg-white px-4 py-6 text-center text-[14.5px] leading-[23px] text-muted outline outline-1 -outline-offset-1 outline-line">{/[\u0600-\u06FF]/.test(`${keywords} ${describe}`) ? t.noneArabic : t.none}</p>}
 
       {!busy && companies && companies.length > 0 && (
         <ul className="flex flex-col gap-2.5">
