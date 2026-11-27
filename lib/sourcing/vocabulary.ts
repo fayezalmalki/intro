@@ -1,4 +1,5 @@
 import type { Brief, GoalType } from "../types";
+import { toProviderTerms } from "../search/arabic";
 
 /**
  * The brief is written in Arabic, for the requester to read and correct. The
@@ -96,7 +97,8 @@ export function planSearch(brief: Brief, rawText: string, sectors: string[] = []
   // Industries from the brief first; the raw text only when the brief has none,
   // so a requester's correction on the confirm screen wins.
   const fromBrief = sectorsIn([...brief.industries, ...sectors].join(" | "));
-  const industries = fromBrief.length ? fromBrief : sectorsIn(rawText);
+  const translated = toProviderTerms([rawText, ...brief.industries].join(" "));
+  const industries = fromBrief.length ? fromBrief : sectorsIn(rawText).length ? sectorsIn(rawText) : translated.industry ? [translated.industry] : [];
 
   const roleText = brief.targetRoles.join(" ");
   const titles = ROLES.filter((r) => has(roleText, r.match)).map((r) => r.title);
@@ -104,7 +106,9 @@ export function planSearch(brief: Brief, rawText: string, sectors: string[] = []
   return {
     industries: [...new Set(industries)].slice(0, 2),
     titles: titles.length ? [...new Set(titles)] : [DEFAULT_TITLE[brief.goalType]],
-    fallbackQuery: rawText,
+    // Providers index in English: the translated words, never the raw Arabic
+    // sentence (which matched estate agents in Italy). Empty = nothing to search on.
+    fallbackQuery: translated.terms.trim(),
   };
 }
 

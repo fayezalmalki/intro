@@ -83,6 +83,7 @@ export async function runSourcing(
       });
     } catch (error) {
       result = { value: empty, costMicro: 0, failed: error instanceof Error ? error.message : String(error) };
+      console.error(`[sourcing] ${input.requestId} ${name} failed: ${String(result.failed).slice(0, 300)}`);
     }
     spent += result.costMicro;
     if (result.failed === "budget") notes.push("توقف البحث عند حد الميزانية.");
@@ -94,7 +95,8 @@ export async function runSourcing(
   const companyLists: Company[][] = [];
   const queries = plan.industries.length
     ? plan.industries.map((industry) => ({ industry }))
-    : [{ q: plan.fallbackQuery }];
+    : plan.fallbackQuery ? [{ q: plan.fallbackQuery }] : [];
+  if (queries.length === 0) notes.push("ما قدرنا نحدد القطاع من الطلب.");
   for (const [i, q] of queries.entries()) {
     companyLists.push(await stage(`companies-${i}`, [] as Company[], () =>
       deps.provider.findCompanies({ ...q, country: COUNTRY, limit: 25 }, options(`companies-${i}`))));

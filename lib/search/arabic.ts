@@ -30,7 +30,7 @@ const TERMS: [string[], string][] = [
   [["ذكاء اصطناعي", "الذكاء الاصطناعي"], "artificial intelligence"],
   [["أمن سيبراني", "الأمن السيبراني", "سيبراني"], "cybersecurity"],
   [["برمجيات", "سوفتوير"], "software"],
-  [["ناشئة", "الناشئة", "ستارتب"], "startups"],
+  [["شركات جديدة", "الشركات الجديدة", "ناشئة", "الناشئة", "ستارتب"], "startups"],
   [["عالمية", "العالمية", "دولية"], "international"],
   [["أغذية", "اغذية", "غذائية", "مطاعم"], "food and beverage"],
   [["مقاولات", "بناء", "إنشاءات", "انشاءات"], "construction"],
@@ -53,7 +53,7 @@ const norm = (w: string) => w.replace(/[\u064B-\u0652]/g, "").replace(/[إأآ]/
 const normText = (t: string) => t.split(/\s+/).filter(Boolean).map(norm).join(" ");
 
 /** Plurals and forms the sector table does not list. */
-const EXTRA_SECTORS: { m: string; industry: string }[] = [
+const extraSectors = (): { m: string; industry: string }[] => [
   { m: "مستشفيات", industry: "Hospital & Health Care" },
   { m: "صحية", industry: "Hospital & Health Care" },
   { m: "مصارف", industry: "Banking" },
@@ -65,10 +65,14 @@ const EXTRA_SECTORS: { m: string; industry: string }[] = [
   ...DICTIONARY.flatMap((d) => d.synonymsAr.map((m) => ({ m, industry: d.id }))),
 ];
 
-/** Sector words, longest first, so «تقنية مالية» wins over «تقنية». */
-const SECTOR_WORDS = [...SECTORS.flatMap((s) => s.match.filter(hasArabic).map((m) => ({ m, industry: s.industry }))), ...EXTRA_SECTORS]
+/**
+ * Sector words, longest first, so «تقنية مالية» wins over «تقنية». Built on
+ * first use: vocabulary.ts imports this module, so its tables aren't ready at load.
+ */
+let sectorWords: { m: string; industry: string }[] | undefined;
+const SECTOR_WORDS = () => (sectorWords ??= [...SECTORS.flatMap((s) => s.match.filter(hasArabic).map((m) => ({ m, industry: s.industry }))), ...extraSectors()]
   .map((x) => ({ ...x, m: normText(x.m) }))
-  .sort((a, b) => b.m.length - a.m.length);
+  .sort((a, b) => b.m.length - a.m.length));
 
 export interface ProviderTerms {
   /** English words to search with (may be empty). */
@@ -81,22 +85,23 @@ export interface ProviderTerms {
   untranslated: string[];
 }
 
-const ROLE_WORDS = ROLES.flatMap((r) => r.match.filter(hasArabic).map((m) => ({ m: normText(m), title: r.title })))
-  .sort((a, b) => b.m.length - a.m.length);
+let roleWords: { m: string; title: string }[] | undefined;
+const ROLE_WORDS = () => (roleWords ??= ROLES.flatMap((r) => r.match.filter(hasArabic).map((m) => ({ m: normText(m), title: r.title })))
+  .sort((a, b) => b.m.length - a.m.length));
 
 export function toProviderTerms(text: string): ProviderTerms {
   let rest = ` ${normText(text)} `;
   const english: string[] = [];
   let industry: string | undefined;
 
-  for (const { m, industry: ind } of SECTOR_WORDS) {
+  for (const { m, industry: ind } of SECTOR_WORDS()) {
     if (rest.includes(` ${m} `)) {
       industry ??= ind;
       rest = rest.replaceAll(` ${m} `, "  ");
     }
   }
   const titles: string[] = [];
-  for (const { m, title } of ROLE_WORDS) {
+  for (const { m, title } of ROLE_WORDS()) {
     if (rest.includes(` ${m} `)) {
       if (!titles.includes(title)) titles.push(title);
       rest = rest.replaceAll(` ${m} `, "  ");

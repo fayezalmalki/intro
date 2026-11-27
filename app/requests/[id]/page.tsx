@@ -40,6 +40,7 @@ const C = {
     dontWait: "Don't want to wait?", dontWaitSub: "Search companies and decision makers directly.", searchNow: "Search now",
     review: "Your account manager is reviewing your list.", reviewSub: "Matches are ready and being checked before they reach you — usually within a business day.",
     none: "We couldn't find strong matches for this one.", noneSub: "Try naming the role and sector more specifically, or widen the market. You can also search directly.",
+    noSector: "We couldn't tell which sector to look in. Name it — e.g. \"fintech startups\", \"logistics companies\" — and who you want to reach there.",
     refine: "Refine the request", yourRequest: "Your request",
     stalled: "This is taking longer than usual.", stalledSub: "The search didn't finish. Run it again, or search directly while we look into it.",
     retry: "Run the search again", retrying: "Restarting…",
@@ -64,6 +65,7 @@ const C = {
     dontWait: "ما تبي تنتظر؟", dontWaitSub: "ابحث عن الجهات وأصحاب القرار مباشرة.", searchNow: "ابحث الآن",
     review: "مدير حسابك يراجع قائمتك.", reviewSub: "المطابقات جاهزة وتُراجع قبل ما توصلك، وعادةً خلال يوم عمل.",
     none: "ما لقينا مطابقات قوية لهذا الطلب.", noneSub: "جرّب تحدد المنصب والقطاع بشكل أوضح، أو وسّع السوق. وتقدر تبحث مباشرة.",
+    noSector: "ما قدرنا نحدد القطاع اللي نبحث فيه. اذكره، مثل «شركات تقنية مالية ناشئة» أو «شركات لوجستيات»، ومين تبي توصل له فيها.",
     refine: "عدّل الطلب", yourRequest: "طلبك",
     stalled: "البحث تأخر أكثر من المعتاد.", stalledSub: "ما اكتمل البحث. شغّله مرة ثانية، أو ابحث مباشرة.",
     retry: "شغّل البحث مرة ثانية", retrying: "نعيد التشغيل…",
@@ -108,7 +110,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       <>
         <Steps steps={t.steps.map((s, i) => ({ label: s, state: i < 2 ? "done" : i === 2 ? (emptyDraft ? "done" : "active") : i === 3 && emptyDraft ? "active" : "pending" }))} />
         {emptyDraft ? (
-          <Empty icon="search" title={t.none} body={t.noneSub}>
+          <Empty icon="search" title={t.none} body={draft?.note?.includes("القطاع") ? t.noSector : t.noneSub}>
             <div className="flex flex-wrap gap-2">
               <Btn href={`/new?lang=${lang}&q=${encodeURIComponent(req.rawText)}`} variant="secondary" icon="refresh">{t.refine}</Btn>
               <Btn href={`/search?lang=${lang}&mode=people&run=1&describe=${encodeURIComponent(req.rawText)}`} icon="search">{t.searchNow}</Btn>
