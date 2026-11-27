@@ -69,12 +69,6 @@ export function AppShell({
           ))}
         </nav>
         <div className="flex flex-col gap-2 border-t border-line p-3">
-          {account.state === "observer" && (
-            <a href={`/activate?${q}`} className="flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px] text-muted hover:bg-surface hover:text-ink">
-              <Icon name="shield-check" size={14} className="text-subtle" />
-              <span className="flex-1">{account.activationRequestedAt ? L("Sending: under review", "الإرسال: قيد المراجعة") : L("Sending: not active yet", "الإرسال: غير مفعّل")}</span>
-            </a>
-          )}
           <div className="flex items-center gap-2.5 px-2 py-1">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-avatar text-[13px] font-semibold text-ink">{account.initial}</span>
             <span className="flex min-w-0 flex-1 flex-col">

@@ -13,6 +13,16 @@ const C = {
     news: "What's happening", getNews: "Find recent news", gettingNews: "Searching news…", noNews: "No recent news found.",
     opener: "First message", openerHint: "Edit it, then copy it or open it in your email.", openMail: "Open in email", copyMsg: "Copy message",
     subject: (c: string) => `Quick question about ${c}`,
+    followSubject: (c: string) => `Re: Quick question about ${c}`,
+    stages: { saved: "Saved", contacted: "Contacted", replied: "Replied", meeting: "Meeting", closed: "Closed" } as Record<string, string>,
+    step: { first: "First message", f1: "Follow-up 1", f2: "Last note" },
+    due: (d: string) => `Due ${d}`, dueNow: "Due today", sentOn: (d: string) => `First sent ${d}`,
+    openMine: "Open in my email", sentIt: "Sent it?", yesSent: "Yes, mark as sent", notYet: "Not yet", otherWay: "I sent it another way",
+    replied: "They replied", meeting: "Booked a meeting", closeIt: "Not interested", reopen: "Reopen",
+    done: "No reply after two follow-ups. Close it, or wait — replies often come late.",
+    repliedNote: "Great — reply from your email. Mark a meeting when it's booked.", meetingNote: "Meeting booked. Good luck!", closedNote: "Closed. Reopen any time.",
+    needEmail: "Reveal their email to open this in your mail app — or copy the message.",
+    nextDue: (d: string) => `Next follow-up drafted for ${d}. We'll remind you.`,
     errors: { insufficient_credits: "You're out of credits — top up from Billing.", unavailable: "Live data isn't connected yet.", budget: "Today's search limit is reached.", upstream: "Our providers didn't answer — try again." } as Record<string, string>,
   },
   ar: {
@@ -21,6 +31,16 @@ const C = {
     news: "وش الجديد", getNews: "ابحث عن آخر الأخبار", gettingNews: "نبحث في الأخبار…", noNews: "ما لقينا أخبارًا حديثة.",
     opener: "أول رسالة", openerHint: "عدّلها، ثم انسخها أو افتحها في بريدك.", openMail: "افتح في البريد", copyMsg: "انسخ الرسالة",
     subject: (c: string) => `سؤال سريع بخصوص ${c}`,
+    followSubject: (c: string) => `رد: سؤال سريع بخصوص ${c}`,
+    stages: { saved: "محفوظ", contacted: "تواصلت", replied: "ردّ", meeting: "اجتماع", closed: "مغلق" } as Record<string, string>,
+    step: { first: "أول رسالة", f1: "المتابعة الأولى", f2: "آخر رسالة" },
+    due: (d: string) => `موعدها ${d}`, dueNow: "موعدها اليوم", sentOn: (d: string) => `أول رسالة ${d}`,
+    openMine: "افتحها في بريدي", sentIt: "أرسلتها؟", yesSent: "إيه، سجّلها مرسلة", notYet: "مو بعد", otherWay: "أرسلتها بطريقة ثانية",
+    replied: "ردّ عليّ", meeting: "حجزنا اجتماع", closeIt: "مو مهتم", reopen: "أعد فتحه",
+    done: "ما ردّ بعد متابعتين. أغلقه، أو انتظر، الردود أحيانًا تتأخر.",
+    repliedNote: "ممتاز، كمّل الرد من بريدك. وسجّل الاجتماع إذا انحجز.", meetingNote: "انحجز الاجتماع. بالتوفيق!", closedNote: "مغلق. تقدر تعيد فتحه أي وقت.",
+    needEmail: "اكشف بريده عشان تفتحها في بريدك، أو انسخ الرسالة.",
+    nextDue: (d: string) => `جهّزنا المتابعة الجاية لتاريخ ${d}، وبنذكّرك.`,
     errors: { insufficient_credits: "خلص رصيدك. اشحنه من صفحة الرصيد.", unavailable: "البيانات الحية ما تفعّلت بعد.", budget: "وصلت لحد البحث اليومي.", upstream: "مزوّدو البيانات ما ردّوا، جرّب مرة ثانية." } as Record<string, string>,
   },
 };
@@ -32,11 +52,13 @@ async function post<T>(path: string): Promise<T> {
   return json;
 }
 
+export interface LeadCrm { stage: string; followUps: number; followUpAt: string | null; contactedAt: string | null }
+
 export function LeadActions({
-  lang, leadId, company, initialEmail, initialStatus, initialSignals, opener,
+  lang, leadId, company, initialEmail, initialStatus, initialSignals, opener, followUps: drafts, crm,
 }: {
   lang: Lang; leadId: string; company: string; initialEmail: string | null; initialStatus: string | null;
-  initialSignals: Signal[] | null; opener: string;
+  initialSignals: Signal[] | null; opener: string; followUps: [string, string]; crm: LeadCrm;
 }) {
   const t = C[lang];
   const [email, setEmail] = useState(initialEmail);
@@ -44,7 +66,25 @@ export function LeadActions({
   const [revealing, setRevealing] = useState(false);
   const [signals, setSignals] = useState<Signal[] | null>(initialSignals);
   const [loadingNews, setLoadingNews] = useState(false);
-  const [message, setMessage] = useState(opener);
+  const [state, setState] = useState<LeadCrm>(crm);
+  const stepIndex = state.stage === "saved" || state.stage === "closed" && !state.contactedAt ? 0 : state.followUps + 1;
+  const draftFor = (i: number) => (i === 0 ? opener : drafts[i - 1] ?? "");
+  const [message, setMessage] = useState(draftFor(stepIndex));
+  const [opened, setOpened] = useState(false);
+  const [moving, setMoving] = useState(false);
+
+  async function move(action: string) {
+    setMoving(true); setError(null);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/stage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+      const json = (await r.json().catch(() => ({}))) as LeadCrm & { error?: string };
+      if (!r.ok) throw new Error(json.error ?? "upstream");
+      setState(json); setOpened(false);
+      const next = json.stage === "saved" ? 0 : json.followUps + 1;
+      setMessage(draftFor(next));
+    } catch (e) { setError(t.errors[(e as Error).message] ?? t.errors.upstream); }
+    finally { setMoving(false); }
+  }
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -73,7 +113,12 @@ export function LeadActions({
   }
 
   const card = "flex flex-col gap-3 rounded-[18px] bg-white p-5 outline outline-1 -outline-offset-1 outline-line";
-  const mailto = email ? `mailto:${email}?subject=${encodeURIComponent(t.subject(company))}&body=${encodeURIComponent(message)}` : undefined;
+  const subject = stepIndex === 0 ? t.subject(company) : t.followSubject(company);
+  const mailto = email ? `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}` : undefined;
+  const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-GB", { day: "numeric", month: "short" });
+  const dueLabel = state.followUpAt ? (new Date(state.followUpAt) <= new Date() ? t.dueNow : t.due(day(state.followUpAt))) : null;
+  const writing = state.stage === "saved" || (state.stage === "contacted" && state.followUps < 2 && state.followUpAt !== null);
+  const stepTitle = stepIndex === 0 ? t.step.first : stepIndex === 1 ? t.step.f1 : t.step.f2;
 
   return (
     <div className="flex flex-col gap-4">
@@ -119,23 +164,71 @@ export function LeadActions({
         ) : <p className="text-[13.5px] text-muted">{t.noNews}</p>)}
       </section>
 
-      <section className={card}>
-        <div className="flex flex-col gap-0.5">
-          <h2 className="text-[13px] font-semibold text-subtle">{t.opener}</h2>
-          <span className="text-[12.5px] text-subtle">{t.openerHint}</span>
-        </div>
-        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={6} dir="auto"
-          className="w-full rounded-xl bg-surface-2 p-3.5 text-[14.5px] leading-[23px] text-ink [unicode-bidi:plaintext] outline-none focus:outline-2 focus:outline-brand" />
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => copy("msg", message)} className="flex h-10 cursor-pointer items-center gap-1.5 rounded-full bg-surface px-4 text-[13.5px] font-medium text-ink hover:bg-hover">
-            {copied === "msg" ? t.copied : t.copyMsg}
-          </button>
-          {mailto && (
-            <a href={mailto} className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-4 text-[13.5px] font-medium text-white hover:bg-brand-2">
-              <Icon name="send" size={14} flip />{t.openMail}
-            </a>
-          )}
-        </div>
+      <section className={card} data-testid="conversation">
+        <ol className="flex flex-wrap items-center gap-1.5" aria-label={t.stages.contacted}>
+          {(["saved", "contacted", "replied", "meeting"] as const).map((st, i, all) => {
+            const at = all.indexOf(state.stage as (typeof all)[number]);
+            const on = st === state.stage;
+            const done = at > i;
+            return (
+              <li key={st} className="flex items-center gap-1.5">
+                <span className={cx("rounded-full px-3 py-1 text-[12.5px] font-medium", on ? "bg-brand text-white" : done ? "bg-mint text-brand" : "bg-surface text-subtle")}>{t.stages[st]}</span>
+                {i < all.length - 1 && <span className="h-px w-3 bg-line" />}
+              </li>
+            );
+          })}
+          {state.stage === "closed" && <li><span className="rounded-full bg-surface px-3 py-1 text-[12.5px] font-medium text-ink-2">{t.stages.closed}</span></li>}
+        </ol>
+
+        {writing ? (
+          <>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-[15px] font-semibold text-ink">{stepTitle}</h2>
+              <span className="text-[12.5px] text-subtle">{stepIndex > 0 && dueLabel ? dueLabel : t.openerHint}</span>
+            </div>
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={7} dir="auto" data-testid="draft"
+              className="w-full rounded-xl bg-surface-2 p-3.5 text-[14.5px] leading-[23px] text-ink [unicode-bidi:plaintext] outline-none focus:outline-2 focus:outline-brand" />
+            {!email && <p className="text-[12.5px] text-subtle">{t.needEmail}</p>}
+            {opened ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-mint px-3.5 py-2.5">
+                <span className="text-[14px] font-medium text-ink">{t.sentIt}</span>
+                <button type="button" disabled={moving} data-testid="mark-sent" onClick={() => void move("sent")} className="flex h-9 cursor-pointer items-center gap-1.5 rounded-full bg-brand px-4 text-[13.5px] font-medium text-white hover:bg-brand-2 disabled:opacity-60"><Icon name="check" size={13} />{t.yesSent}</button>
+                <button type="button" onClick={() => setOpened(false)} className="h-9 cursor-pointer rounded-full px-3 text-[13.5px] font-medium text-muted hover:text-ink">{t.notYet}</button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                {mailto && (
+                  <a href={mailto} onClick={() => setOpened(true)} data-testid="open-mail" className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-4 text-[13.5px] font-medium text-white hover:bg-brand-2">
+                    <Icon name="send" size={14} flip />{t.openMine}
+                  </a>
+                )}
+                <button type="button" onClick={() => copy("msg", message)} className="flex h-10 cursor-pointer items-center gap-1.5 rounded-full bg-surface px-4 text-[13.5px] font-medium text-ink hover:bg-hover">
+                  {copied === "msg" ? t.copied : t.copyMsg}
+                </button>
+                <button type="button" onClick={() => setOpened(true)} className="h-10 cursor-pointer px-2 text-[13px] font-medium text-muted hover:text-ink">{t.otherWay}</button>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-[14px] leading-[22px] text-ink-2">
+            {state.stage === "replied" ? t.repliedNote : state.stage === "meeting" ? t.meetingNote : state.stage === "closed" ? t.closedNote : t.done}
+          </p>
+        )}
+
+        {state.contactedAt && (
+          <p className="text-[12.5px] text-subtle">
+            {t.sentOn(day(state.contactedAt))}{state.stage === "contacted" && state.followUpAt && stepIndex > 0 && !opened ? ` · ${t.nextDue(day(state.followUpAt))}` : ""}
+          </p>
+        )}
+
+        {state.stage !== "saved" && (
+          <div className="flex flex-wrap gap-2 border-t border-line-2 pt-3">
+            {state.stage === "contacted" && <button type="button" disabled={moving} data-testid="mark-replied" onClick={() => void move("replied")} className="h-9 cursor-pointer rounded-full bg-success-soft px-3.5 text-[13px] font-medium text-success-ink">{t.replied}</button>}
+            {(state.stage === "contacted" || state.stage === "replied") && <button type="button" disabled={moving} onClick={() => void move("meeting")} className="h-9 cursor-pointer rounded-full bg-mint px-3.5 text-[13px] font-medium text-brand">{t.meeting}</button>}
+            {state.stage !== "closed" && state.stage !== "meeting" && <button type="button" disabled={moving} onClick={() => void move("closed")} className="h-9 cursor-pointer rounded-full bg-surface px-3.5 text-[13px] font-medium text-ink-2">{t.closeIt}</button>}
+            {state.stage === "closed" && <button type="button" disabled={moving} onClick={() => void move("reopen")} className="h-9 cursor-pointer rounded-full bg-surface px-3.5 text-[13px] font-medium text-ink-2">{t.reopen}</button>}
+          </div>
+        )}
       </section>
     </div>
   );

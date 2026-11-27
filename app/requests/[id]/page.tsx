@@ -3,16 +3,14 @@ import { notFound, redirect } from "next/navigation";
 import { AppShell } from "@/components/app/AppShell";
 import { SaveLeadButton } from "@/components/app/SaveLeadButton";
 import { Badge, Btn, Card, Empty, PageHeader, Steps, Tip } from "@/components/app/ui";
-import { SendButton } from "@/components/SendButton";
 import { pickLang } from "@/components/site/AuthShell";
 import { Icon } from "@/components/site/ui";
-import { devVerifyAndGrant, retrySourcing } from "@/lib/actions";
+import { retrySourcing, writeToPerson } from "@/lib/actions";
 import * as repo from "@/lib/db/repo";
 import { SubmitButton } from "@/components/app/SubmitButton";
 import { FIT_LABEL, OUTREACH_LABEL } from "@/lib/app-copy";
 import { balanceOf } from "@/lib/credits";
 import { loadRequestContext } from "@/lib/db/loaders";
-import { devToolsEnabled } from "@/lib/env";
 import { canReadRequest, pageAccount } from "@/lib/session";
 import type { Account, Db, IntroRequest, Pipeline } from "@/lib/types";
 
@@ -34,7 +32,9 @@ const C = {
     observerSub: "Meanwhile, save people and reveal their verified emails.",
     activate: "Activate sending", sending: (cap: number, credits: number) => `Sending is on · ${cap} a day · ${credits} credits`,
     why: "Why them", whyNow: "Why now", sources: "Sources", opener: "Suggested first message",
-    send: "Send", sendIntro: "Request intro", sendingNow: "Sending…", linkedin: "LinkedIn", isNew: (v: number) => `New in v${v}`,
+    send: "Write to them", sendIntro: "Request intro", sendingNow: "Opening…",
+    howSend: "Open each person, check the drafted message, and send it from your own email. We draft the follow-ups and remind you when one is due.",
+    stage: { contacted: "Contacted · follow-up drafted", replied: "Replied", meeting: "Meeting booked", closed: "Closed" } as Record<string, string>, linkedin: "LinkedIn", isNew: (v: number) => `New in v${v}`,
     footnote: "Up to 10 messages per request, one per person. Nothing is sent without your choice.",
     searching: "Finding the right people…", searchingSub: "We're mapping companies, finding the decision maker at each, and checking this week's news. Results appear here on their own — usually within a minute.",
     dontWait: "Don't want to wait?", dontWaitSub: "Search companies and decision makers directly.", searchNow: "Search now",
@@ -56,7 +56,9 @@ const C = {
     observerSub: "وفي الوقت نفسه، احفظ الأشخاص واكشف بريدهم الموثّق.",
     activate: "فعّل الإرسال", sending: (cap: number, credits: number) => `الإرسال مفعّل · ${cap} يوميًا · الرصيد ${credits}`,
     why: "ليش هو", whyNow: "ليش الحين", sources: "المصادر", opener: "أول رسالة مقترحة",
-    send: "أرسل", sendIntro: "اطلب تعارف", sendingNow: "نرسل…", linkedin: "LinkedIn", isNew: (v: number) => `جديد في النسخة ${v}`,
+    send: "اكتب لهم", sendIntro: "اطلب تعارف", sendingNow: "نفتح…",
+    howSend: "افتح كل شخص، راجع الرسالة الجاهزة، وأرسلها من بريدك. نجهّز لك رسائل المتابعة ونذكّرك بموعدها.",
+    stage: { contacted: "تواصلت · المتابعة جاهزة", replied: "ردّ", meeting: "انحجز اجتماع", closed: "مغلق" } as Record<string, string>, linkedin: "LinkedIn", isNew: (v: number) => `جديد في النسخة ${v}`,
     footnote: "حتى 10 رسائل لكل طلب، ورسالة وحدة لكل شخص. ما نرسل شيئًا بدون اختيارك.",
     searching: "نبحث الآن عن الأشخاص المناسبين…", searchingSub: "نحدد الجهات، ونلقى صاحب القرار في كل وحدة، ونتحقق من أخبار هذا الأسبوع. النتائج تظهر هنا تلقائيًا، وعادةً خلال دقيقة.",
     dontWait: "ما تبي تنتظر؟", dontWaitSub: "ابحث عن الجهات وأصحاب القرار مباشرة.", searchNow: "ابحث الآن",
@@ -81,6 +83,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const lang = pickLang(l, undefined, account.locale ?? "ar");
   const t = C[lang];
   const credits = balanceOf(db, account.id);
+  const stageByPerson = new Map((await repo.listLeads(account.id)).map((l) => [l.personId, { id: l.id, stage: l.stage }]));
   const mine = db.pipelines.filter((p) => p.requestId === id);
   const published = mine.find((p) => p.status === "published");
 
@@ -152,7 +155,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
 
       <ul className="flex flex-col gap-3">
         {published.items.map((item) => (
-          <Result key={item.id} t={t} lang={lang} db={db} requestId={id} item={item} published={published} isNew={published.version > 1 && !priorPeople.has(item.personId)} />
+          <Result key={item.id} t={t} lang={lang} db={db} requestId={id} item={item} published={published} isNew={published.version > 1 && !priorPeople.has(item.personId)} lead={stageByPerson.get(item.personId)} />
         ))}
       </ul>
       <p className="text-[13px] text-subtle">{t.footnote}</p>
@@ -170,24 +173,12 @@ function RequestCard({ t, req }: { t: (typeof C)["en"]; req: IntroRequest }) {
   );
 }
 
-function SendStatus({ t, account, credits, requestId }: { t: (typeof C)["en"]; account: Account; credits: number; requestId: string }) {
-  if (account.state !== "observer") {
-    return <p data-testid="send-status" className="flex items-center gap-2 text-[13.5px] text-muted"><Icon name="check-circle" size={14} className="text-brand" />{t.sending(account.dailyCap, credits)}</p>;
-  }
-  const action = devToolsEnabled ? (
-    // Development shortcut only — never in a deploy.
-    <form action={devVerifyAndGrant}>
-      <input type="hidden" name="requestId" value={requestId} />
-      <button type="submit" data-testid="activate-send" className="flex h-9 cursor-pointer items-center rounded-full bg-brand px-4 text-[13.5px] font-medium text-white">{t.activate}</button>
-    </form>
-  ) : account.activationRequestedAt ? undefined : (
-    <Btn href={`/activate?next=${encodeURIComponent(`/requests/${requestId}`)}`} size="sm">{t.activate}</Btn>
-  );
-  return <Tip icon="shield-check" tone="sand" title={account.activationRequestedAt ? t.observerPending : t.observer} action={action}>{t.observerSub}</Tip>;
+function SendStatus({ t }: { t: (typeof C)["en"]; account: Account; credits: number; requestId: string }) {
+  return <Tip icon="send" tone="mint">{t.howSend}</Tip>;
 }
 
-function Result({ t, lang, db, requestId, item, published, isNew }: {
-  t: (typeof C)["en"]; lang: Lang; db: Db; requestId: string; item: Pipeline["items"][number]; published: Pipeline; isNew: boolean;
+function Result({ t, lang, db, requestId, item, published, isNew, lead }: {
+  t: (typeof C)["en"]; lang: Lang; db: Db; requestId: string; item: Pipeline["items"][number]; published: Pipeline; isNew: boolean; lead?: { id: string; stage: string };
 }) {
   const person = db.people.find((p) => p.id === item.personId);
   if (!person) return null;
@@ -254,11 +245,17 @@ function Result({ t, lang, db, requestId, item, published, isNew }: {
             {person.linkedinUrl && <a href={person.linkedinUrl} target="_blank" rel="noreferrer" className="text-[13px] font-medium text-brand" dir="ltr">{t.linkedin} ↗</a>}
             <SaveLeadButton lang={lang} person={{ name: person.latin, title: person.title, company: person.company, profileUrl: person.linkedinUrl ?? undefined }} />
           </div>
-          {sent ? (
-            <Badge tone="neutral">{out.channel === "intro" ? (lang === "ar" ? "عبر انترو" : "Via intro") : lang === "ar" ? "تواصل مباشر" : "Direct"}</Badge>
+          {lead && lead.stage !== "saved" ? (
+            <a href={`/leads/${lead.id}?lang=${lang}`} data-testid="lead-stage" className="flex h-9 items-center gap-1.5 rounded-full bg-mint px-4 text-[13.5px] font-medium text-brand">
+              <Icon name="check" size={13} />{t.stage[lead.stage] ?? lead.stage}
+            </a>
           ) : (
-            <SendButton requestId={requestId} personId={item.personId} channel={intro ? "intro" : item.channel} body={item.opener}
-              label={intro ? t.sendIntro : t.send} pendingLabel={t.sendingNow} />
+            <form action={writeToPerson}>
+              <input type="hidden" name="requestId" value={requestId} />
+              <input type="hidden" name="personId" value={item.personId} />
+              <input type="hidden" name="lang" value={lang} />
+              <SubmitButton pending={t.sendingNow} icon="send" testId="write-to" className="h-9 px-4 text-[13.5px]">{t.send}</SubmitButton>
+            </form>
           )}
         </div>
       </div>

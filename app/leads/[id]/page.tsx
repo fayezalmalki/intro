@@ -6,6 +6,7 @@ import { pickLang } from "@/components/site/AuthShell";
 import { Icon } from "@/components/site/ui";
 import * as repo from "@/lib/db/repo";
 import { MARKETS, isMarket } from "@/lib/search/markets";
+import { followUpFor } from "@/lib/followup";
 import { openerFor } from "@/lib/search/opener";
 import { pageAccount } from "@/lib/session";
 
@@ -41,7 +42,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
             {p.geo && <Row k={lang === "ar" ? "الموقع الجغرافي" : "Location"} v={p.geo} />}
             {market && <Row k={lang === "ar" ? "السوق" : "Market"} v={market} />}
             {p.linkedinUrl && <Row k="LinkedIn" v={<a href={p.linkedinUrl} target="_blank" rel="noreferrer" className="text-brand" dir="ltr">{lang === "ar" ? "الملف المهني ↗" : "Profile ↗"}</a>} />}
-            {p.servedBy && <Row k={lang === "ar" ? "المصدر" : "Source"} v={<span className="font-latin" dir="ltr">{p.servedBy}</span>} />}
+            <Row k={lang === "ar" ? "المصدر" : "Source"} v={lang === "ar" ? "بيانات أعمال مرخّصة" : "Licensed business data"} />
           </dl>
         </aside>
         <LeadActions
@@ -52,6 +53,8 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
           initialStatus={lead.emailStatus}
           initialSignals={lead.signals ?? null}
           opener={openerFor({ lang, name: p.latin, company: p.company, signal: lead.signals?.[0]?.title, me: account })}
+          followUps={[1, 2].map((step) => followUpFor({ lang, name: p.latin, company: p.company, step: step as 1 | 2, me: account })) as [string, string]}
+          crm={{ stage: lead.stage, followUps: lead.followUps, followUpAt: lead.followUpAt, contactedAt: lead.contactedAt }}
         />
       </div>
     </AppShell>

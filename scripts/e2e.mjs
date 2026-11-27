@@ -138,28 +138,38 @@ await peopleCards.first().waitFor();
 step("requester sees v1", `${await peopleCards.count()} people`);
 
 const firstName = await page.locator("[data-testid=person-name]").first().innerText();
-await page.locator("[data-testid=send]").first().click();
-await page.locator("[data-testid=gate-error]").first().waitFor();
-step("observer blocked at the send gate", (await page.locator("[data-testid=gate-error]").first().innerText()).trim());
-await shot("08a-gate-blocks-observer");
+// "Write to them" opens the person as a lead: the message is drafted there
+// and sent from the user's own email — no gate, no credit.
+await Promise.all([page.waitForURL(/\/leads\//), page.locator("[data-testid=write-to]").first().click()]);
+const leadUrl = page.url();
+const draft = await page.locator("[data-testid=draft]").inputValue();
+step("first message drafted", `${draft.length} chars · mail link ${await page.locator("[data-testid=open-mail]").count() ? "ready" : "missing"}`);
+const mailto = await page.locator("[data-testid=open-mail]").getAttribute("href");
+step("opens the user's own email", (mailto ?? "").split("?")[0]);
+await page.locator("[data-testid=open-mail]").evaluate((a) => a.removeAttribute("href")); // don't leave the page
+await page.locator("[data-testid=open-mail]").click();
+await page.locator("[data-testid=mark-sent]").click();
+await page.getByText(/Follow-up 1|المتابعة الأولى/).first().waitFor();
+const followUp = await page.locator("[data-testid=draft]").inputValue();
+step("marked sent → follow-up 1 drafted", followUp.split("\n")[0]);
+await shot("08-lead-contacted");
 
-// verify the account (stands in for milestone 1 auth + milestone 5 billing)
-await page.locator("[data-testid=activate-send]").click();
-const creditLine = page.locator("[data-testid=send-status]");
-await creditLine.waitFor();
-step("account verified", (await creditLine.innerText()).replace(/\s+/g, " ").trim());
+// back on the request: the person shows as contacted
+await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
+step("request shows the lead's stage", `${firstName} → ${(await page.locator("[data-testid=lead-stage]").first().innerText()).trim()}`);
+step("credits unchanged by sending", (await page.locator("[data-credits]").first().innerText()).trim());
 
-// now the same send succeeds
-await page.locator("[data-testid=send]").first().click();
-await page.locator("[data-testid=outreach]").first().waitFor();
-const sentBadge = await page.locator("[data-testid=outreach]").first().innerText();
-step("outreach recorded", `${firstName} → ${sentBadge}`);
-step("credits after one send", (await creditLine.innerText()).replace(/\s+/g, " ").trim());
-await shot("08-results-v1-sent");
-
-// the same person, again — one message per person per request
-const second = peopleCards.filter({ hasText: firstName });
-step("repeat send offered again?", String(await second.locator("[data-testid=send]").count()));
+// follow-up 1, then the last note, then a reply ends the sequence
+await page.goto(leadUrl, { waitUntil: "networkidle" });
+await page.locator("[data-testid=open-mail]").evaluate((a) => a.removeAttribute("href"));
+await page.locator("[data-testid=open-mail]").click();
+await page.locator("[data-testid=mark-sent]").click();
+await page.getByText(/Last note|آخر رسالة/).first().waitFor();
+step("follow-up 1 sent → last note drafted", "ok");
+await page.locator("[data-testid=mark-replied]").click();
+await page.locator("[data-testid=conversation]").getByText(/Great|ممتاز/).waitFor();
+step("reply recorded → follow-ups stop", "ok");
+await shot("08b-lead-replied");
 
 as("manager");
 // 7. AM attaches v2 from a predefined list
@@ -181,8 +191,8 @@ as("requester");
 await page.goto(`${BASE}/requests/${requestId}`, { waitUntil: "networkidle" });
 const banner = await page.locator("[data-testid=version-banner]").innerText();
 step("v2 banner", banner.replace(/\s+/g, " ").trim());
-const stillSent = await page.locator("[data-testid=outreach]").count();
-step("outreach surviving the swap", String(stillSent));
+const stillSent = await page.locator("[data-testid=lead-stage]").count();
+step("lead stage surviving the swap", String(stillSent));
 const newTags = await page.locator("[data-testid=new-in-version]").count();
 step("rows marked new in v2", String(newTags));
 await shot("11-results-v2");

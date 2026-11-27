@@ -17,6 +17,7 @@ const C = {
     none: "No leads match this filter.", clear: "Clear",
     head: { person: "Person", company: "Company", email: "Email", saved: "Saved" },
     lockedCell: "Not revealed", verified: "Verified", unconfirmed: "Unconfirmed", notFound: "Not found",
+    due: "Follow-up due", stages: { saved: "", contacted: "Contacted", replied: "Replied", meeting: "Meeting", closed: "Closed" } as Record<string, string>,
   },
   ar: {
     title: "عملاؤك المحتملون", sub: (n: number, v: number) => `${n} محفوظ · ${v} ببريد موثّق`,
@@ -26,6 +27,7 @@ const C = {
     none: "ما فيه عملاء بهذا الفلتر.", clear: "مسح",
     head: { person: "الشخص", company: "الشركة", email: "البريد", saved: "تاريخ الحفظ" },
     lockedCell: "لم يُكشف بعد", verified: "موثّق", unconfirmed: "غير مؤكد", notFound: "ما لقيناه",
+    due: "حان موعد المتابعة", stages: { saved: "", contacted: "تواصلت", replied: "ردّ", meeting: "اجتماع", closed: "مغلق" } as Record<string, string>,
   },
 };
 
@@ -106,6 +108,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                           <span className="flex min-w-0 flex-col">
                             <span className="truncate text-[14.5px] font-semibold text-ink" dir="auto">{r.person.latin}</span>
                             <span className="truncate text-[12.5px] text-muted" dir="auto">{r.person.title}</span>
+                            {(r.stage !== "saved" || isDue(r.followUpAt)) && (
+                              <span className="flex flex-wrap gap-1 pt-1">
+                                {r.stage !== "saved" && <span className="rounded-full bg-mint px-2 py-0.5 text-[11px] font-medium text-brand">{t.stages[r.stage]}</span>}
+                                {r.stage === "contacted" && isDue(r.followUpAt) && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-ink">{t.due}</span>}
+                              </span>
+                            )}
                           </span>
                         </span>
                         <Icon name="arrow-right" flip className="text-subtle md:order-last" />
@@ -136,3 +144,5 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     </AppShell>
   );
 }
+
+const isDue = (at: string | null) => Boolean(at && new Date(at) <= new Date());
