@@ -50,11 +50,17 @@ export async function extractBrief(rawText: string): Promise<Brief> {
     });
     // A refusal carries no parsed output; treat it like any other failure.
     const parsed = response.stop_reason === "refusal" ? null : response.parsed_output;
-    if (!parsed) return rulesBrief(rawText);
+    if (!parsed) {
+      console.error(`[intent] claude returned no brief: stop_reason=${response.stop_reason}`);
+      return rulesBrief(rawText);
+    }
     return { ...parsed, confidence: 0.9, extractedBy: "claude" };
-  } catch {
+  } catch (error) {
     // A failed extraction must not block intake — fall back and let the
-    // requester correct the brief on the confirm screen.
+    // requester correct the brief on the confirm screen. Logged, so a broken
+    // key or model id doesn't silently degrade every brief.
+    const e = error as { status?: number; name?: string; message?: string };
+    console.error(`[intent] claude extraction failed: ${e?.name ?? "Error"} ${e?.status ?? ""} ${String(e?.message ?? error).slice(0, 300)}`);
     return rulesBrief(rawText);
   }
 }
@@ -67,7 +73,9 @@ const GOAL_HINTS: Array<{ goal: GoalType; words: string[] }> = [
 ];
 
 const ROLE_HINTS: Array<{ role: string; words: string[] }> = [
-  { role: "مدير منتج فأعلى", words: ["product", "المنتج", "منتج"] },
+  // «نبيع منتج» is about what they sell, not who they want: only the role itself.
+  { role: "مدير منتج فأعلى", words: ["product manager", "head of product", "مدير منتج", "مدير المنتج", "مديرة منتج", "مدراء المنتج", "مدراء منتجات"] },
+  { role: "رئيس المبيعات", words: ["مبيعات", "المبيعات", "sales"] },
   { role: "رئيس التسويق", words: ["تسويق", "marketing", "cmo"] },
   { role: "رئيس الشراكات", words: ["شراكات", "partnerships"] },
   { role: "رئيس التوظيف التقني", words: ["توظيف", "talent", "recruit"] },
@@ -81,6 +89,7 @@ const INDUSTRY_HINTS: Array<{ industry: string; words: string[] }> = [
   { industry: "تأمين", words: ["تأمين", "insurance"] },
   { industry: "لوجستيات", words: ["لوجستيات", "logistics", "شحن"] },
   { industry: "استثمار", words: ["استثمار", "مستثمر", "vc", "investor"] },
+  { industry: "شركات ناشئة", words: ["ناشئة", "شركات جديدة", "الشركات الجديدة", "startup", "startups"] },
 ];
 
 const SENIORITY_HINTS: Array<{ level: string; words: string[] }> = [
@@ -97,7 +106,9 @@ export function rulesBrief(rawText: string): Brief {
 
   const goalType =
     GOAL_HINTS.find((g) => hits(t, g.words))?.goal ?? ("person" as GoalType);
-  const targetRoles = ROLE_HINTS.filter((r) => hits(t, r.words)).map((r) => r.role);
+  const found = ROLE_HINTS.filter((r) => hits(t, r.words)).map((r) => r.role);
+  // Selling with no role named: the people who buy for a company.
+  const targetRoles = found.length || goalType !== "sales" ? found : ["المؤسس أو الرئيس التنفيذي", "رئيس المبيعات", "رئيس التسويق"];
   const industries = INDUSTRY_HINTS.filter((i) => hits(t, i.words)).map((i) => i.industry);
   const seniority = SENIORITY_HINTS.filter((s) => hits(t, s.words)).map((s) => s.level);
 
