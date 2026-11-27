@@ -61,9 +61,8 @@ function createAuth() {
         allowedAttempts: 5,
         storeOTP: "hashed",
         async sendVerificationOTP({ email, otp }, ctx) {
-          await sendOtpEmail(email, otp);
-          // Keep the address as a lead from the moment they ask for a code,
-          // with what they were about to do. Never let this block sign-in.
+          // Keep the address as a lead from the moment they ask for a code —
+          // before sending, so a failed send never loses the lead.
           try {
             const headers = ctx?.request?.headers ?? ctx?.headers;
             const { recordSignup } = await import("./db/repo");
@@ -77,6 +76,15 @@ function createAuth() {
             });
           } catch (err) {
             console.error("recordSignup failed", err);
+          }
+          try {
+            await sendOtpEmail(email, otp);
+          } catch (err) {
+            // Say why in the logs: the binding's errors carry a code (e.g.
+            // E_DAILY_LIMIT_EXCEEDED, or a recipient the plan can't send to).
+            const e = err as { message?: string; code?: string };
+            console.error(`[auth] sign-in code email failed: ${e?.code ?? ""} ${e?.message ?? String(err)}`);
+            throw err;
           }
         },
       }),

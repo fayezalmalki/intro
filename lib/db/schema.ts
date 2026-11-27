@@ -352,6 +352,19 @@ export const leads = sqliteTable("leads", {
   index("leads_account_idx").on(t.accountId),
 ]);
 
+// ── Email log ─────────────────────────────────────────────────
+
+/** Every email the app tried to send, and how it went (the monitoring page). */
+export const emailLog = sqliteTable("email_log", {
+  id: id(),
+  kind: text("kind").$type<"otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest">().notNull(),
+  to: text("to").notNull(),
+  transport: text("transport").$type<"smtp" | "binding" | "log">().notNull(),
+  status: text("status").$type<"sent" | "failed">().notNull(),
+  error: text("error"),
+  createdAt: isoNow("created_at"),
+}, (t) => [index("email_log_created_idx").on(t.createdAt)]);
+
 // ── Saved criteria ────────────────────────────────────────────
 
 /**
