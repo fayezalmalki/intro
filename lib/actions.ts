@@ -53,6 +53,30 @@ export async function createRequest(formData: FormData): Promise<void> {
   redirect(`/requests/${requestId}/confirm`);
 }
 
+/**
+ * The structured intake (/new): goal, sectors and roles are picked, so the
+ * brief is exact. Editing an unconfirmed request rewrites it in place.
+ */
+export async function createStructuredRequest(formData: FormData): Promise<void> {
+  const { briefFromPicks, GOALS } = await import("./intake");
+  const parse = (k: string) => { try { const v = JSON.parse(String(formData.get(k) ?? "[]")); return Array.isArray(v) ? v.map(String).filter(Boolean).slice(0, 8) : []; } catch { return []; } };
+  const goalRaw = String(formData.get("goal") ?? "");
+  const goal = GOALS.some((g) => g.id === goalRaw) ? (goalRaw as (typeof GOALS)[number]["id"]) : "sales";
+  const sectors = parse("sectors").slice(0, 3);
+  const lang = String(formData.get("lang") ?? "ar") === "en" ? "en" : "ar";
+  if (sectors.length === 0) redirect(`/new?lang=${lang}&need=sector`);
+  const built = briefFromPicks({ goal, sectors, roles: parse("roles"), notes: String(formData.get("notes") ?? "") });
+
+  const account = await currentAccount();
+  const editing = String(formData.get("requestId") ?? "");
+  if (editing) {
+    await requireRequestOwner(editing, "edit this request");
+    if (await repo.updateRequestBrief(editing, account.id, built)) redirect(`/requests/${editing}/confirm`);
+  }
+  const requestId = await repo.createRequest({ accountId: account.id, rawText: built.rawText, brief: built.brief, sectors: built.sectors, slaHours: SLA_HOURS });
+  redirect(`/requests/${requestId}/confirm`);
+}
+
 export async function confirmBrief(formData: FormData): Promise<void> {
   const requestId = String(formData.get("requestId"));
   const summary = String(formData.get("summaryAr") ?? "").trim();

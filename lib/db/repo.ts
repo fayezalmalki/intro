@@ -1375,3 +1375,14 @@ export async function adminAddresses(database: Database = defaultDb): Promise<st
   const granted = await database.select({ email: accounts.email }).from(accounts).where(eq(accounts.role, "admin"));
   return [...new Set([...adminEmails(), ...granted.map((a) => a.email.toLowerCase())])];
 }
+
+/** Rewrites an unconfirmed request's brief (editing picks on /new before running it). */
+export async function updateRequestBrief(
+  requestId: string, accountId: string, input: { rawText: string; brief: Brief; sectors: string[] }, database: Database = defaultDb,
+): Promise<boolean> {
+  const rows = await database.update(requests)
+    .set({ rawText: input.rawText, brief: input.brief, goalType: input.brief.goalType, sectors: input.sectors })
+    .where(and(eq(requests.id, requestId), eq(requests.accountId, accountId), eq(requests.status, "intent_review"), sql`${requests.confirmedAt} IS NULL`))
+    .returning({ id: requests.id });
+  return rows.length > 0;
+}

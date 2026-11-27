@@ -19,10 +19,10 @@ const C = {
     sub: "Edit the summary if it's off. We only start looking once you confirm.",
     summary: "Summary", goal: "Goal", roles: "Roles", sectors: "Sectors", markets: "Markets", excludes: "Excludes",
     confirm: "Looks right — find people", confirming: "Starting the search…",
-    edit: "Start over", steps: ["Your goal", "Confirm", "Find people", "Results"],
+    edit: "Edit picks", steps: ["Your goal", "Confirm", "Find people", "Results"],
     tip: "Results usually arrive within a minute. You'll see each person with why they fit, why now, and a first line.",
     cost: (n: number) => `Running this request uses 5 credits — refunded if we find nobody. You have ${n}.`,
-    by: (c: boolean) => (c ? "Read automatically — edit anything that's off" : "Check this carefully before you run it"),
+    by: (c: boolean) => (c ? "Built from your picks — edit anything that's off" : "Check this carefully before you run it"),
     original: "You wrote",
     vague: "This goal is quite broad. Add the sector, the role, or what you want from them — e.g. \"partnerships with Saudi banks for an open-banking app\" — so the results are worth the credits.",
     refine: "Make it more specific",
@@ -33,10 +33,10 @@ const C = {
     sub: "عدّل الملخص إذا فيه شيء غير دقيق. ما نبدأ البحث إلا بعد تأكيدك.",
     summary: "الملخص", goal: "الهدف", roles: "المناصب", sectors: "القطاعات", markets: "الأسواق", excludes: "يستثني",
     confirm: "تمام، ابحث عن الأشخاص", confirming: "نبدأ البحث…",
-    edit: "ابدأ من جديد", steps: ["هدفك", "التأكيد", "البحث", "النتائج"],
+    edit: "عدّل الاختيارات", steps: ["هدفك", "التأكيد", "البحث", "النتائج"],
     tip: "النتائج توصل عادةً خلال دقيقة، ومع كل شخص: ليش يناسبك، وليش الحين، وأول سطر.",
     cost: (n: number) => `تشغيل هذا الطلب يستخدم 5 رصيد، ويرجع لك إذا ما لقينا أحد. رصيدك ${n}.`,
-    by: (c: boolean) => (c ? "قرأناه آليًا، عدّل أي شي مو دقيق" : "راجعه بعناية قبل التشغيل"),
+    by: (c: boolean) => (c ? "مبني من اختياراتك، عدّل أي شي مو دقيق" : "راجعه بعناية قبل التشغيل"),
     original: "اللي كتبته",
     vague: "هدفك عام شوي. أضف القطاع أو المنصب أو وش تبي منهم، مثل: «شراكات مع البنوك السعودية لتطبيق Open Banking»، عشان تطلع النتائج تستاهل الرصيد.",
     refine: "خلّه أدق",
@@ -55,7 +55,7 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
   const b = req.brief;
   const credits = await repo.creditBalance(account.id);
   // A one- or two-word goal with nothing but a role ("شراكات") sources poorly.
-  const vague = (b.confidence ?? 1) < 0.5 || (req.rawText.trim().split(/\s+/).length < 3 && b.industries.length === 0);
+  const vague = b.extractedBy !== "form" && ((b.confidence ?? 1) < 0.5 || (req.rawText.trim().split(/\s+/).length < 3 && b.industries.length === 0));
 
   const rows = [
     { k: t.roles, v: b.targetRoles },
@@ -71,7 +71,7 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
         <PageHeader eyebrow={t.eyebrow} title={t.title} sub={t.sub} />
         {unavailable && <Tip icon="clock" tone="peach">{t.unavailable}</Tip>}
         {vague && (
-          <Tip icon="target" tone="sand" action={<a href={`/new?lang=${lang}&q=${encodeURIComponent(req.rawText)}`} className="text-[13.5px] font-medium text-brand">{t.refine}</a>}>{t.vague}</Tip>
+          <Tip icon="target" tone="sand" action={<a href={`/new?lang=${lang}&edit=${req.id}`} className="text-[13.5px] font-medium text-brand">{t.refine}</a>}>{t.vague}</Tip>
         )}
 
         <Card className="p-5 sm:p-6">
@@ -99,9 +99,9 @@ export default async function ConfirmPage({ params, searchParams }: { params: Pr
               ))}
             </dl>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-              <span className="text-[12.5px] text-subtle">{t.by(b.extractedBy === "claude")}</span>
+              <span className="text-[12.5px] text-subtle">{t.by(b.extractedBy !== "rules")}</span>
               <div className="flex items-center gap-2">
-                <a href={`/new?lang=${lang}&q=${encodeURIComponent(req.rawText)}`} className="text-[13.5px] font-medium text-muted hover:text-ink">{t.edit}</a>
+                <a href={`/new?lang=${lang}&edit=${req.id}`} data-testid="edit-picks" className="text-[13.5px] font-medium text-muted hover:text-ink">{t.edit}</a>
                 <SubmitButton pending={t.confirming} icon="arrow-right" testId="confirm-brief">{t.confirm}</SubmitButton>
               </div>
             </div>

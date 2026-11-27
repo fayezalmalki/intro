@@ -103,9 +103,12 @@ export function planSearch(brief: Brief, rawText: string, sectors: string[] = []
   const roleText = brief.targetRoles.join(" ");
   const titles = ROLES.filter((r) => has(roleText, r.match)).map((r) => r.title);
 
+  // Picked on the intake form: exact, no guessing.
+  const picked = brief.industryIds?.filter(Boolean) ?? [];
+  const pickedTitles = brief.roleTitles?.filter(Boolean) ?? [];
   return {
-    industries: [...new Set(industries)].slice(0, 2),
-    titles: titles.length ? [...new Set(titles)] : [DEFAULT_TITLE[brief.goalType]],
+    industries: [...new Set(picked.length ? picked : industries)].slice(0, picked.length ? 3 : 2),
+    titles: pickedTitles.length ? [...new Set(pickedTitles)] : titles.length ? [...new Set(titles)] : [DEFAULT_TITLE[brief.goalType]],
     // Providers index in English: the translated words, never the raw Arabic
     // sentence (which matched estate agents in Italy). Empty = nothing to search on.
     fallbackQuery: translated.terms.trim(),

@@ -101,8 +101,13 @@ await page.goto(`${BASE}/new`, { waitUntil: "networkidle" });
 step("intake page loaded", await page.locator("h1").innerText());
 await shot("01-intake");
 
-await page.fill("textarea[name=rawText]", "أدور وظيفة قيادية في الـ Product في شركات تقنية سعودية.");
-await Promise.all([page.waitForURL(/\/confirm$/), page.click("[data-testid=create-request]")]);
+// Structured intake: goal → sector → role.
+await page.click("[data-testid=goal-job]");
+await page.fill("[data-testid=sector-search]", "تقنية");
+await page.locator("[data-testid^=sector-]:not([data-testid=sector-search])").first().click();
+await page.click("[data-testid=role-Head]");
+await page.fill("textarea[name=notes]", "أدور وظيفة قيادية في الـ Product.");
+await Promise.all([page.waitForURL(/\/confirm/), page.click("[data-testid=create-request]")]);
 step("brief extracted", page.url().split("/").slice(-2)[0]);
 
 // 2. confirm

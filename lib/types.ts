@@ -140,7 +140,11 @@ export interface Brief {
   exclusions: string[];
   summaryAr: string;
   confidence: number;
-  extractedBy: "claude" | "rules";
+  extractedBy: "claude" | "rules" | "form";
+  /** Picked on the intake form: provider industry names (dictionary ids). */
+  industryIds?: string[];
+  /** Picked on the intake form: provider title fragments ("Sales", "Chief Executive"). */
+  roleTitles?: string[];
 }
 
 export interface IntroRequest {
