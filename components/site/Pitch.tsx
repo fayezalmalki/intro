@@ -22,6 +22,7 @@ export function Pitch({ t, signedIn }: { t: PitchCopy; signedIn: boolean }) {
       <main id="main">
         <Hero t={t} />
         <How t={t} />
+        <Sample t={t} />
         <Uses t={t} />
         <Features t={t} />
         <Pricing t={t} />
@@ -146,6 +147,73 @@ function How({ t }: { t: PitchCopy }) {
             </li>
           ))}
         </ol>
+      </Container>
+    </section>
+  );
+}
+
+/**
+ * What a result looks like, before anyone signs up. An invented person and
+ * company, labelled as an example — the shape of the answer is the proof.
+ */
+const SAMPLE = {
+  en: {
+    eyebrow: "What you get", heading: "Not a list of names. A reason to write today.",
+    body: "Every person comes with why they fit, what just happened at their company, and a first line you can send from your own email.",
+    label: "Example result", goal: "Goal: meetings with heads of claims at Saudi insurers",
+    name: "Sara Al-Harbi", role: "Head of Claims · Wafa Insurance (example)", fit: "Strong fit",
+    whyT: "Why her", why: "She owns claims operations and the team's tooling budget — the person who'd sign a claims-automation pilot.",
+    nowT: "Why now", now: "Wafa announced a digital claims programme two weeks ago and is hiring three claims analysts.", src: "News · 12 Nov",
+    lineT: "First line", line: "Hi Sara — saw Wafa's new digital claims programme. We help claims teams cut handling time by a third; worth 20 minutes next week?",
+    cta: "Get yours", note: "Illustrative example. Real results come from licensed business data and public news.",
+  },
+  ar: {
+    eyebrow: "وش يوصلك", heading: "مو قائمة أسماء. سبب تكتب له اليوم.",
+    body: "مع كل شخص: ليش يناسبك، ووش صار في شركته مؤخرًا، وأول سطر ترسله من بريدك.",
+    label: "مثال على نتيجة", goal: "الهدف: اجتماعات مع رؤساء المطالبات في شركات التأمين السعودية",
+    name: "سارة الحربي", role: "رئيسة المطالبات · وفاء للتأمين (مثال)", fit: "تطابق قوي",
+    whyT: "ليش هي", why: "تدير عمليات المطالبات وميزانية أدوات الفريق، وهي اللي توقّع على تجربة لأتمتة المطالبات.",
+    nowT: "ليش الحين", now: "أعلنت وفاء قبل أسبوعين برنامجًا رقميًا للمطالبات، وتوظّف ثلاثة محللي مطالبات.", src: "خبر · 12 نوفمبر",
+    lineT: "أول سطر", line: "هلا سارة، شفت برنامج وفاء الجديد للمطالبات الرقمية. نساعد فرق المطالبات تختصر وقت المعالجة الثلث، يناسبك ٢٠ دقيقة الأسبوع الجاي؟",
+    cta: "خذ قائمتك", note: "مثال توضيحي. النتائج الحقيقية من بيانات أعمال مرخّصة وأخبار عامة.",
+  },
+};
+
+function Sample({ t }: { t: PitchCopy }) {
+  const c = SAMPLE[t.locale === "ar" ? "ar" : "en"];
+  const Row = ({ k, v, sub }: { k: string; v: string; sub?: string }) => (
+    <div className="flex flex-col gap-1 border-t border-line-2 pt-3.5">
+      <span className="text-[12.5px] font-semibold text-subtle">{k}</span>
+      <p className="text-[15px] leading-[24px] text-ink rtl:leading-[27px]">{v}</p>
+      {sub && <span className="text-[12px] text-subtle">{sub}</span>}
+    </div>
+  );
+  return (
+    <section id="sample" aria-labelledby="sample-heading" className="scroll-mt-20 py-20">
+      <Container className="grid items-center gap-10 lg:grid-cols-[1fr_520px]">
+        <div className="flex flex-col gap-6">
+          <SectionHead id="sample-heading" eyebrow={c.eyebrow} heading={c.heading} body={c.body} />
+          <a href={start(t)} className="flex h-12 w-fit items-center gap-2 rounded-full bg-brand px-6 text-[15px] font-medium text-white hover:bg-brand-2">{c.cta}<Icon name="arrow-right" flip /></a>
+          <p className="text-[12.5px] text-subtle">{c.note}</p>
+        </div>
+        <article aria-label={c.label} className="flex flex-col gap-3.5 rounded-[22px] bg-white p-6 shadow-[0_24px_60px_-28px_#1416134d] outline outline-1 -outline-offset-1 outline-line">
+          <span className="w-fit rounded-full bg-sand px-2.5 py-1 text-[11.5px] font-semibold text-ink-2">{c.label}</span>
+          <span className="text-[12.5px] text-subtle">{c.goal}</span>
+          <div className="flex items-center gap-3">
+            <span className="flex size-11 items-center justify-center rounded-full bg-mint text-[16px] font-semibold text-brand">{c.name[0]}</span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <strong className="text-[16px] text-ink">{c.name}</strong>
+              <span className="text-[13px] text-muted">{c.role}</span>
+            </div>
+            <span className="rounded-full bg-success-soft px-2.5 py-1 text-[11.5px] font-semibold text-success-ink">{c.fit}</span>
+          </div>
+          <Row k={c.whyT} v={c.why} />
+          <Row k={c.nowT} v={c.now} sub={c.src} />
+          <div className="flex flex-col gap-1.5 border-t border-line-2 pt-3.5">
+            <span className="text-[12.5px] font-semibold text-subtle">{c.lineT}</span>
+            <p className="rounded-[12px] bg-surface-2 p-3.5 text-[14.5px] leading-[23px] text-ink rtl:leading-[26px]">{c.line}</p>
+          </div>
+        </article>
       </Container>
     </section>
   );

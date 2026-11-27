@@ -15,6 +15,8 @@ type LeadState = { leadId?: string; saving?: boolean; revealing?: boolean; email
 
 const C = {
   en: {
+    full: { title: "Want them ranked and explained?", body: "A full list picks the best people for your goal, with why each fits, why now, and a first line — 5 credits, refunded if we find nobody.", cta: "Turn this into a full list" },
+    twoModes: "Search is instant and you pick. A full list is ranked and explained for you.",
     title: "Find the right people",
     sub: "Search companies, decision makers and news across the Gulf — then save leads and reveal verified emails.",
     modes: { companies: "Companies", people: "People", person: "A specific person", news: "News & signals" } as Record<SearchMode, string>,
@@ -50,6 +52,7 @@ const C = {
       steps: ["Reading your search", "Searching business data", "Ranking who decides"],
     },
     bulk: { saveAll: (n: number) => `Save all ${n}`, saveLeaders: (n: number) => `Save the ${n} decision makers`, saving: "Saving…", done: (n: number) => `${n} saved to your leads`, csv: "Download CSV", hint: "Free — saving and downloading contact no one." },
+    why: { ask: "Why now?", busy: "Checking news…", none: "No recent news about this company.", hint: "1 credit · refunded if nothing found" },
     save: "Save lead", saved: "Saved", reveal: "Reveal email", revealing: "Looking up…", openLead: "Open lead",
     leader: "Decision maker", copy: "Copy",
     status: { valid: "Verified", risky: "Unconfirmed", invalid: "Invalid", not_found: "Not found — credit refunded" } as Record<string, string>,
@@ -76,6 +79,8 @@ const C = {
     oneCredit: "1 credit",
   },
   ar: {
+    full: { title: "تبيهم مرتّبين ومشروحين؟", body: "القائمة الكاملة تختار أنسب الأشخاص لهدفك، ومع كل واحد ليش يناسبك وليش الحين وأول سطر. ٥ أرصدة، وترجع إذا ما لقينا أحد.", cta: "حوّلها لقائمة كاملة" },
+    twoModes: "البحث فوري وأنت تختار. القائمة الكاملة نرتّبها ونشرحها لك.",
     title: "اعثر على الأشخاص الصح",
     sub: "ابحث عن الجهات وأصحاب القرار والأخبار في الخليج، واحفظ العملاء المحتملين واكشف بريدهم الموثّق.",
     modes: { companies: "الجهات", people: "الأشخاص", person: "شخص محدد", news: "الأخبار والمؤشرات" } as Record<SearchMode, string>,
@@ -111,6 +116,7 @@ const C = {
     start: "اختر طريقة البحث، وحدد السوق، وابدأ.",
     decision: "أصحاب القرار", news: "الأخبار", website: "الموقع",
     bulk: { saveAll: (n: number) => `احفظ الكل (${n})`, saveLeaders: (n: number) => `احفظ أصحاب القرار (${n})`, saving: "نحفظ…", done: (n: number) => `حفظنا ${n} في عملائك`, csv: "تنزيل CSV", hint: "مجاني، الحفظ والتنزيل ما يتواصل مع أحد." },
+    why: { ask: "ليش الحين؟", busy: "نبحث في الأخبار…", none: "ما فيه أخبار حديثة عن هذي الشركة.", hint: "رصيد واحد، ويرجع إذا ما لقينا شيء" },
     save: "احفظ", saved: "محفوظ", reveal: "اكشف البريد", revealing: "نبحث عن البريد…", openLead: "افتح",
     leader: "صاحب قرار", copy: "نسخ",
     status: { valid: "موثّق", risky: "غير مؤكد", invalid: "غير صالح", not_found: "ما لقيناه، واسترجعنا الرصيد" } as Record<string, string>,
@@ -263,6 +269,21 @@ export function SearchApp({ lang, defaults, initialCredits, saved: initialSaved 
     }
   }
 
+  /** "Why now?" for a person: this week's news about their company, cached per company. */
+  const [whyNow, setWhyNow] = useState<Record<string, { busy?: boolean; items?: Signal[]; error?: string }>>({});
+  async function findWhyNow(p: Person) {
+    const key = p.company.toLowerCase();
+    if (!key || whyNow[key]?.busy || whyNow[key]?.items) return;
+    setWhyNow((x) => ({ ...x, [key]: { busy: true } }));
+    try {
+      const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: p.company });
+      if (typeof r.balance === "number") setCredits(r.balance);
+      setWhyNow((x) => ({ ...x, [key]: { items: r.results.slice(0, 2) } }));
+    } catch (e) {
+      setWhyNow((x) => ({ ...x, [key]: { error: say((e as Error).message) } }));
+    }
+  }
+
   async function saveCriteria() {
     const label = (naming ?? "").trim();
     if (!label) return;
@@ -336,6 +357,7 @@ export function SearchApp({ lang, defaults, initialCredits, saved: initialSaved 
         <div className="flex flex-col gap-1.5">
           <h1 className="display font-display text-[30px] leading-[1.1] font-medium tracking-[-1px] text-ink">{t.title}</h1>
           <p className="max-w-[640px] text-[15px] text-muted rtl:leading-[26px]">{t.sub}</p>
+          <p className="text-[13px] text-subtle">{t.twoModes} <a href={`/new?lang=${lang}`} className="font-medium text-brand">{t.full.cta} ←</a></p>
         </div>
       </div>
 
@@ -541,7 +563,17 @@ export function SearchApp({ lang, defaults, initialCredits, saved: initialSaved 
         <BulkBar t={t} people={people} leads={leads} personKey={personKey} save={save} />
       )}
       {!busy && people && people.length > 0 && (
-        <ul className="flex flex-col gap-2">{people.map((p) => <PersonRow key={personKey(p)} p={p} t={t} state={leads[personKey(p)]} onSave={() => void save(p)} onReveal={() => void reveal(p)} lang={lang} />)}</ul>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-mint px-4 py-3.5" data-testid="full-list-cta">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <strong className="text-[14.5px] text-ink">{t.full.title}</strong>
+            <span className="text-[13px] text-ink-2">{t.full.body}</span>
+          </span>
+          <a href={`/new?lang=${lang}&q=${encodeURIComponent([describe, role, starter ? (lang === "ar" ? starter.ar : starter.en) : ""].filter(Boolean).join(" — "))}`}
+            className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-4 text-[13.5px] font-medium text-white hover:bg-brand-2">{t.full.cta}<Icon name="arrow-right" size={14} flip /></a>
+        </div>
+      )}
+      {!busy && people && people.length > 0 && (
+        <ul className="flex flex-col gap-2">{people.map((p) => <PersonRow key={personKey(p)} p={p} t={t} state={leads[personKey(p)]} onSave={() => void save(p)} onReveal={() => void reveal(p)} lang={lang} why={whyNow[p.company.toLowerCase()]} onWhy={() => void findWhyNow(p)} />)}</ul>
       )}
 
       {!busy && news && news.length > 0 && <NewsList items={news} />}
@@ -692,7 +724,10 @@ function RoleChips({ lang, role, setRole, label }: { lang: Lang; role: string; s
   );
 }
 
-function PersonRow({ p, t, state, onSave, onReveal, lang }: { p: Person; t: (typeof C)["en"]; state?: LeadState; onSave: () => void; onReveal: () => void; lang: Lang }) {
+function PersonRow({ p, t, state, onSave, onReveal, lang, why, onWhy }: {
+  p: Person; t: (typeof C)["en"]; state?: LeadState; onSave: () => void; onReveal: () => void; lang: Lang;
+  why?: { busy?: boolean; items?: Signal[]; error?: string }; onWhy?: () => void;
+}) {
   const status = state?.status;
   return (
     <li className="flex flex-wrap items-center gap-3 rounded-[14px] bg-white p-3.5 outline outline-1 -outline-offset-1 outline-line">
@@ -714,6 +749,20 @@ function PersonRow({ p, t, state, onSave, onReveal, lang }: { p: Person; t: (typ
         )}
         {state && !state.email && status && <span className="mt-1 text-[12.5px] text-subtle">{t.status[status]}</span>}
         {state?.error && <span className="mt-1 text-[12.5px] text-accent-ink">{state.error}</span>}
+        {onWhy && p.company && (
+          why?.items ? (
+            <span className="mt-2 flex flex-col gap-1.5" data-testid="why-now">
+              <span className="text-[12px] font-semibold text-subtle">{t.why.ask}</span>
+              {why.items.length ? <NewsList items={why.items} /> : <span className="text-[12.5px] text-subtle">{t.why.none}</span>}
+            </span>
+          ) : (
+            <span className="mt-1.5 flex flex-wrap items-center gap-2">
+              <button type="button" disabled={why?.busy} onClick={onWhy} data-testid="ask-why-now" className="cursor-pointer text-[12.5px] font-medium text-brand hover:underline disabled:opacity-60">{why?.busy ? t.why.busy : t.why.ask}</button>
+              {!why?.busy && <span className="text-[11.5px] text-subtle">{t.why.hint}</span>}
+              {why?.error && <span className="text-[12px] text-accent-ink">{why.error}</span>}
+            </span>
+          )
+        )}
       </span>
       <span className="flex gap-1.5">
         {state?.leadId ? (

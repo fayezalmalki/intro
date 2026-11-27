@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Icon, cx } from "@/components/site/ui";
 
@@ -97,6 +98,10 @@ export function LeadActions({
     finally { setSendingVia(false); }
   }
 
+  // The Track panel and activity log are server-rendered: refresh them after
+  // anything here changes the lead (this component remounts on the new stage).
+  const router = useRouter();
+
   async function move(action: string) {
     setMoving(true); setError(null);
     try {
@@ -106,6 +111,7 @@ export function LeadActions({
       setState(json); setOpened(false);
       const next = json.stage === "saved" ? 0 : json.followUps + 1;
       setMessage(draftFor(next));
+      router.refresh();
     } catch (e) { setError(t.errors[(e as Error).message] ?? t.errors.upstream); }
     finally { setMoving(false); }
   }
@@ -139,7 +145,7 @@ export function LeadActions({
   const card = "flex flex-col gap-3 rounded-[18px] bg-white p-5 outline outline-1 -outline-offset-1 outline-line";
   const subject = stepIndex === 0 ? t.subject(company) : t.followSubject(company);
   const mailto = email ? `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}` : undefined;
-  const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-GB", { day: "numeric", month: "short" });
+  const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-GB", { day: "numeric", month: "short", timeZone: "Asia/Riyadh" }); // fixed zone: server and browser must agree (hydration)
   const dueLabel = state.followUpAt ? (new Date(state.followUpAt) <= new Date() ? t.dueNow : t.due(day(state.followUpAt))) : null;
   const writing = state.stage === "saved" || (state.stage === "contacted" && state.followUps < 2 && state.followUpAt !== null);
   const stepTitle = stepIndex === 0 ? t.step.first : stepIndex === 1 ? t.step.f1 : t.step.f2;
