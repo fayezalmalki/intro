@@ -357,7 +357,7 @@ export const leads = sqliteTable("leads", {
 /** Every email the app tried to send, and how it went (the monitoring page). */
 export const emailLog = sqliteTable("email_log", {
   id: id(),
-  kind: text("kind").$type<"otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest">().notNull(),
+  kind: text("kind").$type<"otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back">().notNull(),
   to: text("to").notNull(),
   transport: text("transport").$type<"smtp" | "binding" | "log">().notNull(),
   status: text("status").$type<"sent" | "failed">().notNull(),
