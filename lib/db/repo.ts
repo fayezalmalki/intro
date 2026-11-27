@@ -1100,3 +1100,82 @@ export async function saveCriteria(
 export async function deleteCriteria(accountId: string, id: string, database: Database = defaultDb): Promise<void> {
   await database.delete(criteria).where(and(eq(criteria.id, id), eq(criteria.accountId, accountId)));
 }
+
+// ── The CRM: stages and follow-ups ────────────────────────────
+
+export type LeadStage = "saved" | "contacted" | "replied" | "meeting" | "closed";
+export type LeadAction = "sent" | "replied" | "meeting" | "closed" | "reopen";
+
+/**
+ * Moves a lead along. "sent" is the person telling us they sent the next
+ * message (the first, or a follow-up) from their own email: it schedules the
+ * next follow-up, until the sequence ends. A reply, a meeting or closing stops
+ * follow-ups. Returns the updated lead, or null if it isn't theirs.
+ */
+export async function updateLeadStage(
+  accountId: string, leadId: string, action: LeadAction, database: Database = defaultDb,
+): Promise<LeadRow | null> {
+  const lead = await getLead(accountId, leadId, database);
+  if (!lead) return null;
+  const now = new Date();
+  const iso = now.toISOString();
+  const { nextFollowUp } = await import("../followup");
+  let set: Partial<typeof leads.$inferInsert>;
+  if (action === "sent") {
+    const first = lead.stage === "saved" || lead.stage === "closed" || !lead.contactedAt;
+    const followUps = first ? 0 : Math.min(lead.followUps + 1, 2);
+    set = {
+      stage: "contacted", contactedAt: first ? iso : lead.contactedAt, lastTouchAt: iso,
+      followUps, followUpAt: nextFollowUp(first ? 0 : followUps, now), remindedAt: null,
+    };
+  } else if (action === "reopen") {
+    set = { stage: lead.contactedAt ? "contacted" : "saved", followUpAt: null };
+  } else {
+    set = { stage: action, followUpAt: null, lastTouchAt: iso };
+  }
+  await commit(database, [
+    database.update(leads).set(set).where(and(eq(leads.id, leadId), eq(leads.accountId, accountId))),
+    audit(database, accountId, `lead:${leadId}`, `lead.${action}`),
+  ]);
+  return getLead(accountId, leadId, database);
+}
+
+/** This account's leads whose follow-up is due by `now`. */
+export async function dueFollowUps(accountId: string, now = new Date(), database: Database = defaultDb): Promise<LeadRow[]> {
+  const rows = await database.select().from(leads).innerJoin(people, eq(leads.personId, people.id))
+    .where(and(eq(leads.accountId, accountId), eq(leads.stage, "contacted"), sql`${leads.followUpAt} IS NOT NULL AND ${leads.followUpAt} <= ${now.toISOString()}`))
+    .orderBy(sql`${leads.followUpAt} ASC`);
+  return rows.map((r) => ({ ...r.leads, person: r.people }));
+}
+
+/** Every account with follow-ups due and not yet reminded about, for the daily email. */
+export async function followUpReminders(now = new Date(), database: Database = defaultDb) {
+  const rows = await database.select({ lead: leads, person: people, account: accounts }).from(leads)
+    .innerJoin(people, eq(leads.personId, people.id))
+    .innerJoin(accounts, eq(leads.accountId, accounts.id))
+    .where(and(eq(leads.stage, "contacted"), sql`${leads.followUpAt} IS NOT NULL AND ${leads.followUpAt} <= ${now.toISOString()}`,
+      sql`(${leads.remindedAt} IS NULL OR ${leads.remindedAt} < ${leads.followUpAt})`))
+    .limit(500);
+  const byAccount = new Map<string, { account: typeof accounts.$inferSelect; leads: { id: string; name: string; company: string; step: number }[] }>();
+  for (const r of rows) {
+    const entry = byAccount.get(r.account.id) ?? { account: r.account, leads: [] };
+    entry.leads.push({ id: r.lead.id, name: r.person.latin, company: r.person.company, step: r.lead.followUps + 1 });
+    byAccount.set(r.account.id, entry);
+  }
+  return [...byAccount.values()];
+}
+
+export async function markReminded(leadIds: string[], at = new Date(), database: Database = defaultDb): Promise<void> {
+  if (!leadIds.length) return;
+  await database.update(leads).set({ remindedAt: at.toISOString() }).where(inArray(leads.id, leadIds));
+}
+
+/** The lead for a person already in the graph (a request result), created if needed. */
+export async function leadForPerson(accountId: string, personId: string, market: string, database: Database = defaultDb): Promise<string> {
+  // A verified address already in the graph comes with the lead: no reveal needed.
+  const [p] = await database.select({ email: people.email, verified: people.emailVerified }).from(people).where(eq(people.id, personId)).limit(1);
+  const email = p?.verified && p.email ? p.email : null;
+  await database.insert(leads).values({ accountId, personId, source: "request", market, email, emailStatus: email ? "valid" : null, revealedAt: email ? nowIso() : null }).onConflictDoNothing();
+  const [row] = await database.select({ id: leads.id }).from(leads).where(and(eq(leads.accountId, accountId), eq(leads.personId, personId))).limit(1);
+  return row.id;
+}

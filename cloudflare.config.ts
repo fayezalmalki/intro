@@ -1,4 +1,4 @@
-import { bindings, defineConfig, defineWorker, exports } from "cf/config";
+import { bindings, defineConfig, defineWorker, exports, triggers } from "cf/config";
 
 const WORKER = "intro";
 
@@ -22,6 +22,8 @@ export default defineConfig({
     // Cloudflare creates the DNS records and certificates on deploy.
     domains: ["intro.sa", "www.intro.sa", "app.intro.sa"],
     workersDev: false,
+    // The daily follow-up reminder email (worker/index.ts `scheduled`), 09:00 Riyadh.
+    triggers: [triggers.scheduled({ schedule: "0 6 * * *" })],
     // Persisted logs and real-time Issues, so production errors are visible.
     // Query strings are redacted: search and sign-in URLs can carry personal data.
     observability: { enabled: true, redactQueryString: true, issues: { enabled: true } },

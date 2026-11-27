@@ -20,4 +20,9 @@ export default {
     }
     return vinext.fetch!(request, env, ctx);
   },
+  /** Daily at 06:00 UTC (09:00 Riyadh): email each user the follow-ups due today. */
+  async scheduled(_controller, _env, ctx) {
+    const { sendDueReminders } = await import("../lib/reminders");
+    ctx.waitUntil(sendDueReminders().then((r) => console.log(`[reminders] ${r.leads} follow-ups across ${r.accounts} accounts`)));
+  },
 } satisfies ExportedHandler;

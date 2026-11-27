@@ -132,3 +132,29 @@ export async function sendCreditRequest(admins: string[], account: { displayName
     `طلب رصيد من ${account.displayName} <${account.email}> — ${pack}. ${SITE}/am/team`,
   );
 }
+
+/** The daily nudge: follow-ups that are due, each linking to its drafted message. */
+export async function sendFollowUpDigest(
+  to: string, name: string, locale: "ar" | "en", leads: { id: string; name: string; company: string; step: number }[],
+): Promise<void> {
+  const ar = locale !== "en";
+  const step = (n: number) => (ar ? (n >= 2 ? "آخر رسالة" : "المتابعة الأولى") : n >= 2 ? "Last note" : "Follow-up 1");
+  const rows = leads.slice(0, 10).map((l) =>
+    `<tr><td style="padding:10px 0;border-top:1px solid #EEEEEA"><a href="${SITE}/leads/${l.id}?lang=${ar ? "ar" : "en"}" style="color:#141613;text-decoration:none;font-weight:600">${esc(l.name)}</a><div style="color:#696D66;font-size:13px">${esc(l.company)} · ${step(l.step)}</div></td></tr>`).join("");
+  const more = leads.length > 10 ? (ar ? `<p style="color:#696D66">و${leads.length - 10} غيرهم في التطبيق.</p>` : `<p style="color:#696D66">And ${leads.length - 10} more in the app.</p>`) : "";
+  const subject = ar ? `${leads.length} متابعة جاهزة للإرسال` : `${leads.length} follow-up${leads.length === 1 ? "" : "s"} ready to send`;
+  await send(
+    to,
+    subject,
+    layout(ar ? "rtl" : "ltr", ar
+      ? `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">صباح الخير ${esc(name)}</h1>
+         <p style="color:#575B54;line-height:1.8;margin:0 0 10px">كتبنا لك هذي المتابعات. افتح كل وحدة وأرسلها من بريدك.</p>
+         <table style="width:100%;border-collapse:collapse">${rows}</table>${more}
+         <div style="margin-top:20px">${button(`${SITE}/home?lang=ar`, "افتح متابعاتي")}</div>`
+      : `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">Good morning, ${esc(name)}</h1>
+         <p style="color:#575B54;line-height:1.7;margin:0 0 10px">These follow-ups are drafted and ready. Open each one and send it from your email.</p>
+         <table style="width:100%;border-collapse:collapse">${rows}</table>${more}
+         <div style="margin-top:20px">${button(`${SITE}/home?lang=en`, "Open my follow-ups")}</div>`),
+    `${subject}\n${leads.map((l) => `- ${l.name} (${l.company}): ${SITE}/leads/${l.id}`).join("\n")}`,
+  );
+}

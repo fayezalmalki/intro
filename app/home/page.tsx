@@ -31,6 +31,7 @@ const C = {
     },
     quick: "Who do you need to reach?", quickPh: "e.g. heads of procurement at private hospitals in Riyadh", quickGo: "Search",
     companies: "Companies", people: "People", person: "A person", news: "News",
+    due: "Follow-ups due", dueSub: "Drafted and ready — open each one and send it from your email.", dueStep: (n: number) => (n === 0 ? "Follow-up 1" : "Last note"),
     flow: "How it connects", flowSub: "Everything you find lands in the same place.",
     flowSteps: { searches: ["Searches", "Find companies, people, a person or news"], leads: ["Leads saved", "Keep the people worth a conversation"], revealed: ["Verified emails", "Unlock how to reach them"], requests: ["Requests", "Hand us a whole goal to source"] },
     starters: "Start from a goal", startersSub: "Each opens a ready search you can refine.",
@@ -55,6 +56,7 @@ const C = {
     },
     quick: "مين تبي توصل له؟", quickPh: "مثال: رؤساء المشتريات في المستشفيات الخاصة بالرياض", quickGo: "ابحث",
     companies: "الجهات", people: "الأشخاص", person: "شخص محدد", news: "الأخبار",
+    due: "متابعات حان وقتها", dueSub: "جاهزة ومكتوبة، افتح كل وحدة وأرسلها من بريدك.", dueStep: (n: number) => (n === 0 ? "المتابعة الأولى" : "آخر رسالة"),
     flow: "كيف يترابط كل شي", flowSub: "كل اللي تلقاه ينحفظ في مكان واحد.",
     flowSteps: { searches: ["البحوث", "شركات، أشخاص، شخص محدد أو أخبار"], leads: ["العملاء المحفوظون", "احتفظ باللي يستاهلون التواصل"], revealed: ["البريد الموثّق", "اعرف كيف توصلهم"], requests: ["الطلبات", "اعطنا هدفًا كاملًا ونجهّزه"] },
     starters: "ابدأ من هدف", startersSub: "كل هدف يفتح لك بحثًا جاهزًا تقدر تعدّله.",
@@ -71,8 +73,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const lang = pickLang(l, undefined, account.locale ?? "ar");
   const t = C[lang];
   const dict = lang === "ar" ? arDict : enDict;
-  const [stats, credits, recentLeads, mine] = await Promise.all([
-    repo.journeyStats(account.id), repo.creditBalance(account.id), repo.listLeads(account.id), loadMyRequests(account.id),
+  const [stats, credits, recentLeads, mine, due] = await Promise.all([
+    repo.journeyStats(account.id), repo.creditBalance(account.id), repo.listLeads(account.id), loadMyRequests(account.id), repo.dueFollowUps(account.id),
   ]);
   const recentRequests = [...mine.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
   const first = account.displayName.split(/\s+/)[0];
@@ -112,6 +114,29 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             <button type="submit" className="flex h-12 cursor-pointer items-center gap-2 rounded-[14px] bg-brand px-5 text-[15px] font-medium text-white hover:bg-brand-2">{t.quickGo}</button>
           </div>
         </form>
+
+        {due.length > 0 && (
+          <section aria-labelledby="due-heading" data-testid="due-follow-ups" className="flex flex-col gap-3 rounded-[18px] bg-sand/60 p-5 outline outline-1 -outline-offset-1 outline-line">
+            <div className="flex flex-col gap-0.5">
+              <h2 id="due-heading" className="text-[17px] font-semibold text-ink">{t.due} · {due.length}</h2>
+              <span className="text-[13.5px] text-muted">{t.dueSub}</span>
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {due.slice(0, 6).map((l) => (
+                <li key={l.id}>
+                  <a href={`/leads/${l.id}?lang=${lang}`} className="flex items-center gap-3 rounded-[12px] bg-white px-3.5 py-2.5 hover:bg-surface-3">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-avatar text-[12px] font-semibold text-ink">{l.person.latin[0]}</span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-[14px] font-medium text-ink" dir="auto">{l.person.latin}</span>
+                      <span className="truncate text-[12.5px] text-muted" dir="auto">{l.person.company}</span>
+                    </span>
+                    <Badge tone="accent">{t.dueStep(l.followUps)}</Badge>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section aria-labelledby="flow-heading" className="flex flex-col gap-3">
           <div className="flex flex-col gap-0.5">

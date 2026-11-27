@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { extractBrief } from "./intent";
 import { parseRows } from "./parse";
 import * as repo from "./db/repo";
+import { loadRequestContext } from "./db/loaders";
 import { sendThroughGate } from "./send";
 import { liveWorkflow, startSourcing } from "./sourcing/live";
 import { chargeThroughGate } from "./charge";
@@ -391,4 +392,20 @@ export async function buyCredits(formData: FormData): Promise<void> {
   });
   await repo.attachInvoice(orderId, invoice.id);
   redirect(invoice.url);
+}
+
+/**
+ * A request result → the lead page, where the message is drafted, opened in
+ * the person's own email and followed up. Free; creates the lead if needed.
+ */
+export async function writeToPerson(formData: FormData): Promise<void> {
+  const requestId = String(formData.get("requestId") ?? "");
+  const personId = String(formData.get("personId") ?? "");
+  const lang = formData.get("lang") === "en" ? "en" : "ar";
+  const owner = await requireRequestOwner(requestId, "write to people on this request");
+  const context = await loadRequestContext(requestId);
+  const listed = context.pipelines.some((p) => p.requestId === requestId && p.status === "published" && p.items.some((i) => i.personId === personId));
+  if (!listed) throw new Error("This person is not on this request's published list.");
+  const leadId = await repo.leadForPerson(owner.id, personId, "SA");
+  redirect(`/leads/${leadId}?lang=${lang}`);
 }

@@ -334,9 +334,21 @@ export const leads = sqliteTable("leads", {
   revealedAt: text("revealed_at"),
   signals: text("signals", { mode: "json" }).$type<{ url: string; title: string; source: string; date?: string }[]>(),
   note: text("note"),
+  // The CRM: where this conversation stands, and when to follow up. Sending
+  // happens from the person's own email app; they mark it sent here.
+  stage: text("stage").$type<"saved" | "contacted" | "replied" | "meeting" | "closed">().notNull().default("saved"),
+  contactedAt: text("contacted_at"),
+  /** When the next follow-up is due; null when none is (replied, closed, or the sequence is done). */
+  followUpAt: text("follow_up_at"),
+  /** Follow-ups sent so far (0, 1, 2). */
+  followUps: integer("follow_ups").notNull().default(0),
+  lastTouchAt: text("last_touch_at"),
+  /** The last time a reminder email covered this follow-up. */
+  remindedAt: text("reminded_at"),
   createdAt: isoNow("created_at"),
 }, (t) => [
   uniqueIndex("leads_account_person_idx").on(t.accountId, t.personId),
+  index("leads_follow_up_idx").on(t.followUpAt),
   index("leads_account_idx").on(t.accountId),
 ]);
 
