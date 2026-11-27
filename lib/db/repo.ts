@@ -4,7 +4,7 @@ import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
   accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
-  criteria, emailLog, outbound, pipelines, requests, searchCache, searchLog, sendAttempts, signups, suppressions,
+  criteria, emailLog, leadActivity, outbound, pipelines, requests, searchCache, searchLog, sendAttempts, signups, suppressions,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
@@ -753,7 +753,7 @@ export interface LeadPerson {
  * account and person. Returns the lead id, new or existing.
  */
 export async function saveLead(
-  input: { accountId: string; person: LeadPerson; market?: string; source?: "search" | "request" },
+  input: { accountId: string; person: LeadPerson; market?: string; source?: "search" | "request" | "manual" | "import" },
   database: Database = defaultDb,
 ): Promise<string> {
   const p = input.person;
@@ -765,12 +765,14 @@ export async function saveLead(
   const fields = {
     latin: p.name, firstAr: p.name.split(/\s+/)[0] ?? p.name, title: p.title, company: p.company,
     companyDomain: p.companyDomain ?? null, geo: p.location ?? "", industries: p.industries ?? [],
-    seniority: p.seniority, linkedinUrl: p.linkedinUrl ?? null, source: "provider" as const,
+    seniority: p.seniority, linkedinUrl: p.linkedinUrl ?? null,
+    source: (input.source === "manual" || input.source === "import" ? "import" : "provider") as "import" | "provider",
     servedBy: p.servedBy ?? null, updatedAt: nowIso(),
   };
   const statements: Stmt[] = [];
   if (personId) {
-    statements.push(database.update(people).set(fields).where(eq(people.id, personId)));
+    // A hand-typed row never overwrites what a provider knows about the person.
+    if (fields.source === "provider") statements.push(database.update(people).set(fields).where(eq(people.id, personId)));
   } else {
     personId = crypto.randomUUID();
     statements.push(database.insert(people).values({ id: personId, ...fields }));
@@ -1136,6 +1138,7 @@ export async function updateLeadStage(
   await commit(database, [
     database.update(leads).set(set).where(and(eq(leads.id, leadId), eq(leads.accountId, accountId))),
     audit(database, accountId, `lead:${leadId}`, `lead.${action}`),
+    database.insert(leadActivity).values({ leadId, accountId, kind: action === "sent" ? "email" : "stage", body: action === "sent" ? (lead.contactedAt ? "follow-up" : "first message") : `${lead.stage}→${set.stage ?? lead.stage}`, at: iso }),
   ]);
   return getLead(accountId, leadId, database);
 }
@@ -1385,4 +1388,96 @@ export async function updateRequestBrief(
     .where(and(eq(requests.id, requestId), eq(requests.accountId, accountId), eq(requests.status, "intent_review"), sql`${requests.confirmedAt} IS NULL`))
     .returning({ id: requests.id });
   return rows.length > 0;
+}
+
+// ── CRM without sending ───────────────────────────────────────
+
+/** Adds people by hand or from a sheet. Existing LinkedIn profiles are reused; returns lead ids. */
+export async function createManualLeads(
+  accountId: string, rows: import("../crm").ManualLead[], source: "manual" | "import", database: Database = defaultDb,
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (const r of rows) {
+    const leadId = await saveLead({
+      accountId, source,
+      person: { name: r.name, title: r.title ?? "", company: r.company, linkedinUrl: r.linkedinUrl, seniority: "", industries: [] },
+    }, database);
+    const now = nowIso();
+    await commit(database, [
+      database.update(leads).set({
+        source, email: r.email ?? null, emailStatus: null, phone: r.phone ?? null, tags: r.tags ?? [], value: r.value ?? null,
+        stage: r.stage ?? "saved", note: r.note ?? null,
+      }).where(and(eq(leads.id, leadId), eq(leads.accountId, accountId))),
+      database.insert(leadActivity).values({ leadId, accountId, kind: "created", body: source === "import" ? "import" : "manual", at: now }),
+      ...(r.note ? [database.insert(leadActivity).values({ leadId, accountId, kind: "note", body: r.note, at: now })] : []),
+    ]);
+    ids.push(leadId);
+  }
+  return ids;
+}
+
+/** Edits the CRM fields of a lead. */
+export async function updateLeadDetails(
+  accountId: string, leadId: string,
+  input: Partial<{ tags: string[]; nextStep: string | null; nextStepAt: string | null; phone: string | null; value: number | null; email: string | null }>,
+  database: Database = defaultDb,
+): Promise<boolean> {
+  const set: Partial<typeof leads.$inferInsert> = { ...input };
+  if ("nextStepAt" in input) set.nextStepRemindedAt = null;
+  if ("email" in input) set.emailStatus = null; // typed by them: not verified by us
+  const rows = await database.update(leads).set(set).where(and(eq(leads.id, leadId), eq(leads.accountId, accountId))).returning({ id: leads.id });
+  return rows.length > 0;
+}
+
+/** Moves a lead to any stage directly — no message implied. Logged. */
+export async function setLeadStage(accountId: string, leadId: string, stage: import("../crm").Stage, database: Database = defaultDb): Promise<boolean> {
+  const lead = await getLead(accountId, leadId, database);
+  if (!lead || lead.stage === stage) return Boolean(lead);
+  const iso = nowIso();
+  await commit(database, [
+    database.update(leads).set({
+      stage, lastTouchAt: iso,
+      // Leaving "contacted" stops the sequence's follow-ups; reaching it by hand starts none.
+      ...(stage !== "contacted" && { followUpAt: null }),
+      ...(stage !== "saved" && !lead.contactedAt && { contactedAt: iso }),
+    }).where(and(eq(leads.id, leadId), eq(leads.accountId, accountId))),
+    database.insert(leadActivity).values({ leadId, accountId, kind: "stage", body: `${lead.stage}→${stage}`, at: iso }),
+  ]);
+  return true;
+}
+
+export async function logActivity(accountId: string, leadId: string, kind: import("../crm").ActivityKind, body: string, database: Database = defaultDb): Promise<boolean> {
+  const lead = await getLead(accountId, leadId, database);
+  if (!lead) return false;
+  const iso = nowIso();
+  await commit(database, [
+    database.insert(leadActivity).values({ leadId, accountId, kind, body: body.slice(0, 2000), at: iso }),
+    database.update(leads).set({ lastTouchAt: iso }).where(eq(leads.id, leadId)),
+  ]);
+  return true;
+}
+
+export async function listActivity(accountId: string, leadId: string, database: Database = defaultDb) {
+  return database.select().from(leadActivity)
+    .where(and(eq(leadActivity.leadId, leadId), eq(leadActivity.accountId, accountId)))
+    .orderBy(sql`${leadActivity.at} desc`).limit(100);
+}
+
+/** Next steps due by `now` that no reminder has covered yet, grouped by account. */
+export async function nextStepReminders(now = new Date(), database: Database = defaultDb) {
+  const rows = await database.select({ lead: leads, person: people, account: accounts }).from(leads)
+    .innerJoin(people, eq(leads.personId, people.id)).innerJoin(accounts, eq(leads.accountId, accounts.id))
+    .where(and(sql`${leads.nextStepAt} IS NOT NULL AND ${leads.nextStepAt} <= ${now.toISOString()}`, sql`${leads.nextStepRemindedAt} IS NULL`))
+    .limit(500);
+  const by = new Map<string, { account: typeof accounts.$inferSelect; items: { id: string; name: string; company: string; step: string }[] }>();
+  for (const r of rows) {
+    const e = by.get(r.account.id) ?? { account: r.account, items: [] };
+    e.items.push({ id: r.lead.id, name: r.person.latin, company: r.person.company, step: r.lead.nextStep ?? "" });
+    by.set(r.account.id, e);
+  }
+  return [...by.values()];
+}
+
+export async function markNextStepReminded(ids: string[], at = new Date(), database: Database = defaultDb): Promise<void> {
+  if (ids.length) await database.update(leads).set({ nextStepRemindedAt: at.toISOString() }).where(inArray(leads.id, ids));
 }

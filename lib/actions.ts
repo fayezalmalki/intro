@@ -461,3 +461,71 @@ export async function inviteBack(formData: FormData): Promise<void> {
   revalidatePath("/am/signups");
   redirect("/am/signups?invite=sent");
 }
+
+// ── CRM without sending ───────────────────────────────────────
+
+const leadLang = (fd: FormData) => (String(fd.get("lang") ?? "ar") === "en" ? "en" : "ar");
+
+/** Adds one person by hand: the CRM works for people found anywhere. */
+export async function createLeadAction(formData: FormData): Promise<void> {
+  const { cleanLead } = await import("./crm");
+  const account = await currentAccount();
+  const lang = leadLang(formData);
+  const lead = cleanLead(Object.fromEntries(formData));
+  if (!lead) redirect(`/leads/new?lang=${lang}&missing=1`);
+  const [id] = await repo.createManualLeads(account.id, [lead], "manual");
+  revalidatePath("/leads");
+  redirect(`/leads/${id}?lang=${lang}`);
+}
+
+/** Imports a sheet (CSV pasted or uploaded). */
+export async function importLeadsAction(formData: FormData): Promise<void> {
+  const { leadsFromCsv } = await import("./crm");
+  const account = await currentAccount();
+  const lang = leadLang(formData);
+  const file = formData.get("file");
+  const text = file && typeof file === "object" && "text" in file && (file as File).size > 0
+    ? (await (file as File).text()).slice(0, 2_000_000)
+    : String(formData.get("csv") ?? "").slice(0, 2_000_000);
+  const { leads, skipped } = leadsFromCsv(text);
+  if (leads.length === 0) redirect(`/leads/import?lang=${lang}&none=1&skipped=${skipped}`);
+  await repo.createManualLeads(account.id, leads, "import");
+  revalidatePath("/leads");
+  redirect(`/leads?lang=${lang}&imported=${leads.length}&skipped=${skipped}`);
+}
+
+/** Stage, next step, tags, phone, value, email — whatever the form carries. */
+export async function updateLeadAction(formData: FormData): Promise<void> {
+  const { STAGES, cleanTags } = await import("./crm");
+  const account = await currentAccount();
+  const leadId = String(formData.get("leadId") ?? "");
+  const lang = leadLang(formData);
+  const stage = String(formData.get("stage") ?? "");
+  if (STAGES.includes(stage as never)) await repo.setLeadStage(account.id, leadId, stage as (typeof STAGES)[number]);
+  const patch: Parameters<typeof repo.updateLeadDetails>[2] = {};
+  if (formData.has("tags")) patch.tags = cleanTags(formData.get("tags"));
+  if (formData.has("nextStep")) patch.nextStep = String(formData.get("nextStep")).trim().slice(0, 200) || null;
+  if (formData.has("nextStepAt")) {
+    const d = String(formData.get("nextStepAt"));
+    patch.nextStepAt = /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T06:00:00.000Z`).toISOString() : null;
+  }
+  if (formData.has("phone")) patch.phone = String(formData.get("phone")).replace(/[^\d+\s()-]/g, "").slice(0, 40) || null;
+  if (formData.has("value")) { const v = Number(String(formData.get("value")).replace(/[^\d]/g, "")); patch.value = v > 0 ? v : null; }
+  if (formData.has("email")) { const e = String(formData.get("email")).trim().toLowerCase(); patch.email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null; }
+  if (Object.keys(patch).length) await repo.updateLeadDetails(account.id, leadId, patch);
+  revalidatePath(`/leads/${leadId}`); revalidatePath("/leads");
+  const back = String(formData.get("back") ?? "");
+  redirect(back.startsWith("/leads") ? back : `/leads/${leadId}?lang=${lang}`);
+}
+
+/** Logs a call, meeting, note, or a message sent outside intro. */
+export async function logActivityAction(formData: FormData): Promise<void> {
+  const { ACTIVITY_KINDS } = await import("./crm");
+  const account = await currentAccount();
+  const leadId = String(formData.get("leadId") ?? "");
+  const kind = String(formData.get("kind") ?? "note");
+  const body = String(formData.get("body") ?? "").trim();
+  if (body && ACTIVITY_KINDS.includes(kind as never)) await repo.logActivity(account.id, leadId, kind as (typeof ACTIVITY_KINDS)[number], body);
+  revalidatePath(`/leads/${leadId}`);
+  redirect(`/leads/${leadId}?lang=${leadLang(formData)}#activity`);
+}

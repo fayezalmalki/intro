@@ -192,14 +192,20 @@ export async function sendCreditRequest(admins: string[], account: { displayName
 
 /** The daily nudge: follow-ups that are due, each linking to its drafted message. */
 export async function sendFollowUpDigest(
-  to: string, name: string, locale: "ar" | "en", leads: { id: string; name: string; company: string; step: number }[],
+  to: string, name: string, locale: "ar" | "en", leads: { id: string; name: string; company: string; step: number | string }[],
 ): Promise<void> {
   const ar = locale !== "en";
-  const step = (n: number) => (ar ? (n >= 2 ? "آخر رسالة" : "المتابعة الأولى") : n >= 2 ? "Last note" : "Follow-up 1");
+  // A number is a step of the follow-up sequence; a string is the person's own next step.
+  const step = (n: number | string) => typeof n === "string"
+    ? (ar ? `الخطوة التالية: ${n || "—"}` : `Next step: ${n || "—"}`)
+    : (ar ? (n >= 2 ? "آخر رسالة" : "المتابعة الأولى") : n >= 2 ? "Last note" : "Follow-up 1");
   const rows = leads.slice(0, 10).map((l) =>
     `<tr><td style="padding:10px 0;border-top:1px solid #EEEEEA"><a href="${SITE}/leads/${l.id}?lang=${ar ? "ar" : "en"}" style="color:#141613;text-decoration:none;font-weight:600">${esc(l.name)}</a><div style="color:#696D66;font-size:13px">${esc(l.company)} · ${step(l.step)}</div></td></tr>`).join("");
   const more = leads.length > 10 ? (ar ? `<p style="color:#696D66">و${leads.length - 10} غيرهم في التطبيق.</p>` : `<p style="color:#696D66">And ${leads.length - 10} more in the app.</p>`) : "";
-  const subject = ar ? `${leads.length} متابعة جاهزة للإرسال` : `${leads.length} follow-up${leads.length === 1 ? "" : "s"} ready to send`;
+  const tasks = leads.some((l) => typeof l.step === "string");
+  const subject = tasks
+    ? (ar ? `${leads.length} متابعة مستحقة اليوم` : `${leads.length} thing${leads.length === 1 ? "" : "s"} due today`)
+    : (ar ? `${leads.length} متابعة جاهزة للإرسال` : `${leads.length} follow-up${leads.length === 1 ? "" : "s"} ready to send`);
   await send(
     "follow_up_digest",
     to,

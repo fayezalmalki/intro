@@ -327,7 +327,7 @@ export const leads = sqliteTable("leads", {
   id: id(),
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
-  source: text("source").$type<"search" | "request">().notNull().default("search"),
+  source: text("source").$type<"search" | "request" | "manual" | "import">().notNull().default("search"),
   market: text("market"),
   email: text("email"),
   emailStatus: text("email_status").$type<"valid" | "risky" | "invalid" | "not_found">(),
@@ -345,12 +345,38 @@ export const leads = sqliteTable("leads", {
   lastTouchAt: text("last_touch_at"),
   /** The last time a reminder email covered this follow-up. */
   remindedAt: text("reminded_at"),
+  // The CRM without sending: the person's own next step and its date (any
+  // stage), labels, a phone, and what the deal is worth.
+  nextStep: text("next_step"),
+  nextStepAt: text("next_step_at"),
+  nextStepRemindedAt: text("next_step_reminded_at"),
+  tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  phone: text("phone"),
+  /** Deal value in SAR, if they track one. */
+  value: integer("value"),
   createdAt: isoNow("created_at"),
 }, (t) => [
   uniqueIndex("leads_account_person_idx").on(t.accountId, t.personId),
+  index("leads_next_step_idx").on(t.nextStepAt),
   index("leads_follow_up_idx").on(t.followUpAt),
   index("leads_account_idx").on(t.accountId),
 ]);
+
+// ── Lead activity ─────────────────────────────────────────────
+
+/**
+ * What happened with a lead, logged by the person or by the app: a note, a
+ * call, a meeting, an email sent outside intro, a stage change. The CRM is
+ * useful without sending anything from here.
+ */
+export const leadActivity = sqliteTable("lead_activity", {
+  id: id(),
+  leadId: text("lead_id").notNull().references(() => leads.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"note" | "call" | "meeting" | "email" | "message" | "stage" | "created">().notNull(),
+  body: text("body").notNull().default(""),
+  at: isoNow("at"),
+}, (t) => [index("lead_activity_lead_idx").on(t.leadId, t.at)]);
 
 // ── Outreach sent through intro ───────────────────────────────
 

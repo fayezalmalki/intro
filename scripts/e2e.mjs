@@ -103,8 +103,8 @@ await shot("01-intake");
 
 // Structured intake: goal → sector → role.
 await page.click("[data-testid=goal-job]");
-await page.fill("[data-testid=sector-search]", "تقنية");
-await page.locator("[data-testid^=sector-]:not([data-testid=sector-search])").first().click();
+await page.fill("[data-testid=sector-search]", "تقنية مالية");
+await page.click('[data-testid="sector-Financial Services"]');
 await page.click("[data-testid=role-Head]");
 await page.fill("textarea[name=notes]", "أدور وظيفة قيادية في الـ Product.");
 await Promise.all([page.waitForURL(/\/confirm/), page.click("[data-testid=create-request]")]);
@@ -240,7 +240,7 @@ await page.getByRole("link", { name: "Open lead" }).first().click();
 await page.waitForURL(/\/leads\/[^/?]+/);
 await page.getByRole("button", { name: "Find recent news" }).click();
 await page.locator("main section a[target=_blank]").first().waitFor();
-step("lead page", `${await page.locator("main section a[target=_blank]").count()} news items · opener ${(await page.locator("textarea").inputValue()).length} chars`);
+step("lead page", `${await page.locator("main section a[target=_blank]").count()} news items · opener ${(await page.locator("textarea:not([data-testid=activity-body])").first().inputValue()).length} chars`);
 await shot("16-lead");
 
 // 12. billing: balance, packs; without a payment key a pack is requested from the team
