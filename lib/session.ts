@@ -121,7 +121,16 @@ export async function currentAccount(database: Database = defaultDb): Promise<Ac
  * caller somewhere it never asked to go; actions keep currentAccount().
  */
 export async function pageAccount(next: string, database: Database = defaultDb): Promise<Account> {
-  const account = await currentAccount(database);
+  let account: Account;
+  try {
+    account = await currentAccount(database);
+  } catch (error) {
+    // A cookie whose session or user is gone (signed out elsewhere, account
+    // deleted) passes the cookie check in front of pages: send them to sign in.
+    if (!(error instanceof NotAuthenticated)) throw error;
+    const { redirect } = await import("next/navigation");
+    return redirect(`/login?next=${encodeURIComponent(next)}`);
+  }
   if (!account.onboardedAt) {
     const { redirect } = await import("next/navigation");
     redirect(`/welcome?next=${encodeURIComponent(next)}`);

@@ -3,7 +3,7 @@ import type { BatchItem } from "drizzle-orm/batch";
 import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
-  accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
+  authUsers, accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
   criteria, emailLog, leadActivity, outbound, pipelines, requests, searchCache, searchLog, sendAttempts, signups, suppressions,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
@@ -1488,4 +1488,59 @@ export async function discardRequest(requestId: string, accountId: string, datab
     .where(and(eq(requests.id, requestId), eq(requests.accountId, accountId), eq(requests.status, "intent_review"), sql`${requests.confirmedAt} IS NULL`))
     .returning({ id: requests.id });
   return rows.length > 0;
+}
+
+// ── Settings and the person's own data ────────────────────────
+
+export async function updateProfile(
+  accountId: string,
+  input: Partial<{ displayName: string; jobTitle: string | null; company: string | null; companyWebsite: string | null; linkedinUrl: string | null; locale: "ar" | "en"; notifyResults: boolean; notifyReminders: boolean }>,
+  database: Database = defaultDb,
+): Promise<void> {
+  const set: Partial<typeof accounts.$inferInsert> = { ...input };
+  if (input.displayName) set.initial = input.displayName.trim()[0] ?? "؟";
+  await database.update(accounts).set(set).where(eq(accounts.id, accountId));
+}
+
+/** Everything we hold about this account, for "download my data" (PDPL). */
+export async function exportAccountData(accountId: string, database: Database = defaultDb) {
+  const [account] = await database.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
+  const [leadRows, activity, reqs, saved, credits, orders] = await Promise.all([
+    listLeads(accountId, database),
+    database.select().from(leadActivity).where(eq(leadActivity.accountId, accountId)),
+    database.select({ id: requests.id, rawText: requests.rawText, brief: requests.brief, status: requests.status, createdAt: requests.createdAt }).from(requests).where(eq(requests.accountId, accountId)),
+    database.select().from(criteria).where(eq(criteria.accountId, accountId)),
+    database.select().from(ledger).where(eq(ledger.accountId, accountId)),
+    database.select().from(creditOrders).where(eq(creditOrders.accountId, accountId)),
+  ]);
+  return {
+    exportedAt: nowIso(),
+    account: account && {
+      email: account.email, displayName: account.displayName, jobTitle: account.jobTitle, company: account.company,
+      companyWebsite: account.companyWebsite, linkedinUrl: account.linkedinUrl, locale: account.locale, createdAt: account.createdAt,
+    },
+    leads: leadRows.map((l) => ({
+      name: l.person.latin, title: l.person.title, company: l.person.company, linkedin: l.person.linkedinUrl, email: l.email, phone: l.phone,
+      stage: l.stage, tags: l.tags, nextStep: l.nextStep, nextStepAt: l.nextStepAt, value: l.value, note: l.note, savedAt: l.createdAt,
+    })),
+    activity: activity.map((a) => ({ leadId: a.leadId, kind: a.kind, body: a.body, at: a.at })),
+    requests: reqs, savedSearches: saved, credits, payments: orders,
+  };
+}
+
+/**
+ * Deletes the account and everything that belongs to it (the auth user cascades
+ * to the account, then to its leads, requests, activity…). Paid orders are kept
+ * as an audit record first: payment records outlive the account by law.
+ */
+export async function deleteAccount(accountId: string, database: Database = defaultDb): Promise<boolean> {
+  const [account] = await database.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
+  if (!account) return false;
+  const paid = await database.select({ id: creditOrders.id, credits: creditOrders.credits, amountHalalas: creditOrders.amountHalalas, invoiceId: creditOrders.invoiceId, createdAt: creditOrders.createdAt })
+    .from(creditOrders).where(and(eq(creditOrders.accountId, accountId), eq(creditOrders.status, "paid")));
+  await commit(database, [
+    audit(database, "self", `account:${accountId}`, "account.deleted", JSON.stringify({ paidOrders: paid }).slice(0, 4000)),
+    database.delete(authUsers).where(eq(authUsers.id, account.userId)),
+  ]);
+  return true;
 }

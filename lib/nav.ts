@@ -6,7 +6,7 @@ import type { IconKey } from "@/components/site/ui";
  * layout change: the sidebar, the phone tab bar and Home's flow all read it.
  */
 
-export type NavId = "home" | "search" | "leads" | "requests" | "billing";
+export type NavId = "home" | "search" | "leads" | "requests" | "billing" | "settings";
 
 export interface NavItem {
   id: NavId;
@@ -51,6 +51,7 @@ export const NAV: NavGroup[] = [
     id: "account", en: "Account", ar: "الحساب",
     items: [
       { id: "billing", href: "/billing", icon: "sparkles", en: "Credits & billing", ar: "الرصيد والفواتير", hint: { en: "Top up, usage", ar: "الشحن والاستهلاك" } },
+      { id: "settings", href: "/settings", icon: "user-check", en: "Settings", ar: "الإعدادات", hint: { en: "Profile, emails, your data", ar: "ملفك، الرسائل، بياناتك" } },
     ],
   },
 ];

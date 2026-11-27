@@ -197,6 +197,9 @@ export interface Account {
   linkedinUrl?: string;
   /** Interface language from onboarding; absent means Arabic. */
   locale?: "ar" | "en";
+  /** Email preferences (/settings); true unless turned off. */
+  notifyResults?: boolean;
+  notifyReminders?: boolean;
   /** Set when /welcome is completed; until then app pages send them there. */
   onboardedAt?: string;
   /** An observer asked to send (/activate); an admin approves in /am/team. */

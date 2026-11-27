@@ -112,6 +112,8 @@ export async function confirmBrief(formData: FormData): Promise<void> {
     if (owner.state !== "managed") {
       const published = await repo.autoPublishLatestDraft(requestId, "AI");
       if (!published) await repo.refundRequest(owner.id, requestId);
+      const { notifyListReady } = await import("./notify");
+      await notifyListReady(requestId).catch((error) => console.error("[confirmBrief] list-ready email failed", error));
     }
   }
 
@@ -537,4 +539,38 @@ export async function discardRequestAction(formData: FormData): Promise<void> {
   await repo.discardRequest(requestId, account.id);
   revalidatePath("/requests"); revalidatePath("/home");
   redirect(`/requests?lang=${String(formData.get("lang") ?? "") === "en" ? "en" : "ar"}`);
+}
+
+// ── Settings ──────────────────────────────────────────────────
+
+export async function updateSettingsAction(formData: FormData): Promise<void> {
+  const account = await currentAccount();
+  const txt = (k: string, n = 120) => (formData.has(k) ? String(formData.get(k) ?? "").trim().slice(0, n) || null : undefined);
+  const locale = String(formData.get("locale") ?? account.locale) === "en" ? "en" : "ar";
+  const displayName = txt("displayName");
+  await repo.updateProfile(account.id, {
+    ...(displayName && { displayName }),
+    jobTitle: txt("jobTitle"), company: txt("company"),
+    companyWebsite: txt("companyWebsite", 200), linkedinUrl: txt("linkedinUrl", 300),
+    locale,
+    notifyResults: formData.get("notifyResults") === "on",
+    notifyReminders: formData.get("notifyReminders") === "on",
+  });
+  revalidatePath("/settings");
+  redirect(`/settings?lang=${locale}&saved=1`);
+}
+
+/** Deletes the account for good — only when they typed their own email to confirm. */
+export async function deleteAccountAction(formData: FormData): Promise<void> {
+  const account = await currentAccount();
+  const lang = String(formData.get("lang") ?? "ar") === "en" ? "en" : "ar";
+  if (String(formData.get("confirm") ?? "").trim().toLowerCase() !== account.email.toLowerCase()) {
+    redirect(`/settings?lang=${lang}&confirm=1#delete`);
+  }
+  await repo.deleteAccount(account.id);
+  // The session row went with the user; drop the cookie too.
+  const { cookies } = await import("next/headers");
+  const jar = await cookies();
+  for (const c of jar.getAll()) if (/session_token|session_data/.test(c.name)) jar.delete(c.name);
+  redirect(lang === "en" ? "/?deleted=1" : "/ar?deleted=1");
 }

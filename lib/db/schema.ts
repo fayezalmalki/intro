@@ -108,6 +108,10 @@ export const accounts = sqliteTable("accounts", {
   // in /am/team (verifyAccount), which clears nothing here — verifiedAt wins.
   activationRequestedAt: text("activation_requested_at"),
   activationNote: text("activation_note"),
+  // Email preferences (/settings): "your list is ready", and the daily
+  // follow-up / next-step reminder.
+  notifyResults: bool("notify_results").notNull().default(true),
+  notifyReminders: bool("notify_reminders").notNull().default(true),
   createdAt: isoNow("created_at"),
 }, (t) => [uniqueIndex("accounts_user_id_idx").on(t.userId)]);
 
@@ -408,7 +412,7 @@ export const outbound = sqliteTable("outbound", {
 /** Every email the app tried to send, and how it went (the monitoring page). */
 export const emailLog = sqliteTable("email_log", {
   id: id(),
-  kind: text("kind").$type<"otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back" | "outreach" | "admin_alert">().notNull(),
+  kind: text("kind").$type<"otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back" | "outreach" | "admin_alert" | "list_ready">().notNull(),
   to: text("to").notNull(),
   transport: text("transport").$type<"smtp" | "binding" | "log">().notNull(),
   status: text("status").$type<"sent" | "failed">().notNull(),
