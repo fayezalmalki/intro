@@ -4,7 +4,7 @@ import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
   accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
-  criteria, emailLog, pipelines, requests, searchCache, searchLog, sendAttempts, signups,
+  criteria, emailLog, outbound, pipelines, requests, searchCache, searchLog, sendAttempts, signups, suppressions,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
@@ -1263,4 +1263,115 @@ export async function recordInvite(actor: string, email: string, database: Datab
 export async function signupNeverVerified(email: string, database: Database = defaultDb): Promise<boolean> {
   const rows = await database.select({ verifiedAt: signups.verifiedAt }).from(signups).where(eq(signups.email, email.toLowerCase()));
   return rows.length > 0 && rows.every((r) => !r.verifiedAt);
+}
+
+// ── Sending through intro ─────────────────────────────────────
+
+/** Everything the send checks need for one lead (lib/outbound.ts). */
+export async function outboundContext(accountId: string, leadId: string, configured: boolean, now = new Date(), database: Database = defaultDb) {
+  const { hashEmail } = await import("../suppression");
+  const { RECIPIENT_COOLDOWN_DAYS } = await import("../outbound");
+  const lead = await getLead(accountId, leadId, database);
+  if (!lead) return null;
+  const [account] = await database.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
+  const toHash = lead.email ? hashEmail(lead.email) : "";
+  const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
+  const cooldown = new Date(now.getTime() - RECIPIENT_COOLDOWN_DAYS * 86_400_000).toISOString();
+  const [[supp], [others], [mineToday], [allToday], firsts, [sentHere]] = await Promise.all([
+    toHash ? database.select({ h: suppressions.emailHash }).from(suppressions).where(eq(suppressions.emailHash, toHash)).limit(1) : Promise.resolve([]),
+    toHash ? database.select({ n: sql<number>`count(*)` }).from(outbound).where(and(eq(outbound.toHash, toHash), eq(outbound.status, "sent"), sql`${outbound.accountId} != ${accountId}`, sql`${outbound.createdAt} >= ${cooldown}`)) : Promise.resolve([{ n: 0 }]),
+    database.select({ n: sql<number>`count(*)` }).from(outbound).where(and(eq(outbound.accountId, accountId), eq(outbound.status, "sent"), sql`${outbound.createdAt} >= ${dayStart.toISOString()}`)),
+    database.select({ n: sql<number>`count(*)` }).from(outbound).where(and(eq(outbound.status, "sent"), sql`${outbound.createdAt} >= ${dayStart.toISOString()}`)),
+    database.select({ body: outbound.body }).from(outbound).where(and(eq(outbound.accountId, accountId), eq(outbound.status, "sent"), eq(outbound.step, 0))).orderBy(sql`${outbound.createdAt} desc`).limit(30),
+    database.select({ n: sql<number>`count(*)` }).from(outbound).where(and(eq(outbound.leadId, leadId), eq(outbound.status, "sent"))),
+  ]);
+  // The step is how far this lead's sequence has gone, by either route.
+  const step = lead.stage === "saved" || !lead.contactedAt ? 0 : Math.max(lead.followUps + 1, Number(sentHere?.n ?? 0));
+  return {
+    lead, account, toHash,
+    ctx: {
+      eligible: account?.state === "verified",
+      paused: Boolean(account?.frozenAt),
+      configured,
+      emailStatus: lead.emailStatus,
+      suppressed: Boolean(supp),
+      contactedByOthers: Number(others?.n ?? 0) > 0,
+      step,
+      sentToday: Number(mineToday?.n ?? 0),
+      dailyCap: account?.dailyCap ?? 10,
+      platformSentToday: Number(allToday?.n ?? 0),
+      recentFirstBodies: firsts.map((r) => r.body),
+    },
+  };
+}
+
+/** Bounce threshold for pausing an account: this many failures in 7 days, and at least this share of sends. */
+const PAUSE_FAILURES = 3;
+const PAUSE_RATE = 0.1;
+
+/**
+ * Records a send, failure or refusal. After a delivery failure, pauses the
+ * account's sending through intro if bounces cross the threshold — their own
+ * email keeps working.
+ */
+export async function recordOutbound(
+  input: { accountId: string; leadId: string; toHash: string; step: number; subject: string; body: string; status: "sent" | "failed" | "refused"; failures?: string[]; error?: string },
+  database: Database = defaultDb,
+): Promise<{ paused: boolean }> {
+  const { variantHash } = await import("../gate");
+  await database.insert(outbound).values({ ...input, variantHash: variantHash(input.body), failures: input.failures ?? [], error: input.error?.slice(0, 300) ?? null });
+  if (input.status !== "failed") return { paused: false };
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const [r] = await database.select({
+    failed: sql<number>`sum(case when ${outbound.status} = 'failed' then 1 else 0 end)`,
+    total: sql<number>`sum(case when ${outbound.status} in ('sent','failed') then 1 else 0 end)`,
+  }).from(outbound).where(and(eq(outbound.accountId, input.accountId), sql`${outbound.createdAt} >= ${since}`));
+  const failed = Number(r?.failed ?? 0), total = Number(r?.total ?? 0);
+  if (failed >= PAUSE_FAILURES && failed / Math.max(total, 1) >= PAUSE_RATE) {
+    await commit(database, [
+      database.update(accounts).set({ frozenAt: nowIso(), frozenReason: `auto: ${failed} delivery failures in 7 days` }).where(and(eq(accounts.id, input.accountId), sql`${accounts.frozenAt} IS NULL`)),
+      audit(database, "system", input.accountId, "account.paused", `${failed}/${total} failed`),
+    ]);
+    return { paused: true };
+  }
+  return { paused: false };
+}
+
+/** Adds an address to the do-not-contact list (opt-outs, complaints, hard bounces). */
+export async function suppressEmail(email: string, reason: "unsubscribed" | "complained" | "bounced" | "manual", source: string, database: Database = defaultDb): Promise<void> {
+  const { hashEmail } = await import("../suppression");
+  await database.insert(suppressions).values({ emailHash: hashEmail(email), reason, source }).onConflictDoNothing();
+}
+
+/** Verifies an account whose work email sits on its company's own domain (lib/outbound.ts). */
+export async function verifyByWorkEmail(accountId: string, linkedinUrl: string, companyWebsite: string, database: Database = defaultDb): Promise<void> {
+  await commit(database, [
+    database.update(accounts).set({ state: "verified", verifiedAt: nowIso(), linkedinUrl, companyWebsite, activationRequestedAt: nowIso(), activationNote: "auto: work email matches company domain" })
+      .where(and(eq(accounts.id, accountId), eq(accounts.state, "observer"))),
+    audit(database, "system", accountId, "account.verified", "work email domain"),
+  ]);
+}
+
+/** What went wrong in the last day, for the admins' morning alert (lib/alerts.ts). */
+export async function alertSummary(since: Date, database: Database = defaultDb) {
+  const s = since.toISOString();
+  const [[emails], [searches], [stuck], paused, [outFail]] = await Promise.all([
+    database.select({ n: sql<number>`count(*)` }).from(emailLog).where(and(eq(emailLog.status, "failed"), sql`${emailLog.createdAt} >= ${s}`)),
+    database.select({ n: sql<number>`count(*)` }).from(searchLog).where(and(sql`json_extract(${searchLog.query}, '$.error') IS NOT NULL`, sql`${searchLog.createdAt} >= ${s}`)),
+    database.select({ n: sql<number>`count(*)` }).from(signups).where(and(sql`${signups.verifiedAt} IS NULL`, sql`${signups.createdAt} >= ${s}`)),
+    database.select({ email: accounts.email, reason: accounts.frozenReason }).from(accounts).where(sql`${accounts.frozenAt} >= ${s}`),
+    database.select({ n: sql<number>`count(*)` }).from(outbound).where(and(eq(outbound.status, "failed"), sql`${outbound.createdAt} >= ${s}`)),
+  ]);
+  const recentErrors = await database.select({ kind: emailLog.kind, to: emailLog.to, error: emailLog.error }).from(emailLog)
+    .where(and(eq(emailLog.status, "failed"), sql`${emailLog.createdAt} >= ${s}`)).orderBy(sql`${emailLog.createdAt} desc`).limit(5);
+  return {
+    emailFailures: Number(emails?.n ?? 0), searchErrors: Number(searches?.n ?? 0), stuckSignups: Number(stuck?.n ?? 0),
+    outreachFailures: Number(outFail?.n ?? 0), paused, recentErrors,
+  };
+}
+
+export async function adminAddresses(database: Database = defaultDb): Promise<string[]> {
+  const { adminEmails } = await import("../session");
+  const granted = await database.select({ email: accounts.email }).from(accounts).where(eq(accounts.role, "admin"));
+  return [...new Set([...adminEmails(), ...granted.map((a) => a.email.toLowerCase())])];
 }

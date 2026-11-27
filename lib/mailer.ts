@@ -11,7 +11,7 @@ import { env } from "cloudflare:workers";
 const FROM = { name: "intro.sa", email: "noreply@intro.sa" };
 const SITE = "https://intro.sa";
 
-interface MailEnv { EMAIL?: SendEmail; IMPROVMX_SMTP_USER?: string; IMPROVMX_SMTP_PASSWORD?: string }
+interface MailEnv { EMAIL?: SendEmail; IMPROVMX_SMTP_USER?: string; IMPROVMX_SMTP_PASSWORD?: string; OUTREACH_SMTP_USER?: string; OUTREACH_SMTP_PASSWORD?: string }
 
 /**
  * ImprovMX SMTP (smtp.improvmx.com, implicit TLS on 465) when its credentials
@@ -25,7 +25,7 @@ export function transportFor(e: MailEnv): "smtp" | "binding" | "log" {
   return e.EMAIL ? "binding" : "log";
 }
 
-type Kind = "otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back";
+type Kind = "otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back" | "outreach" | "admin_alert";
 
 /** Where replies to app mail land: the intro.sa catch-all forwards to the team. */
 const REPLY_TO = { name: "intro.sa", email: "hello@intro.sa" };
@@ -151,28 +151,28 @@ export async function sendActivated(to: string, name: string, locale: "ar" | "en
     await send(
     "activated",
       to,
-      "You're cleared to send on intro.sa",
+      "You can send through intro.sa",
       layout(
         "ltr",
         `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">You're cleared to send, ${esc(name)}.</h1>
-         <p style="color:#575B54;line-height:1.7;margin:0 0 22px">Your account is verified and ${credits} credits are on it. Approve your first emails from any published list — up to 10 a day.</p>
-         ${button(`${SITE}/requests`, "Open my requests")}`,
+         <p style="color:#575B54;line-height:1.7;margin:0 0 22px">Your account is verified${credits ? ` and ${credits} credits are on it` : ""}. Open any lead and press "Send through intro" — it goes out as "you via intro", replies come to your inbox, up to 10 a day. Your own email keeps working too.</p>
+         ${button(`${SITE}/leads?lang=en`, "Open my leads")}`,
       ),
-      `You're cleared to send on intro.sa. ${credits} credits added. ${SITE}/requests`,
+      `You can now send through intro.sa. Open any lead and press "Send through intro". ${SITE}/leads`,
     );
     return;
   }
   await send(
     "activated",
     to,
-    "تم تفعيل الإرسال في intro.sa",
+    "تقدر ترسل عبر انترو",
     layout(
       "rtl",
       `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">أهلًا ${esc(name)}، صار تقدر ترسل.</h1>
-       <p style="color:#575B54;line-height:1.8;margin:0 0 22px">تم توثيق حسابك وأضفنا لك ${credits} رصيد. وافق على أول رسائلك من أي قائمة منشورة، بحد أقصى ١٠ رسائل يوميًا.</p>
-       ${button(`${SITE}/requests`, "افتح طلباتي")}`,
+       <p style="color:#575B54;line-height:1.8;margin:0 0 22px">تم توثيق حسابك${credits ? ` وأضفنا لك ${credits} رصيد` : ""}. افتح أي عميل واضغط «أرسلها عبر انترو»، وتطلع باسمك عبر انترو والردود توصل بريدك، بحد 10 رسائل يوميًا. وبريدك الشخصي يشتغل عادي.</p>
+       ${button(`${SITE}/leads?lang=ar`, "افتح عملائي")}`,
     ),
-    `تم تفعيل الإرسال في intro.sa وأضفنا ${credits} رصيد. ${SITE}/requests`,
+    `تقدر الحين ترسل عبر انترو. افتح أي عميل واضغط «أرسلها عبر انترو». ${SITE}/leads`,
   );
 }
 
@@ -237,5 +237,66 @@ export async function sendInviteBack(to: string): Promise<void> {
        <p style="color:#8A8D86;font-size:13px;margin:22px 0 0">فريق انترو · The intro.sa team — رد على هالإيميل إذا احتجت شي · just reply if you need anything.</p>`),
     `رمز الدخول ما وصلك؟ انحلّت المشكلة. ادخل مرة ثانية: ${SITE}/login?lang=ar\n\nYour sign-in code never arrived — it's fixed now. Sign in again: ${SITE}/login?lang=en\n\nThe intro.sa team`,
     REPLY_TO,
+  );
+}
+
+/**
+ * Outreach a user sends through intro. A separate sending domain
+ * (send.intro.sa) and login, so outreach reputation can never touch sign-in
+ * mail on intro.sa. "<Name> via intro" as the sender, replies to the user's
+ * own address, a one-click opt-out (RFC 8058) and an honest footer.
+ */
+export function outreachConfigured(): boolean {
+  const e = env as unknown as MailEnv;
+  return Boolean(e.OUTREACH_SMTP_USER && e.OUTREACH_SMTP_PASSWORD);
+}
+
+export async function sendOutreach(input: {
+  to: string; subject: string; body: string; senderName: string; senderCompany?: string; replyTo: string; optOutUrl: string; lang: "ar" | "en";
+}): Promise<void> {
+  const e = env as unknown as MailEnv;
+  if (!e.OUTREACH_SMTP_USER || !e.OUTREACH_SMTP_PASSWORD) throw new Error("outreach_not_configured");
+  const who = input.senderCompany ? `${input.senderName} (${input.senderCompany})` : input.senderName;
+  const footerText = input.lang === "ar"
+    ? `أرسلها ${who} عبر intro.sa. ما تبي رسائل منه؟ ${input.optOutUrl}`
+    : `Sent by ${who} via intro.sa. Don't want messages like this? ${input.optOutUrl}`;
+  const body = esc(input.body).replace(/\n/g, "<br>");
+  const html = `<div dir="${input.lang === "ar" ? "rtl" : "ltr"}" style="font-family:-apple-system,'Segoe UI','IBM Plex Sans Arabic',Tahoma,sans-serif;font-size:15px;line-height:1.7;color:#141613">${body}
+    <p style="margin-top:28px;color:#8A8D86;font-size:12px">${esc(footerText.replace(input.optOutUrl, "")).trim()} <a href="${input.optOutUrl}" style="color:#8A8D86">${input.lang === "ar" ? "إلغاء الاشتراك" : "Opt out"}</a></p></div>`;
+  const { WorkerMailer } = await import("worker-mailer");
+  try {
+    await WorkerMailer.send(
+      { host: "smtp.improvmx.com", port: 465, secure: true, credentials: { username: e.OUTREACH_SMTP_USER, password: e.OUTREACH_SMTP_PASSWORD }, authType: ["plain", "login"] },
+      {
+        from: { name: `${input.senderName} via intro`, email: e.OUTREACH_SMTP_USER },
+        to: input.to,
+        reply: input.replyTo,
+        subject: input.subject,
+        text: `${input.body}\n\n—\n${footerText}`,
+        html,
+        headers: {
+          "List-Unsubscribe": `<${input.optOutUrl}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+      },
+    );
+    await record("outreach", input.to, "smtp");
+  } catch (error) {
+    await record("outreach", input.to, "smtp", error);
+    throw error;
+  }
+}
+
+/** To admins: what went wrong in the last day (lib/alerts.ts). */
+export async function sendAdminAlert(admins: string[], lines: string[], details: string[]): Promise<void> {
+  const list = lines.map((l) => `<li style="margin:4px 0">${esc(l)}</li>`).join("");
+  const more = details.length ? `<p style="color:#575B54;margin:16px 0 6px">Latest errors:</p><pre style="white-space:pre-wrap;font-size:12px;background:#F4F4F1;padding:10px;border-radius:8px">${esc(details.join("\n"))}</pre>` : "";
+  await send(
+    "admin_alert",
+    admins,
+    `intro.sa needs a look: ${lines[0]}`,
+    layout("ltr", `<h1 style="font-size:19px;margin:0 0 10px;color:#141613">In the last 24 hours</h1><ul style="padding-left:18px;color:#141613;line-height:1.6">${list}</ul>${more}
+      <div style="margin-top:18px">${button(`${SITE}/am/metrics`, "Open the dashboard")}</div>`),
+    `In the last 24 hours:\n- ${lines.join("\n- ")}\n\n${details.join("\n")}\n\n${SITE}/am/metrics`,
   );
 }

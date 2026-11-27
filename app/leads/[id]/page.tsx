@@ -7,6 +7,7 @@ import { Icon } from "@/components/site/ui";
 import * as repo from "@/lib/db/repo";
 import { MARKETS, isMarket } from "@/lib/search/markets";
 import { followUpFor } from "@/lib/followup";
+import { outreachConfigured } from "@/lib/mailer";
 import { openerFor } from "@/lib/search/opener";
 import { pageAccount } from "@/lib/session";
 
@@ -55,6 +56,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
           opener={openerFor({ lang, name: p.latin, company: p.company, signal: lead.signals?.[0]?.title, me: account })}
           followUps={[1, 2].map((step) => followUpFor({ lang, name: p.latin, company: p.company, step: step as 1 | 2, me: account })) as [string, string]}
           crm={{ stage: lead.stage, followUps: lead.followUps, followUpAt: lead.followUpAt, contactedAt: lead.contactedAt }}
+          via={{ on: outreachConfigured(), eligible: account.state === "verified", paused: Boolean(account.frozenAt), senderName: account.displayName }}
         />
       </div>
     </AppShell>

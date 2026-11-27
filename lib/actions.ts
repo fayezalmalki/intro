@@ -325,6 +325,14 @@ export async function requestActivation(formData: FormData): Promise<void> {
     redirect(`/activate?next=${encodeURIComponent(next)}&missing=1`);
   }
   const note = String(formData.get("note") ?? "").slice(0, 500);
+  // A work email at the company's own domain vouches for them: verified now.
+  const { workEmailMatchesCompany } = await import("./outbound");
+  if (workEmailMatchesCompany(account.email, companyWebsite)) {
+    await repo.verifyByWorkEmail(account.id, linkedinUrl, companyWebsite);
+    await sendActivated(account.email, account.displayName, account.locale === "en" ? "en" : "ar", 0).catch(() => undefined);
+    revalidatePath("/leads");
+    redirect(`/activate?next=${encodeURIComponent(next)}`);
+  }
   const result = await repo.requestActivation({ accountId: account.id, linkedinUrl, companyWebsite, note });
   if (result.ok) {
     // Everyone who can approve: the bootstrap list and anyone granted admin.

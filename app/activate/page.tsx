@@ -5,17 +5,17 @@ import { requestActivation } from "@/lib/actions";
 import { pageAccount } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Activate sending · intro.sa" };
+export const metadata: Metadata = { title: "Send through intro · intro.sa" };
 
 const COPY = {
   en: {
-    step: "Step 2 of 2 · Activate sending",
-    title: "Activate sending",
-    sub: "You can already describe goals and see your matches. To email people from intro.sa, we check who's sending — it keeps every inbox you reach a place people trust.",
+    step: "Send through intro",
+    title: "Send through intro",
+    sub: "You can always send from your own email. To send through intro — from \"you via intro\", with replies to your inbox — we check who's sending first. It keeps intro a sender people trust.",
     why: [
-      "We confirm you work where you say you do",
-      "Your first emails go out under your name",
-      "Usually reviewed within one business day",
+      "Instant if you signed up with your work email at your company's domain",
+      "Otherwise we confirm you work where you say — usually within one business day",
+      "Then: verified recipients only, a daily limit, and an opt-out on every email",
     ],
     linkedin: "LinkedIn profile",
     website: "Company website",
@@ -23,24 +23,24 @@ const COPY = {
     optional: "optional",
     notePh: "e.g. who you're trying to reach, and roughly how many people a week",
     missing: "Add your LinkedIn profile and company website.",
-    submit: "Request activation",
-    later: "Not now — back to my requests",
+    submit: "Verify me",
+    later: "Not now — I'll use my own email",
     pendingTitle: "We're on it",
-    pendingSub: (email: string) => <>We're reviewing your account and will email <b className="font-latin font-semibold text-ink">{email}</b> as soon as you can send — usually within one business day.</>,
-    pendingMeanwhile: "Meanwhile, keep going: create requests and review your matches.",
-    pendingCta: "Back to my requests",
-    doneTitle: "You're cleared to send",
-    doneSub: (cap: number) => `Approve first emails from any published list — up to ${cap} a day.`,
-    doneCta: "Open my requests",
+    pendingSub: (email: string) => <>We're checking your account and will email <b className="font-latin font-semibold text-ink">{email}</b> when you can send through intro — usually within one business day.</>,
+    pendingMeanwhile: "Meanwhile, every lead still opens in your own email.",
+    pendingCta: "Back to my leads",
+    doneTitle: "You can send through intro",
+    doneSub: (cap: number) => `Open any lead and press "Send through intro" — up to ${cap} a day, to verified addresses.`,
+    doneCta: "Open my leads",
   },
   ar: {
-    step: "الخطوة ٢ من ٢ · تفعيل الإرسال",
-    title: "فعّل الإرسال",
-    sub: "تقدر من الحين تكتب أهدافك وتشوف مطابقاتك. وعشان ترسل من انترو، نتحقق من هوية المرسل. بهذا يبقى كل بريد توصل له مكانًا يثق فيه الناس.",
+    step: "الإرسال عبر انترو",
+    title: "أرسل عبر انترو",
+    sub: "تقدر دايم ترسل من بريدك. وعشان ترسل عبر انترو، باسمك «عبر انترو» والردود توصل بريدك، نتحقق من هوية المرسل أول. كذا يبقى انترو مرسل يثق فيه الناس.",
     why: [
-      "نتأكد إنك تعمل في الجهة اللي ذكرتها",
-      "رسائلك الأولى تطلع باسمك",
-      "المراجعة عادةً خلال يوم عمل",
+      "فوري إذا سجّلت ببريد عملك على نطاق شركتك",
+      "غير كذا نتأكد إنك تعمل في الجهة اللي ذكرتها، وعادةً خلال يوم عمل",
+      "وبعدها: بريد موثّق فقط، وحد يومي، ورابط إلغاء اشتراك في كل رسالة",
     ],
     linkedin: "حسابك في LinkedIn",
     website: "موقع الشركة",
@@ -48,15 +48,15 @@ const COPY = {
     optional: "اختياري",
     notePh: "مثال: مين تبي توصل له، وكم شخص تقريبًا في الأسبوع",
     missing: "أضف حسابك في LinkedIn وموقع شركتك.",
-    submit: "اطلب التفعيل",
-    later: "مو الحين، ارجع لطلباتي",
+    submit: "وثّقني",
+    later: "مو الحين، بستخدم بريدي",
     pendingTitle: "طلبك وصلنا",
-    pendingSub: (email: string) => <>نراجع حسابك الحين، ونراسلك على <b className="font-latin font-semibold text-ink" dir="ltr">{email}</b> أول ما يتفعّل الإرسال، وعادةً خلال يوم عمل.</>,
-    pendingMeanwhile: "وفي الوقت نفسه، كمّل: أنشئ طلباتك وراجع مطابقاتك.",
-    pendingCta: "ارجع لطلباتي",
-    doneTitle: "الإرسال مفعّل",
-    doneSub: (cap: number) => `وافق على أول رسائلك من أي قائمة منشورة، بحد أقصى ${cap} رسائل يوميًا.`,
-    doneCta: "افتح طلباتي",
+    pendingSub: (email: string) => <>نراجع حسابك، ونراسلك على <b className="font-latin font-semibold text-ink" dir="ltr">{email}</b> أول ما تقدر ترسل عبر انترو، وعادةً خلال يوم عمل.</>,
+    pendingMeanwhile: "وفي الوقت نفسه، كل عميل يفتح في بريدك عادي.",
+    pendingCta: "ارجع لعملائي",
+    doneTitle: "تقدر ترسل عبر انترو",
+    doneSub: (cap: number) => `افتح أي عميل واضغط «أرسلها عبر انترو»، بحد ${cap} رسائل يوميًا للبريد الموثّق.`,
+    doneCta: "افتح عملائي",
   },
 };
 
@@ -75,7 +75,7 @@ export default async function ActivatePage({
   if (account.state !== "observer") {
     return (
       <AuthShell {...shell}>
-        <Status icon="check-circle" title={t.doneTitle} body={t.doneSub(account.dailyCap)} href="/requests" cta={t.doneCta} />
+        <Status icon="check-circle" title={t.doneTitle} body={t.doneSub(account.dailyCap)} href={`/leads?lang=${lang}`} cta={t.doneCta} />
       </AuthShell>
     );
   }

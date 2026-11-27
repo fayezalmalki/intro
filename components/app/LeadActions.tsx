@@ -23,6 +23,8 @@ const C = {
     repliedNote: "Great — reply from your email. Mark a meeting when it's booked.", meetingNote: "Meeting booked. Good luck!", closedNote: "Closed. Reopen any time.",
     needEmail: "Reveal their email to open this in your mail app — or copy the message.",
     nextDue: (d: string) => `Next follow-up drafted for ${d}. We'll remind you.`,
+    viaIntro: "Send through intro", sendingVia: "Sending…", sentVia: "Sent through intro — replies come to your email.",
+    viaHint: (n: string) => `From "${n} via intro" · replies go to your email`, verifyVia: "Verify to send through intro", failedVia: "We couldn't deliver it. Try your own email.",
     errors: { insufficient_credits: "You're out of credits — top up from Billing.", unavailable: "Live data isn't connected yet.", budget: "Today's search limit is reached.", upstream: "Our providers didn't answer — try again." } as Record<string, string>,
   },
   ar: {
@@ -41,6 +43,8 @@ const C = {
     repliedNote: "ممتاز، كمّل الرد من بريدك. وسجّل الاجتماع إذا انحجز.", meetingNote: "انحجز الاجتماع. بالتوفيق!", closedNote: "مغلق. تقدر تعيد فتحه أي وقت.",
     needEmail: "اكشف بريده عشان تفتحها في بريدك، أو انسخ الرسالة.",
     nextDue: (d: string) => `جهّزنا المتابعة الجاية لتاريخ ${d}، وبنذكّرك.`,
+    viaIntro: "أرسلها عبر انترو", sendingVia: "نرسل…", sentVia: "انرسلت عبر انترو، والردود توصل بريدك.",
+    viaHint: (n: string) => `من «${n} عبر انترو» · الردود توصل بريدك`, verifyVia: "وثّق حسابك عشان ترسل عبر انترو", failedVia: "ما قدرنا نوصلها. جرّب بريدك.",
     errors: { insufficient_credits: "خلص رصيدك. اشحنه من صفحة الرصيد.", unavailable: "البيانات الحية ما تفعّلت بعد.", budget: "وصلت لحد البحث اليومي.", upstream: "مزوّدو البيانات ما ردّوا، جرّب مرة ثانية." } as Record<string, string>,
   },
 };
@@ -54,11 +58,13 @@ async function post<T>(path: string): Promise<T> {
 
 export interface LeadCrm { stage: string; followUps: number; followUpAt: string | null; contactedAt: string | null }
 
+export interface ViaIntro { on: boolean; eligible: boolean; paused: boolean; senderName: string }
+
 export function LeadActions({
-  lang, leadId, company, initialEmail, initialStatus, initialSignals, opener, followUps: drafts, crm,
+  lang, leadId, company, initialEmail, initialStatus, initialSignals, opener, followUps: drafts, crm, via,
 }: {
   lang: Lang; leadId: string; company: string; initialEmail: string | null; initialStatus: string | null;
-  initialSignals: Signal[] | null; opener: string; followUps: [string, string]; crm: LeadCrm;
+  initialSignals: Signal[] | null; opener: string; followUps: [string, string]; crm: LeadCrm; via?: ViaIntro;
 }) {
   const t = C[lang];
   const [email, setEmail] = useState(initialEmail);
@@ -72,6 +78,24 @@ export function LeadActions({
   const [message, setMessage] = useState(draftFor(stepIndex));
   const [opened, setOpened] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [sendingVia, setSendingVia] = useState(false);
+  const [viaNote, setViaNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function sendVia() {
+    setSendingVia(true); setViaNote(null); setError(null);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subject, body: message }) });
+      const json = (await r.json().catch(() => ({}))) as LeadCrm & { sent?: boolean; reasons?: string[]; error?: string };
+      if (r.ok && json.sent) {
+        setState({ stage: json.stage, followUps: json.followUps, followUpAt: json.followUpAt, contactedAt: json.contactedAt });
+        setMessage(draftFor(json.followUps + 1));
+        setViaNote({ ok: true, text: t.sentVia });
+      } else {
+        setViaNote({ ok: false, text: json.reasons?.join(" ") || t.failedVia });
+      }
+    } catch { setViaNote({ ok: false, text: t.failedVia }); }
+    finally { setSendingVia(false); }
+  }
 
   async function move(action: string) {
     setMoving(true); setError(null);
@@ -208,6 +232,21 @@ export function LeadActions({
                 <button type="button" onClick={() => setOpened(true)} className="h-10 cursor-pointer px-2 text-[13px] font-medium text-muted hover:text-ink">{t.otherWay}</button>
               </div>
             )}
+            {via?.on && email && !opened && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-dashed border-line pt-3">
+                {via.eligible && !via.paused ? (
+                  <>
+                    <button type="button" disabled={sendingVia} data-testid="send-intro" onClick={() => void sendVia()} className="flex h-10 cursor-pointer items-center gap-1.5 rounded-full bg-ink px-4 text-[13.5px] font-medium text-white hover:opacity-90 disabled:opacity-60">
+                      <Icon name="send" size={14} flip />{sendingVia ? t.sendingVia : t.viaIntro}
+                    </button>
+                    <span className="text-[12.5px] text-subtle">{t.viaHint(via.senderName)}</span>
+                  </>
+                ) : via.paused ? null : (
+                  <a href={`/activate?lang=${lang}`} className="text-[13px] font-medium text-brand">{t.verifyVia}</a>
+                )}
+              </div>
+            )}
+            {viaNote && <p role="status" data-testid="via-note" className={cx("rounded-xl px-3.5 py-2.5 text-[13.5px]", viaNote.ok ? "bg-success-soft text-success-ink" : "bg-accent-soft text-accent-ink")}>{viaNote.text}</p>}
           </>
         ) : (
           <p className="text-[14px] leading-[22px] text-ink-2">
