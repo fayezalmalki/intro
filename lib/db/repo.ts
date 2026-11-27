@@ -1248,3 +1248,19 @@ export async function monitoring(database: Database = defaultDb) {
     money: { orders: n(money.orders), sar: n(money.halalas) / 100 },
   };
 }
+
+/** Addresses the team already invited back from the sign-ups page. */
+export async function invitedSignups(database: Database = defaultDb): Promise<Set<string>> {
+  const rows = await database.select({ entity: auditEvents.entity }).from(auditEvents).where(eq(auditEvents.action, "signup.invited"));
+  return new Set(rows.map((r) => r.entity.replace(/^signup:/, "")));
+}
+
+export async function recordInvite(actor: string, email: string, database: Database = defaultDb): Promise<void> {
+  await audit(database, actor, `signup:${email.toLowerCase()}`, "signup.invited");
+}
+
+/** True when this address asked for a code and never signed in. */
+export async function signupNeverVerified(email: string, database: Database = defaultDb): Promise<boolean> {
+  const rows = await database.select({ verifiedAt: signups.verifiedAt }).from(signups).where(eq(signups.email, email.toLowerCase()));
+  return rows.length > 0 && rows.every((r) => !r.verifiedAt);
+}

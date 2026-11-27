@@ -409,3 +409,23 @@ export async function writeToPerson(formData: FormData): Promise<void> {
   const leadId = await repo.leadForPerson(owner.id, personId, "SA");
   redirect(`/leads/${leadId}?lang=${lang}`);
 }
+
+/**
+ * /am/signups: email someone who asked for a code and never got in, once.
+ * Account managers only; never to an address that has signed in.
+ */
+export async function inviteBack(formData: FormData): Promise<void> {
+  const actor = await requireAccountManager("invite people back");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!email || !(await repo.signupNeverVerified(email))) redirect("/am/signups?invite=skipped");
+  if ((await repo.invitedSignups()).has(email)) redirect("/am/signups?invite=already");
+  const { sendInviteBack } = await import("./mailer");
+  try {
+    await sendInviteBack(email);
+  } catch {
+    redirect("/am/signups?invite=failed");
+  }
+  await repo.recordInvite(actor.displayName, email);
+  revalidatePath("/am/signups");
+  redirect("/am/signups?invite=sent");
+}

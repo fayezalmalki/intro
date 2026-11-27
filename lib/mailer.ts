@@ -25,7 +25,10 @@ export function transportFor(e: MailEnv): "smtp" | "binding" | "log" {
   return e.EMAIL ? "binding" : "log";
 }
 
-type Kind = "otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest";
+type Kind = "otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back";
+
+/** Where replies to app mail land: the intro.sa catch-all forwards to the team. */
+const REPLY_TO = { name: "intro.sa", email: "hello@intro.sa" };
 
 /** Records each attempt for the monitoring page; never lets logging break sending. */
 async function record(kind: Kind, to: string, transport: "smtp" | "binding" | "log", error?: unknown): Promise<void> {
@@ -38,12 +41,12 @@ async function record(kind: Kind, to: string, transport: "smtp" | "binding" | "l
   }
 }
 
-async function send(kind: Kind, to: string | string[], subject: string, html: string, text: string): Promise<void> {
+async function send(kind: Kind, to: string | string[], subject: string, html: string, text: string, replyTo?: { name: string; email: string }): Promise<void> {
   const recipients = Array.isArray(to) ? to : [to];
   const transport = transportFor(env as unknown as MailEnv);
   for (const recipient of recipients) {
     try {
-      await deliver(recipient, subject, html, text);
+      await deliver(recipient, subject, html, text, replyTo);
       await record(kind, recipient, transport);
     } catch (error) {
       await record(kind, recipient, transport, error);
@@ -52,7 +55,7 @@ async function send(kind: Kind, to: string | string[], subject: string, html: st
   }
 }
 
-async function deliver(to: string, subject: string, html: string, text: string): Promise<void> {
+async function deliver(to: string, subject: string, html: string, text: string, replyTo?: { name: string; email: string }): Promise<void> {
   const e = env as unknown as MailEnv;
   const recipients = [to];
   if (transportFor(e) === "smtp" && e.IMPROVMX_SMTP_USER && e.IMPROVMX_SMTP_PASSWORD) {
@@ -61,7 +64,7 @@ async function deliver(to: string, subject: string, html: string, text: string):
     for (const recipient of recipients) {
       await WorkerMailer.send(
         { host: "smtp.improvmx.com", port: 465, secure: true, credentials: { username: e.IMPROVMX_SMTP_USER, password: e.IMPROVMX_SMTP_PASSWORD }, authType: ["plain", "login"] },
-        { from, to: recipient, subject, html, text },
+        { from, to: recipient, subject, html, text, ...(replyTo ? { reply: replyTo } : {}) },
       );
     }
     return;
@@ -211,5 +214,28 @@ export async function sendFollowUpDigest(
          <table style="width:100%;border-collapse:collapse">${rows}</table>${more}
          <div style="margin-top:20px">${button(`${SITE}/home?lang=en`, "Open my follow-ups")}</div>`),
     `${subject}\n${leads.map((l) => `- ${l.name} (${l.company}): ${SITE}/leads/${l.id}`).join("\n")}`,
+  );
+}
+
+/**
+ * To someone who asked for a sign-in code and never got in — sent by the team
+ * from the sign-ups page, once. Both languages: we don't know which they read.
+ */
+export async function sendInviteBack(to: string): Promise<void> {
+  const subject = "رمز الدخول جاهز الحين · Your intro.sa sign-in code works now";
+  await send(
+    "invite_back",
+    to,
+    subject,
+    layout("rtl", `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">رمز الدخول ما وصلك؟ انحلّت المشكلة</h1>
+       <p style="color:#575B54;line-height:1.8;margin:0 0 18px">حاولت تدخل انترو وما وصلك رمز الدخول. كان عندنا خلل في إرسال الرموز وانحلّ الحين. ادخل مرة ثانية ويوصلك رمز جديد خلال ثواني. نعتذر عن الإزعاج.</p>
+       ${button(`${SITE}/login?lang=ar`, "ادخل انترو")}
+       <div dir="ltr" style="border-top:1px solid #EEEEEA;margin-top:24px;padding-top:18px;text-align:left">
+         <p style="color:#575B54;line-height:1.7;margin:0 0 14px">You tried to sign in to intro.sa and your code never arrived. We had a problem sending codes — it's fixed now. Sign in again and a new code arrives within seconds. Sorry about that.</p>
+         ${button(`${SITE}/login?lang=en`, "Sign in to intro.sa")}
+       </div>
+       <p style="color:#8A8D86;font-size:13px;margin:22px 0 0">فريق انترو · The intro.sa team — رد على هالإيميل إذا احتجت شي · just reply if you need anything.</p>`),
+    `رمز الدخول ما وصلك؟ انحلّت المشكلة. ادخل مرة ثانية: ${SITE}/login?lang=ar\n\nYour sign-in code never arrived — it's fixed now. Sign in again: ${SITE}/login?lang=en\n\nThe intro.sa team`,
+    REPLY_TO,
   );
 }
