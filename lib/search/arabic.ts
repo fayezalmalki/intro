@@ -1,4 +1,5 @@
 import { ROLES, SECTORS } from "../sourcing/vocabulary";
+import { DICTIONARY } from "./dictionary";
 
 /**
  * Arabic search words → what the data providers understand.
@@ -60,6 +61,8 @@ const EXTRA_SECTORS: { m: string; industry: string }[] = [
   { m: "مدارس", industry: "Education Management" },
   { m: "جامعات", industry: "Education Management" },
   { m: "شركات تامين", industry: "Insurance" },
+  // Every Arabic synonym in the sector dictionary, too.
+  ...DICTIONARY.flatMap((d) => d.synonymsAr.map((m) => ({ m, industry: d.id }))),
 ];
 
 /** Sector words, longest first, so «تقنية مالية» wins over «تقنية». */

@@ -108,7 +108,7 @@ export class TregProvider implements SourcingProvider {
     // wiza answered a Saudi sector search with one unrelated company for $0.0127.
     const r = await this.call<{ companies?: RawCompany[] }>("treg.companies.search", body, options, { "x-treg-route-exclude": "wiza" });
     const companies = (r.output.companies ?? [])
-      .filter((c) => !c.country || c.country.toUpperCase() === query.country)
+      .filter((c) => { const country = str(c.country); return !country || country.toUpperCase() === query.country; })
       .map(toCompany)
       .filter((c): c is Company => c !== null);
     return { value: companies, costMicro: r.costMicro };
@@ -146,14 +146,14 @@ export class TregProvider implements SourcingProvider {
     const r = await this.call<{ people?: RawPerson[] }>("treg.people.search", body, options, strict);
     const people = (r.output.people ?? [])
       // A name lookup's provider returns name, location and profile only.
-      .filter((p) => p.name && (p.title || query.fullName))
+      .filter((p) => str(p.name) && (str(p.title) || query.fullName))
       .map((p) => ({
-        name: p.name!.trim(),
-        title: (p.title ?? "").trim(),
-        company: p.company ?? "",
-        companyDomain: p.company_domain ?? query.companyDomain ?? "",
-        profileUrl: cleanUrl(p.profile_url ?? p.linkedin_url),
-        location: p.location,
+        name: str(p.name)!,
+        title: str(p.title) ?? "",
+        company: str(p.company) ?? "",
+        companyDomain: str(p.company_domain) ?? query.companyDomain ?? "",
+        profileUrl: cleanUrl(str(p.profile_url) ?? str(p.linkedin_url)),
+        location: str(p.location),
         servedBy: r.servedBy,
       }));
     return { value: people, costMicro: r.costMicro };
@@ -165,13 +165,13 @@ export class TregProvider implements SourcingProvider {
       { "x-treg-route-exclude": FLAKY_SEARCH },
     );
     const signals = (r.output.results ?? [])
-      .filter((x) => x.url && x.title)
+      .filter((x) => /^https?:\/\//.test(str(x.url) ?? "") && str(x.title))
       .map((x) => ({
-        url: x.url!,
-        title: x.title!.trim(),
-        source: hostOf(x.url!),
-        date: isoDate(x.date ?? x.published_date),
-        snippet: x.snippet,
+        url: str(x.url)!,
+        title: str(x.title)!,
+        source: hostOf(str(x.url)!),
+        date: isoDate(str(x.date) ?? str(x.published_date)),
+        snippet: str(x.snippet),
       }));
     return { value: signals, costMicro: r.costMicro };
   }
@@ -211,23 +211,34 @@ export function verdictOf(v?: { verdict?: string }): EmailVerdict {
 }
 
 interface RawCompany {
-  name?: string; website_url?: string; domain?: string; country?: string;
-  industry?: string; company_size?: string; linkedin_url?: string;
+  name?: unknown; organization?: unknown; company_name?: unknown; website_url?: unknown; website?: unknown; domain?: unknown;
+  country?: unknown; industry?: unknown; company_size?: unknown; linkedin_url?: unknown;
 }
 interface RawPerson {
-  name?: string; title?: string; company?: string; company_domain?: string;
-  profile_url?: string; linkedin_url?: string; location?: string;
+  name?: unknown; title?: unknown; company?: unknown; company_domain?: unknown;
+  profile_url?: unknown; linkedin_url?: unknown; location?: unknown;
 }
-interface RawResult { url?: string; title?: string; date?: string; published_date?: string; snippet?: string }
+interface RawResult { url?: unknown; title?: unknown; date?: unknown; published_date?: unknown; snippet?: unknown }
 
 function toCompany(c: RawCompany): Company | null {
-  const domain = (c.domain ?? c.website_url ?? "").toLowerCase()
+  const name = str(c.name) ?? str(c.organization) ?? str(c.company_name);
+  const domain = (str(c.domain) ?? str(c.website_url) ?? str(c.website) ?? "").toLowerCase()
     .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
-  if (!c.name || !domain) return null;
-  return {
-    name: c.name.trim(), domain, industry: c.industry, size: c.company_size,
-    linkedinUrl: c.linkedin_url,
-  };
+  if (!name || !domain) return null;
+  const size = typeof c.company_size === "number" ? String(c.company_size) : str(c.company_size);
+  return { name, domain, industry: str(c.industry), size, linkedinUrl: str(c.linkedin_url) };
+}
+
+/**
+ * A provider field as text, or undefined. Providers answer the same contract
+ * with different shapes (a list of industries, a numeric size, an object for
+ * a website), and one odd row must never fail a whole search.
+ */
+function str(v: unknown): string | undefined {
+  if (typeof v === "string") return v.trim() || undefined;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (Array.isArray(v)) return str(v[0]);
+  return undefined;
 }
 
 function cleanUrl(url?: string): string | undefined {

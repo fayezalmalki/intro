@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, cx, type IconKey } from "@/components/site/ui";
-import { MARKETS, SECTOR_OPTIONS, SENIORITY_OPTIONS, type Market } from "@/lib/search/markets";
+import { DICTIONARY, starterById } from "@/lib/search/dictionary";
+import { MARKETS, SECTOR_OPTIONS, SENIORITY_OPTIONS, isMarket, type Market } from "@/lib/search/markets";
 import type { SearchMode } from "@/lib/search/presets";
 
 type Lang = "ar" | "en";
@@ -36,6 +37,11 @@ const C = {
     noneArabic: "Nothing matched these Arabic words. Company data is indexed in English — pick a sector above, or try English keywords (e.g. software, logistics, fintech).",
     start: "Pick a way to search, set the market, and go.",
     decision: "Decision makers", news: "News", website: "Website",
+    dict: {
+      mine: "Your criteria", starter: "Start from a sector", subs: "Narrow it down", roles: "Who decides", signals: "Look for", own: "Add your own terms",
+      ownPh: "e.g. claims platform, cold chain", save: "Save as my criteria", saveName: "Name it", saved: "Saved", remove: "Remove", limit: "You can keep up to 30 — remove one first.",
+      starterHint: "A starter from our sector dictionary — pick what fits, add your own terms, and save it.",
+    },
     ws: {
       to: "To", find: (c: string) => <>Find <b>who decides</b> at {c}</>, findBtn: "Find", whoLabel: "Who",
       roles: { decision: "Decision maker", hiring: "Hiring", procurement: "Procurement", partnerships: "Partnerships", sales: "Sales" } as Record<string, string>,
@@ -86,6 +92,11 @@ const C = {
     fullName: "الاسم الكامل", fullNamePh: "مثال: Noura Alsaud", company: "الجهة (اختياري)", companyPh: "الاسم أو الموقع",
     topic: "الجهة أو الموضوع", topicPh: "مثال: لومن باي، أو منافسات التأمين",
     search: "ابحث", searching: "نبحث…",
+    dict: {
+      mine: "معاييرك المحفوظة", starter: "ابدأ من قطاع", subs: "حدّد أكثر", roles: "مين صاحب القرار", signals: "دوّر على", own: "أضف كلماتك",
+      ownPh: "مثال: منصة مطالبات، سلاسل تبريد", save: "احفظها كمعاييري", saveName: "سمّها", saved: "انحفظت", remove: "احذف", limit: "تقدر تحفظ 30 بحد أقصى، احذف وحدة أول.",
+      starterHint: "نقطة بداية من قاموس القطاعات. اختر اللي يناسبك، أضف كلماتك، واحفظها.",
+    },
     ws: {
       to: "إلى", find: (c: string) => <>لاقِ <b>صاحب القرار</b> في {c}</>, findBtn: "ابحث", whoLabel: "مين",
       roles: { decision: "صاحب القرار", hiring: "التوظيف", procurement: "المشتريات", partnerships: "الشراكات", sales: "المبيعات" } as Record<string, string>,
@@ -129,8 +140,10 @@ const MODE_ICON: Record<SearchMode, IconKey> = { companies: "building", people: 
 
 export interface SearchDefaults {
   mode: SearchMode; market: Market; sector?: string; keywords?: string; role?: string; describe?: string;
-  name?: string; fullName?: string; company?: string; topic?: string; run?: boolean;
+  name?: string; fullName?: string; company?: string; topic?: string; run?: boolean; signal?: string;
 }
+
+export interface SavedCriteria { id: string; name: string; market: string; sector: string; keywords: string; role: string; signal: string }
 
 function syncCredits(balance: unknown) {
   if (typeof balance !== "number") return;
@@ -145,7 +158,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return json;
 }
 
-export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defaults: SearchDefaults; initialCredits: number }) {
+export function SearchApp({ lang, defaults, initialCredits, saved: initialSaved = [] }: { lang: Lang; defaults: SearchDefaults; initialCredits: number; saved?: SavedCriteria[] }) {
   const t = C[lang];
   const [mode, setMode] = useState<SearchMode>(defaults.mode);
   const [market, setMarket] = useState<Market>(defaults.market);
@@ -158,6 +171,14 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
   const [fullName, setFullName] = useState(defaults.fullName ?? "");
   const [company, setCompany] = useState(defaults.company ?? "");
   const [topic, setTopic] = useState(defaults.topic ?? "");
+  const [subs, setSubs] = useState<string[]>([]);
+  const [signal, setSignal] = useState(defaults.signal ?? "");
+  const [saved, setSaved] = useState<SavedCriteria[]>(initialSaved);
+  const [naming, setNaming] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const starter = starterById(sector);
+  /** The sub-sector terms picked from the starter, then the person's own words. */
+  const searchKeywords = () => [...(starter?.sub.filter((x) => subs.includes(x.id)).map((x) => x.terms) ?? []), keywords.trim()].filter(Boolean).join(" ");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [companies, setCompanies] = useState<Company[] | null>(null);
@@ -184,7 +205,7 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
     };
     try {
       if (mode === "companies") {
-        const r = await api<{ results: Company[] } & Partial<Outcome>>("/api/search", { kind: "companies", market, sector, keywords, name });
+        const r = await api<{ results: Company[] } & Partial<Outcome>>("/api/search", { kind: "companies", market, sector, keywords: searchKeywords(), name });
         setCompanies(r.results); setSelected(r.results[0]?.domain ?? null); track(r);
       } else if (mode === "people") {
         const r = await api<{ results: Person[] } & Partial<Outcome>>("/api/search", { kind: "people", market, companyDomain: domain, title: role, keywords, describe });
@@ -231,12 +252,38 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
     const key = c.domain;
     setDetail((x) => ({ ...x, [key]: { ...x[key], newsBusy: true, newsError: undefined } }));
     try {
-      const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: c.name });
+      const terms = starter?.signals.find((x) => x.id === signal)?.terms;
+      const r = await api<{ results: Signal[] } & Partial<Outcome>>("/api/search", { kind: "news", market, company: terms ? `${c.name} ${terms}` : c.name });
       if (typeof r.balance === "number") setCredits(r.balance);
       setDetail((x) => ({ ...x, [key]: { ...x[key], newsBusy: false, news: r.results } }));
     } catch (e) {
       setDetail((x) => ({ ...x, [key]: { ...x[key], newsBusy: false, newsError: say((e as Error).message) } }));
     }
+  }
+
+  async function saveCriteria() {
+    const label = (naming ?? "").trim();
+    if (!label) return;
+    try {
+      const body = { name: label, market, sector, keywords: searchKeywords(), role, signal };
+      const r = await api<{ id: string }>("/api/criteria", body);
+      setSaved((x) => [{ id: r.id, ...body }, ...x]);
+      setNaming(null); setSaveMsg(t.dict.saved);
+    } catch (e) {
+      setSaveMsg((e as Error).message === "limit" ? t.dict.limit : say((e as Error).message));
+    }
+  }
+
+  function applyCriteria(c: SavedCriteria) {
+    setMode("companies");
+    if (isMarket(c.market)) setMarket(c.market);
+    setSector(c.sector); setSubs([]); setKeywords(c.keywords); setRole(c.role); setSignal(c.signal); setName("");
+    setEditing(true);
+  }
+
+  async function removeCriteria(id: string) {
+    setSaved((x) => x.filter((c) => c.id !== id));
+    await fetch(`/api/criteria/${id}`, { method: "DELETE" }).catch(() => undefined);
   }
 
   const personKey = (p: Person) => p.profileUrl ?? `${p.name}@${p.companyDomain}`;
@@ -275,7 +322,8 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
   const results = mode === "companies" ? companies : mode === "news" ? news : people;
   const summaryOf = () => {
     const sectorLabel = SECTOR_OPTIONS.find((x) => x.id === sector)?.[lang];
-    const bits = mode === "companies" ? [sectorLabel, keywords, name] : mode === "people" ? [domain, role, describe, keywords] : mode === "person" ? [fullName, company] : [topic];
+    const subLabels = starter?.sub.filter((x) => subs.includes(x.id)).map((x) => x[lang]).join(", ");
+    const bits = mode === "companies" ? [sectorLabel, subLabels, keywords, name] : mode === "people" ? [domain, role, describe, keywords] : mode === "person" ? [fullName, company] : [topic];
     const text = bits.filter(Boolean).join(" · ");
     return text ? ` · ${text}` : "";
   };
@@ -328,18 +376,71 @@ export function SearchApp({ lang, defaults, initialCredits }: { lang: Lang; defa
 
         {mode === "companies" && (
           <>
+            {saved.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <span className={label}>{t.dict.mine}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {saved.map((c) => (
+                    <span key={c.id} className="flex items-center rounded-full bg-sand text-[13px] font-medium text-ink">
+                      <button type="button" onClick={() => applyCriteria(c)} className="cursor-pointer rounded-full py-1.5 ps-3 pe-1.5 hover:underline" dir="auto">{c.name}</button>
+                      <button type="button" onClick={() => void removeCriteria(c.id)} aria-label={`${t.dict.remove} ${c.name}`} className="cursor-pointer rounded-full p-1.5 pe-2.5 text-subtle hover:text-ink"><Icon name="x" size={11} /></button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex flex-col gap-2">
-              <span className={label}>{t.sector}</span>
+              <span className={label}>{t.dict.starter}</span>
               <div className="flex flex-wrap gap-1.5">
-                <Chip on={!sector} onClick={() => setSector("")}>{t.anySector}</Chip>
-                {SECTOR_OPTIONS.map((s) => <Chip key={s.id} on={sector === s.id} onClick={() => setSector(s.id)}>{s[lang]}</Chip>)}
+                <Chip on={!sector} onClick={() => { setSector(""); setSubs([]); }}>{t.anySector}</Chip>
+                {DICTIONARY.map((d) => <Chip key={d.id} on={sector === d.id} onClick={() => { setSector(d.id); setSubs([]); setSignal(""); }}>{d[lang]}</Chip>)}
               </div>
             </div>
+            {starter && (
+              <div className="flex flex-col gap-3.5 rounded-[16px] bg-surface-3 p-4 outline outline-1 -outline-offset-1 outline-line-2">
+                <span className="flex items-center gap-2 text-[12.5px] text-subtle"><Icon name="sparkles" size={12} className="text-accent" />{t.dict.starterHint}</span>
+                <div className="flex flex-col gap-2">
+                  <span className={label}>{t.dict.subs}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {starter.sub.map((x) => <Chip key={x.id} on={subs.includes(x.id)} onClick={() => setSubs((v) => (v.includes(x.id) ? v.filter((y) => y !== x.id) : [...v, x.id]))}>{x[lang]}</Chip>)}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className={label}>{t.dict.roles}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {starter.roles.map((x) => <Chip key={x.title} on={role === x.title} onClick={() => setRole(role === x.title ? "" : x.title)}>{x[lang]}</Chip>)}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className={label}>{t.dict.signals}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {starter.signals.map((x) => <Chip key={x.id} on={signal === x.id} onClick={() => setSignal(signal === x.id ? "" : x.id)}>{x[lang]}</Chip>)}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={t.keywords}><input className={input} value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder={t.keywordsPh} /></Field>
+              <Field label={starter ? t.dict.own : t.keywords}><input className={input} dir="auto" value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder={starter ? t.dict.ownPh : t.keywordsPh} /></Field>
               <Field label={t.companyName}><input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder={t.companyNamePh} /></Field>
             </div>
-            <RoleChips lang={lang} role={role} setRole={setRole} label={t.roles} />
+            {!starter && <RoleChips lang={lang} role={role} setRole={setRole} label={t.roles} />}
+            {(starter || keywords.trim()) && (
+              <div className="flex flex-wrap items-center gap-2">
+                {naming === null ? (
+                  <button type="button" onClick={() => { setSaveMsg(null); setNaming([starter?.[lang], ...(starter?.sub.filter((x) => subs.includes(x.id)).map((x) => x[lang]) ?? [])].filter(Boolean).join(" · ") || keywords.trim()); }}
+                    className="flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium text-brand outline outline-1 -outline-offset-1 outline-line hover:bg-surface">
+                    <Icon name="plus" size={13} />{t.dict.save}
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <input autoFocus value={naming} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveCriteria(); } }} aria-label={t.dict.saveName} dir="auto"
+                      className="h-9 w-56 rounded-full bg-white px-3.5 text-[13.5px] text-ink outline outline-1 -outline-offset-1 outline-line focus:outline-2 focus:outline-brand" />
+                    <button type="button" onClick={() => void saveCriteria()} className="flex h-9 cursor-pointer items-center rounded-full bg-brand px-3.5 text-[13px] font-medium text-white">{t.dict.save}</button>
+                  </span>
+                )}
+                {saveMsg && <span className="text-[12.5px] text-subtle">{saveMsg}</span>}
+              </div>
+            )}
           </>
         )}
 
