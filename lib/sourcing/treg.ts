@@ -28,7 +28,15 @@ export class TregError extends Error {
 }
 
 export class TregProvider implements SourcingProvider {
-  constructor(private readonly token: string, private readonly fetcher: typeof fetch = fetch) {}
+  /**
+   * The default wraps the global: Workers throws "Illegal invocation" when
+   * `fetch` is called as a method (`this.fetcher(...)`), which broke every
+   * sourcing run inside the request workflow.
+   */
+  constructor(
+    private readonly token: string,
+    private readonly fetcher: typeof fetch = (input, init) => fetch(input, init),
+  ) {}
 
   private async call<T>(
     tool: string, body: Record<string, unknown>, options: CallOptions,
