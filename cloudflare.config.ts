@@ -59,10 +59,11 @@ export default defineConfig({
       // mail to any recipient (lib/mailer.ts). Cloudflare Email Service is the fallback.
       IMPROVMX_SMTP_USER: bindings.secret(),
       IMPROVMX_SMTP_PASSWORD: bindings.secret(),
-      // OUTREACH_SMTP_USER / OUTREACH_SMTP_PASSWORD (sending through intro, on
-      // reach.intro.sa) are read when present and left undeclared, because a
-      // declared secret is required at deploy and outreach starts switched off.
-      // scripts/setup-improvmx-smtp.sh outreach reach.intro.sa OUTREACH_SMTP sets them.
+      // The separate login for sending through intro (reach.intro.sa), so
+      // outreach reputation never touches sign-in mail.
+      // Set by: scripts/setup-improvmx-smtp.sh outreach reach.intro.sa OUTREACH_SMTP
+      OUTREACH_SMTP_USER: bindings.secret(),
+      OUTREACH_SMTP_PASSWORD: bindings.secret(),
       BETTER_AUTH_SECRET: bindings.secret(),
       BETTER_AUTH_URL: bindings.secret(),
       // Comma-separated emails provisioned as admin on first sign-in (lib/session.ts).
