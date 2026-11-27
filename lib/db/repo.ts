@@ -1481,3 +1481,11 @@ export async function nextStepReminders(now = new Date(), database: Database = d
 export async function markNextStepReminded(ids: string[], at = new Date(), database: Database = defaultDb): Promise<void> {
   if (ids.length) await database.update(leads).set({ nextStepRemindedAt: at.toISOString() }).where(inArray(leads.id, ids));
 }
+
+/** Deletes a request its owner never confirmed (nothing was charged or searched). */
+export async function discardRequest(requestId: string, accountId: string, database: Database = defaultDb): Promise<boolean> {
+  const rows = await database.delete(requests)
+    .where(and(eq(requests.id, requestId), eq(requests.accountId, accountId), eq(requests.status, "intent_review"), sql`${requests.confirmedAt} IS NULL`))
+    .returning({ id: requests.id });
+  return rows.length > 0;
+}
