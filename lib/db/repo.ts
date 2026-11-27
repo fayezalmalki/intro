@@ -4,7 +4,7 @@ import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
   accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
-  criteria, pipelines, requests, searchCache, searchLog, sendAttempts, signups,
+  criteria, emailLog, pipelines, requests, searchCache, searchLog, sendAttempts, signups,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
@@ -1178,4 +1178,73 @@ export async function leadForPerson(accountId: string, personId: string, market:
   await database.insert(leads).values({ accountId, personId, source: "request", market, email, emailStatus: email ? "valid" : null, revealedAt: email ? nowIso() : null }).onConflictDoNothing();
   const [row] = await database.select({ id: leads.id }).from(leads).where(and(eq(leads.accountId, accountId), eq(leads.personId, personId))).limit(1);
   return row.id;
+}
+
+// ── Email log ─────────────────────────────────────────────────
+
+export async function logEmail(
+  input: { kind: (typeof emailLog.$inferInsert)["kind"]; to: string; transport: "smtp" | "binding" | "log"; status: "sent" | "failed"; error?: string },
+  database: Database = defaultDb,
+): Promise<void> {
+  await database.insert(emailLog).values({ ...input, to: input.to.toLowerCase().slice(0, 254), error: input.error ?? null });
+}
+
+// ── Monitoring ────────────────────────────────────────────────
+
+/** Everything the monitoring page shows, in one round of queries. */
+export async function monitoring(database: Database = defaultDb) {
+  const now = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const d1 = iso(now - 86_400_000), d7 = iso(now - 7 * 86_400_000), d14 = iso(now - 14 * 86_400_000);
+  const one = async <T extends Record<string, unknown>>(q: SQL) => ((await database.all(q)) as T[])[0] ?? ({} as T);
+  const all = async <T,>(q: SQL) => (await database.all(q)) as T[];
+  const n = (v: unknown) => Number(v ?? 0);
+
+  const [users, funnel7, funnelAll, activity, emails7, emailFail24, recentEmails, newByDay, topAccounts, money] = await Promise.all([
+    one<{ total: number; onboarded: number; active7: number }>(sql`select
+      (select count(*) from ${accounts}) total,
+      (select count(*) from ${accounts} where ${accounts.onboardedAt} is not null) onboarded,
+      (select count(distinct account_id) from (
+        select ${searchLog.accountId} account_id from ${searchLog} where ${searchLog.createdAt} >= ${d7}
+        union select ${leads.accountId} from ${leads} where coalesce(${leads.lastTouchAt}, ${leads.createdAt}) >= ${d7}
+        union select ${requests.accountId} from ${requests} where ${requests.createdAt} >= ${d7})) active7`),
+    one<{ codes: number; verified: number; onboarded: number }>(sql`select count(*) codes,
+      sum(case when ${signups.verifiedAt} is not null then 1 else 0 end) verified,
+      sum(case when ${signups.onboardedAt} is not null then 1 else 0 end) onboarded
+      from ${signups} where ${signups.createdAt} >= ${d7}`),
+    one<{ codes: number; verified: number; onboarded: number }>(sql`select count(*) codes,
+      sum(case when ${signups.verifiedAt} is not null then 1 else 0 end) verified,
+      sum(case when ${signups.onboardedAt} is not null then 1 else 0 end) onboarded from ${signups}`),
+    one<Record<string, number>>(sql`select
+      (select count(*) from ${searchLog} where ${searchLog.createdAt} >= ${d7} and ${searchLog.kind} != 'email') searches,
+      (select count(*) from ${ledger} where ${ledger.reason} = 'reveal' and ${ledger.at} >= ${d7}) reveals,
+      (select count(*) from ${leads} where ${leads.createdAt} >= ${d7}) saved,
+      (select count(*) from ${leads} where ${leads.contactedAt} >= ${d7}) contacted,
+      (select count(*) from ${leads} where ${leads.stage} = 'replied') replied,
+      (select count(*) from ${leads} where ${leads.stage} = 'meeting') meetings,
+      (select count(*) from ${leads} where ${leads.stage} = 'contacted' and ${leads.followUpAt} <= ${iso(now)}) due,
+      (select count(*) from ${requests} where ${requests.createdAt} >= ${d7}) requests`),
+    all<{ kind: string; status: string; transport: string; n: number }>(sql`select ${emailLog.kind} kind, ${emailLog.status} status, ${emailLog.transport} transport, count(*) n
+      from ${emailLog} where ${emailLog.createdAt} >= ${d7} group by 1, 2, 3 order by n desc`),
+    one<{ n: number }>(sql`select count(*) n from ${emailLog} where ${emailLog.status} = 'failed' and ${emailLog.createdAt} >= ${d1}`),
+    database.select().from(emailLog).orderBy(sql`${emailLog.createdAt} desc`).limit(25),
+    all<{ day: string; n: number }>(sql`select substr(${accounts.createdAt}, 1, 10) day, count(*) n from ${accounts} where ${accounts.createdAt} >= ${d14} group by 1 order by 1`),
+    all<{ email: string; searches: number; leads: number }>(sql`select ${accounts.email} email,
+      (select count(*) from ${searchLog} where ${searchLog.accountId} = ${accounts.id} and ${searchLog.createdAt} >= ${d7}) searches,
+      (select count(*) from ${leads} where ${leads.accountId} = ${accounts.id}) leads
+      from ${accounts} order by searches desc, leads desc limit 8`),
+    one<{ orders: number; halalas: number }>(sql`select count(*) orders, coalesce(sum(${creditOrders.amountHalalas}), 0) halalas from ${creditOrders} where ${creditOrders.status} = 'paid'`),
+  ]);
+  return {
+    users: { total: n(users.total), onboarded: n(users.onboarded), active7: n(users.active7) },
+    funnel7: { codes: n(funnel7.codes), verified: n(funnel7.verified), onboarded: n(funnel7.onboarded) },
+    funnelAll: { codes: n(funnelAll.codes), verified: n(funnelAll.verified), onboarded: n(funnelAll.onboarded) },
+    activity: Object.fromEntries(Object.entries(activity).map(([k, v]) => [k, n(v)])) as Record<string, number>,
+    emails7: emails7.map((r) => ({ ...r, n: n(r.n) })),
+    emailFail24: n(emailFail24.n),
+    recentEmails,
+    newByDay: newByDay.map((r) => ({ day: r.day, n: n(r.n) })),
+    topAccounts: topAccounts.map((r) => ({ email: r.email, searches: n(r.searches), leads: n(r.leads) })),
+    money: { orders: n(money.orders), sar: n(money.halalas) / 100 },
+  };
 }

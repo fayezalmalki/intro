@@ -25,9 +25,36 @@ export function transportFor(e: MailEnv): "smtp" | "binding" | "log" {
   return e.EMAIL ? "binding" : "log";
 }
 
-async function send(to: string | string[], subject: string, html: string, text: string): Promise<void> {
-  const e = env as unknown as MailEnv;
+type Kind = "otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest";
+
+/** Records each attempt for the monitoring page; never lets logging break sending. */
+async function record(kind: Kind, to: string, transport: "smtp" | "binding" | "log", error?: unknown): Promise<void> {
+  try {
+    const { logEmail } = await import("./db/repo");
+    const e = error as { code?: string; message?: string } | undefined;
+    await logEmail({ kind, to, transport, status: error ? "failed" : "sent", error: error ? `${e?.code ?? ""} ${e?.message ?? String(error)}`.trim().slice(0, 300) : undefined });
+  } catch (err) {
+    console.error("[mailer] could not record email", err);
+  }
+}
+
+async function send(kind: Kind, to: string | string[], subject: string, html: string, text: string): Promise<void> {
   const recipients = Array.isArray(to) ? to : [to];
+  const transport = transportFor(env as unknown as MailEnv);
+  for (const recipient of recipients) {
+    try {
+      await deliver(recipient, subject, html, text);
+      await record(kind, recipient, transport);
+    } catch (error) {
+      await record(kind, recipient, transport, error);
+      throw error;
+    }
+  }
+}
+
+async function deliver(to: string, subject: string, html: string, text: string): Promise<void> {
+  const e = env as unknown as MailEnv;
+  const recipients = [to];
   if (transportFor(e) === "smtp" && e.IMPROVMX_SMTP_USER && e.IMPROVMX_SMTP_PASSWORD) {
     const { WorkerMailer } = await import("worker-mailer");
     const from = e.IMPROVMX_SMTP_USER.includes("@") ? { name: FROM.name, email: e.IMPROVMX_SMTP_USER } : FROM;
@@ -70,6 +97,7 @@ const button = (href: string, label: string) =>
 /** Sign-in code. Better Auth hands us only the address, so it carries both languages. */
 export async function sendOtpEmail(to: string, code: string): Promise<void> {
   await send(
+    "otp",
     to,
     `${code} — رمز الدخول إلى intro.sa · your sign-in code`,
     layout(
@@ -99,6 +127,7 @@ export async function sendActivationRequested(
     ["ملاحظة", account.note ?? ""],
   ].filter(([, v]) => v);
   await send(
+    "activation_requested",
     admins,
     `طلب تفعيل إرسال: ${account.displayName}`,
     layout(
@@ -117,6 +146,7 @@ export async function sendActivationRequested(
 export async function sendActivated(to: string, name: string, locale: "ar" | "en", credits: number): Promise<void> {
   if (locale === "en") {
     await send(
+    "activated",
       to,
       "You're cleared to send on intro.sa",
       layout(
@@ -130,6 +160,7 @@ export async function sendActivated(to: string, name: string, locale: "ar" | "en
     return;
   }
   await send(
+    "activated",
     to,
     "تم تفعيل الإرسال في intro.sa",
     layout(
@@ -146,6 +177,7 @@ export async function sendActivated(to: string, name: string, locale: "ar" | "en
 export async function sendCreditRequest(admins: string[], account: { displayName: string; email: string; company?: string }, pack: string): Promise<void> {
   if (admins.length === 0) return;
   await send(
+    "credit_request",
     admins,
     `طلب رصيد: ${account.displayName} (${pack})`,
     layout("rtl", `<h1 style="font-size:20px;margin:0 0 10px;color:#141613">طلب شحن رصيد</h1>
@@ -166,6 +198,7 @@ export async function sendFollowUpDigest(
   const more = leads.length > 10 ? (ar ? `<p style="color:#696D66">و${leads.length - 10} غيرهم في التطبيق.</p>` : `<p style="color:#696D66">And ${leads.length - 10} more in the app.</p>`) : "";
   const subject = ar ? `${leads.length} متابعة جاهزة للإرسال` : `${leads.length} follow-up${leads.length === 1 ? "" : "s"} ready to send`;
   await send(
+    "follow_up_digest",
     to,
     subject,
     layout(ar ? "rtl" : "ltr", ar
