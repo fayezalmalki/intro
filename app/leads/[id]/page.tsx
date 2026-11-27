@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app/AppShell";
 import { LeadActions } from "@/components/app/LeadActions";
+import { LeadActivity, LeadTrack } from "@/components/app/LeadCrm";
 import { pickLang } from "@/components/site/AuthShell";
 import { Icon } from "@/components/site/ui";
 import * as repo from "@/lib/db/repo";
@@ -21,7 +22,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
   const lead = await repo.getLead(account.id, id);
   if (!lead) notFound();
   const lang = pickLang(l, undefined, account.locale ?? "ar");
-  const credits = await repo.creditBalance(account.id);
+  const [credits, activity] = await Promise.all([repo.creditBalance(account.id), repo.listActivity(account.id, id)]);
   const p = lead.person;
   const market = isMarket(lead.market) ? MARKETS[lead.market][lang] : "";
 
@@ -43,10 +44,17 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
             {p.geo && <Row k={lang === "ar" ? "الموقع الجغرافي" : "Location"} v={p.geo} />}
             {market && <Row k={lang === "ar" ? "السوق" : "Market"} v={market} />}
             {p.linkedinUrl && <Row k="LinkedIn" v={<a href={p.linkedinUrl} target="_blank" rel="noreferrer" className="text-brand" dir="ltr">{lang === "ar" ? "الملف المهني ↗" : "Profile ↗"}</a>} />}
-            <Row k={lang === "ar" ? "المصدر" : "Source"} v={lang === "ar" ? "بيانات أعمال مرخّصة" : "Licensed business data"} />
+            <Row k={lang === "ar" ? "المصدر" : "Source"} v={lead.source === "manual" || lead.source === "import"
+              ? (lang === "ar" ? (lead.source === "import" ? "مستورد" : "أضفته بنفسك") : (lead.source === "import" ? "Imported" : "Added by you"))
+              : (lang === "ar" ? "بيانات أعمال مرخّصة" : "Licensed business data")} />
+            {lead.phone && <Row k={lang === "ar" ? "الجوال" : "Phone"} v={<a href={`tel:${lead.phone}`} className="font-latin text-brand" dir="ltr">{lead.phone}</a>} />}
           </dl>
+          <LeadTrack lang={lang} lead={lead} />
         </aside>
+        <div className="flex min-w-0 flex-col gap-5">
         <LeadActions
+          // Remount when the stage moves from the Track panel, so the stepper agrees with it.
+          key={`${lead.stage}:${lead.followUps}:${lead.email ?? ""}`}
           lang={lang}
           leadId={lead.id}
           company={p.company}
@@ -58,6 +66,8 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
           crm={{ stage: lead.stage, followUps: lead.followUps, followUpAt: lead.followUpAt, contactedAt: lead.contactedAt }}
           via={{ on: outreachConfigured(), eligible: account.state === "verified", paused: Boolean(account.frozenAt), senderName: account.displayName }}
         />
+        <LeadActivity lang={lang} leadId={lead.id} items={activity} />
+        </div>
       </div>
     </AppShell>
   );

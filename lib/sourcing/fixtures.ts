@@ -126,7 +126,9 @@ const TIMING_LABEL: Record<"high" | "medium" | "low" | "none", string> = {
 
 function score(person: Person, brief: Brief): number {
   let s = 0;
-  if (brief.industries.some((i) => person.industries.includes(i))) s += 2;
+  // «التقنية المالية» (the intake form's label) is «تقنية مالية» in the sample data.
+  const bare = (x: string) => x.split(/\s+/).map((w) => w.replace(/^ال(?=..)/, "")).join(" ");
+  if (brief.industries.some((i) => person.industries.some((pi) => bare(pi) === bare(i)))) s += 2;
   if (brief.geos.length === 0 || brief.geos.includes("السعودية")) s += 1;
   if (brief.targetRoles.some((r) => roleMatches(r, person))) s += 3;
   if (brief.seniority.includes("قيادي") && ["vp", "head", "cxo", "partner", "director"].includes(person.seniority)) s += 1;
@@ -173,7 +175,7 @@ export function generateDraft(brief: Brief, people: Person[]): Omit<PipelineItem
         why: copy.why,
         whyNow: copy.whyNow,
         roleRelevance: s >= 5 ? "عالية" : s >= 3 ? "متوسطة" : "منخفضة",
-        companyRelevance: brief.industries.some((x) => p.industries.includes(x)) ? "عالية" : "متوسطة",
+        companyRelevance: brief.industries.some((x) => p.industries.some((pi) => pi.replace(/ال/g, "") === x.replace(/ال/g, ""))) ? "عالية" : "متوسطة",
         timing: TIMING_LABEL[sig ? sig.timing : "none"],
         leadWith: copy.leadWith,
         avoid: copy.avoid,
