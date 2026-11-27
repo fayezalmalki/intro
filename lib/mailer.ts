@@ -25,7 +25,7 @@ export function transportFor(e: MailEnv): "smtp" | "binding" | "log" {
   return e.EMAIL ? "binding" : "log";
 }
 
-type Kind = "otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back" | "outreach" | "admin_alert";
+type Kind = "otp" | "activation_requested" | "activated" | "credit_request" | "follow_up_digest" | "invite_back" | "outreach" | "admin_alert" | "list_ready";
 
 /** Where replies to app mail land: the intro.sa catch-all forwards to the team. */
 const REPLY_TO = { name: "intro.sa", email: "hello@intro.sa" };
@@ -305,4 +305,35 @@ export async function sendAdminAlert(admins: string[], lines: string[], details:
       <div style="margin-top:18px">${button(`${SITE}/am/metrics`, "Open the dashboard")}</div>`),
     `In the last 24 hours:\n- ${lines.join("\n- ")}\n\n${details.join("\n")}\n\n${SITE}/am/metrics`,
   );
+}
+
+/**
+ * "Your list is ready" — when a request's background search finishes, so the
+ * person doesn't have to come back and refresh. When it found nobody, says so
+ * and that the credits were returned.
+ */
+export async function sendListReady(input: {
+  to: string; name: string; locale: "ar" | "en"; requestId: string; count: number; goal: string; top: { name: string; title: string; company: string }[];
+}): Promise<void> {
+  const ar = input.locale !== "en";
+  const url = `${SITE}/requests/${input.requestId}?lang=${ar ? "ar" : "en"}`;
+  const first = esc(input.name.split(/\s+/)[0] ?? input.name);
+  const people = input.top.slice(0, 3).map((p) =>
+    `<tr><td style="padding:9px 0;border-top:1px solid #EEEEEA"><strong style="color:#141613">${esc(p.name)}</strong><div style="color:#696D66;font-size:13px">${esc([p.title, p.company].filter(Boolean).join(" · "))}</div></td></tr>`).join("");
+  const found = input.count > 0;
+  const subject = found
+    ? (ar ? `قائمتك جاهزة: ${input.count} أشخاص` : `Your list is ready: ${input.count} people`)
+    : (ar ? "ما لقينا مطابقات لطلبك، ورجّعنا رصيدك" : "No strong matches for your request — credits returned");
+  const body = ar
+    ? (found
+      ? `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">هلا ${first}، قائمتك جاهزة</h1><p style="color:#575B54;line-height:1.8;margin:0 0 14px">لقينا ${input.count} أشخاص لطلبك «${esc(input.goal)}»، ومع كل واحد ليش يناسبك وأول سطر تبدأ فيه.</p><table width="100%" style="border-collapse:collapse;margin-bottom:18px">${people}</table>${button(url, "افتح القائمة")}`
+      : `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">هلا ${first}</h1><p style="color:#575B54;line-height:1.8;margin:0 0 18px">ما لقينا مطابقات قوية لطلبك «${esc(input.goal)}»، ورجّعنا رصيد الطلب. جرّب تختار قطاعًا أو منصبًا ثاني.</p>${button(url, "عدّل الطلب")}`)
+    : (found
+      ? `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">Hi ${first}, your list is ready</h1><p style="color:#575B54;line-height:1.7;margin:0 0 14px">We found ${input.count} people for “${esc(input.goal)}”, each with why they fit and a first line to open with.</p><table width="100%" style="border-collapse:collapse;margin-bottom:18px">${people}</table>${button(url, "Open the list")}`
+      : `<h1 style="font-size:20px;margin:0 0 8px;color:#141613">Hi ${first}</h1><p style="color:#575B54;line-height:1.7;margin:0 0 18px">We couldn't find strong matches for “${esc(input.goal)}”, so the request's credits are back on your account. Try another sector or role.</p>${button(url, "Refine the request")}`);
+  const footer = ar
+    ? `<p style="color:#8A8D86;font-size:12px;margin-top:22px">ما تبي هذي الرسائل؟ <a href="${SITE}/settings?lang=ar" style="color:#8A8D86">غيّرها من الإعدادات</a>.</p>`
+    : `<p style="color:#8A8D86;font-size:12px;margin-top:22px">Don't want these? <a href="${SITE}/settings?lang=en" style="color:#8A8D86">Change it in settings</a>.</p>`;
+  const text = `${subject}\n\n${input.top.slice(0, 3).map((p) => `- ${p.name} · ${p.title} · ${p.company}`).join("\n")}\n\n${url}`;
+  await send("list_ready", input.to, subject, layout(ar ? "rtl" : "ltr", body + footer), text);
 }

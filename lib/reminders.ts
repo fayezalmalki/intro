@@ -16,6 +16,8 @@ export async function sendDueReminders(now = new Date()): Promise<{ accounts: nu
   }
   let leads = 0;
   for (const { account, leads: items, seq, steps } of due.values()) {
+    // Turned off in /settings: mark them covered so they don't pile up for later.
+    if (!account.notifyReminders) { await repo.markReminded(seq, now); await repo.markNextStepReminded(steps, now); continue; }
     try {
       await sendFollowUpDigest(account.email, account.displayName.split(/\s+/)[0] ?? account.displayName, account.locale === "en" ? "en" : "ar", items);
       await repo.markReminded(seq, now);

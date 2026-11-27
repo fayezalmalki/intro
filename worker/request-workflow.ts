@@ -83,6 +83,15 @@ export class RequestWorkflow extends WorkflowEntrypoint<WorkflowEnv, RequestWork
       ? await step.do("publish", () => autoPublish(pipelineId, "AI", database))
       : null;
 
+    // Tell them it's ready (or that nothing was found and the credits are back),
+    // unless they turned these emails off. Managed requests wait for their AM.
+    if (!request.managed) {
+      await step.do("notify", async () => {
+        const { notifyListReady } = await import("../lib/notify");
+        await notifyListReady(requestId, database).catch((error) => console.error("[workflow] list-ready email failed", error));
+      });
+    }
+
     return { pipelineId, published: Boolean(published), rows: result.items.length, spentMicro: result.spentMicro, scoredBy: result.scoredBy };
   }
 }
