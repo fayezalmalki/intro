@@ -79,7 +79,15 @@ export function IntakeForm({ lang, action, initial, requestId }: {
   return (
     <form
       action={action}
-      onSubmit={(e) => { if (sectors.length === 0) { e.preventDefault(); setTried(true); } }}
+      onSubmit={(e) => {
+        if (sectors.length > 0) return;
+        e.preventDefault();
+        // No sector picked but a sentence written in the box below: send that
+        // instead of silently doing nothing (both buttons read «متابعة»).
+        const sentence = document.querySelector<HTMLTextAreaElement>("textarea[name=rawText]");
+        if (sentence?.value.trim()) { sentence.form?.requestSubmit(); return; }
+        setTried(true);
+      }}
       className="flex flex-col gap-7"
     >
       {requestId && <input type="hidden" name="requestId" value={requestId} />}
