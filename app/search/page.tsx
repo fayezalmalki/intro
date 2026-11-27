@@ -35,13 +35,14 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
     name: p.name,
     fullName: p.fullName,
     topic: p.topic ?? (p.q && p.mode === "news" ? p.q : undefined),
+    signal: p.signal,
     run: p.run === "1" || Boolean(preset) || Boolean(p.q),
   };
-  const credits = await repo.creditBalance(account.id);
+  const [credits, saved] = await Promise.all([repo.creditBalance(account.id), repo.listCriteria(account.id)]);
 
   return (
     <AppShell account={account} lang={lang} on="search" mode={defaults.mode} credits={credits}>
-      <SearchApp lang={lang} defaults={defaults} initialCredits={credits} />
+      <SearchApp lang={lang} defaults={defaults} initialCredits={credits} saved={saved.map((c) => ({ id: c.id, name: c.name, market: c.market, sector: c.sector ?? "", keywords: c.keywords ?? "", role: c.role ?? "", signal: c.signal ?? "" }))} />
     </AppShell>
   );
 }

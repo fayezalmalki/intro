@@ -43,6 +43,13 @@
       "when": 1795735290062,
       "tag": "0005_signups",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795774309074,
+      "tag": "0006_criteria",
+      "breakpoints": true
     }
   ]
 }

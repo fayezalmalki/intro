@@ -33,7 +33,7 @@ export class TregProvider implements SourcingProvider {
   private async call<T>(
     tool: string, body: Record<string, unknown>, options: CallOptions,
     extra: Record<string, string> = {},
-  ): Promise<{ output: T; costMicro: number; servedBy: string; verification?: { verdict?: string } }> {
+  ): Promise<{ output: T; raw?: unknown; costMicro: number; servedBy: string; verification?: { verdict?: string } }> {
     const response = await this.fetcher(`${BASE}/${tool}`, {
       method: "POST",
       headers: {
@@ -47,12 +47,52 @@ export class TregProvider implements SourcingProvider {
     });
     const costMicro = Number(response.headers.get("x-treg-cost-micro") ?? 0) || 0;
     if (!response.ok) throw new TregError(response.status, tool, await response.text());
-    const json = (await response.json()) as { output?: T; _treg?: { served_by?: string; verification?: { verdict?: string } } };
+    const json = (await response.json()) as { output?: T; raw?: unknown; _treg?: { served_by?: string; verification?: { verdict?: string } } };
     return {
       output: (json.output ?? {}) as T,
+      raw: json.raw,
       costMicro,
       verification: json._treg?.verification,
       servedBy: json._treg?.served_by ?? response.headers.get("x-treg-served-by") ?? "treg",
+    };
+  }
+
+  /**
+   * A member's public LinkedIn profile, for onboarding. The routed contract
+   * gives name, headline, location and about; the current employer is only in
+   * some providers' raw answers, so it is read best-effort.
+   */
+  async readProfile(linkedinUrl: string, options: CallOptions): Promise<Priced<ProfileRead | null>> {
+    const r = await this.call<{ full_name?: string; first_name?: string; headline?: string | null; location?: string; about?: string; linkedin_url?: string }>(
+      "treg.linkedin.user.profile", { linkedin_url: linkedinUrl }, options, { "x-treg-route-waterfall": "1" },
+    );
+    const raw = (Array.isArray(r.raw) ? r.raw[0] : r.raw) as Record<string, unknown> | undefined;
+    const pick = (...keys: string[]) => { for (const k of keys) { const v = k.split(".").reduce<unknown>((o, x) => (o as Record<string, unknown> | undefined)?.[x], raw); if (typeof v === "string" && v.trim()) return v.trim(); } return undefined; };
+    const o = r.output;
+    if (!o.full_name) return { value: null, costMicro: r.costMicro };
+    return {
+      value: {
+        name: o.full_name,
+        headline: o.headline ?? pick("position", "headline", "occupation"),
+        location: o.location,
+        about: o.about?.slice(0, 400),
+        company: pick("current_company_name", "current_company.name", "company", "companyName"),
+        linkedinUrl: o.linkedin_url ?? linkedinUrl,
+      },
+      costMicro: r.costMicro,
+    };
+  }
+
+  /** A company from its website, for onboarding: what it does, its industry and size. */
+  async enrichCompany(domain: string, options: CallOptions): Promise<Priced<CompanyRead | null>> {
+    const r = await this.call<{ name?: string; domain?: string; description?: string; industry?: string; employees?: number; linkedin_url?: string }>(
+      "treg.companies.enrich", { domain }, options,
+    );
+    const o = r.output;
+    if (!o.name) return { value: null, costMicro: r.costMicro };
+    return {
+      value: { name: o.name, domain: o.domain ?? domain, description: o.description?.slice(0, 400), industry: o.industry, employees: o.employees, linkedinUrl: o.linkedin_url },
+      costMicro: r.costMicro,
     };
   }
 
@@ -68,7 +108,7 @@ export class TregProvider implements SourcingProvider {
     // wiza answered a Saudi sector search with one unrelated company for $0.0127.
     const r = await this.call<{ companies?: RawCompany[] }>("treg.companies.search", body, options, { "x-treg-route-exclude": "wiza" });
     const companies = (r.output.companies ?? [])
-      .filter((c) => !c.country || c.country.toUpperCase() === query.country)
+      .filter((c) => { const country = str(c.country); return !country || country.toUpperCase() === query.country; })
       .map(toCompany)
       .filter((c): c is Company => c !== null);
     return { value: companies, costMicro: r.costMicro };
@@ -106,14 +146,14 @@ export class TregProvider implements SourcingProvider {
     const r = await this.call<{ people?: RawPerson[] }>("treg.people.search", body, options, strict);
     const people = (r.output.people ?? [])
       // A name lookup's provider returns name, location and profile only.
-      .filter((p) => p.name && (p.title || query.fullName))
+      .filter((p) => str(p.name) && (str(p.title) || query.fullName))
       .map((p) => ({
-        name: p.name!.trim(),
-        title: (p.title ?? "").trim(),
-        company: p.company ?? "",
-        companyDomain: p.company_domain ?? query.companyDomain ?? "",
-        profileUrl: cleanUrl(p.profile_url ?? p.linkedin_url),
-        location: p.location,
+        name: str(p.name)!,
+        title: str(p.title) ?? "",
+        company: str(p.company) ?? "",
+        companyDomain: str(p.company_domain) ?? query.companyDomain ?? "",
+        profileUrl: cleanUrl(str(p.profile_url) ?? str(p.linkedin_url)),
+        location: str(p.location),
         servedBy: r.servedBy,
       }));
     return { value: people, costMicro: r.costMicro };
@@ -125,13 +165,13 @@ export class TregProvider implements SourcingProvider {
       { "x-treg-route-exclude": FLAKY_SEARCH },
     );
     const signals = (r.output.results ?? [])
-      .filter((x) => x.url && x.title)
+      .filter((x) => /^https?:\/\//.test(str(x.url) ?? "") && str(x.title))
       .map((x) => ({
-        url: x.url!,
-        title: x.title!.trim(),
-        source: hostOf(x.url!),
-        date: isoDate(x.date ?? x.published_date),
-        snippet: x.snippet,
+        url: str(x.url)!,
+        title: str(x.title)!,
+        source: hostOf(str(x.url)!),
+        date: isoDate(str(x.date) ?? str(x.published_date)),
+        snippet: str(x.snippet),
       }));
     return { value: signals, costMicro: r.costMicro };
   }
@@ -171,23 +211,34 @@ export function verdictOf(v?: { verdict?: string }): EmailVerdict {
 }
 
 interface RawCompany {
-  name?: string; website_url?: string; domain?: string; country?: string;
-  industry?: string; company_size?: string; linkedin_url?: string;
+  name?: unknown; organization?: unknown; company_name?: unknown; website_url?: unknown; website?: unknown; domain?: unknown;
+  country?: unknown; industry?: unknown; company_size?: unknown; linkedin_url?: unknown;
 }
 interface RawPerson {
-  name?: string; title?: string; company?: string; company_domain?: string;
-  profile_url?: string; linkedin_url?: string; location?: string;
+  name?: unknown; title?: unknown; company?: unknown; company_domain?: unknown;
+  profile_url?: unknown; linkedin_url?: unknown; location?: unknown;
 }
-interface RawResult { url?: string; title?: string; date?: string; published_date?: string; snippet?: string }
+interface RawResult { url?: unknown; title?: unknown; date?: unknown; published_date?: unknown; snippet?: unknown }
 
 function toCompany(c: RawCompany): Company | null {
-  const domain = (c.domain ?? c.website_url ?? "").toLowerCase()
+  const name = str(c.name) ?? str(c.organization) ?? str(c.company_name);
+  const domain = (str(c.domain) ?? str(c.website_url) ?? str(c.website) ?? "").toLowerCase()
     .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
-  if (!c.name || !domain) return null;
-  return {
-    name: c.name.trim(), domain, industry: c.industry, size: c.company_size,
-    linkedinUrl: c.linkedin_url,
-  };
+  if (!name || !domain) return null;
+  const size = typeof c.company_size === "number" ? String(c.company_size) : str(c.company_size);
+  return { name, domain, industry: str(c.industry), size, linkedinUrl: str(c.linkedin_url) };
+}
+
+/**
+ * A provider field as text, or undefined. Providers answer the same contract
+ * with different shapes (a list of industries, a numeric size, an object for
+ * a website), and one odd row must never fail a whole search.
+ */
+function str(v: unknown): string | undefined {
+  if (typeof v === "string") return v.trim() || undefined;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (Array.isArray(v)) return str(v[0]);
+  return undefined;
 }
 
 function cleanUrl(url?: string): string | undefined {
@@ -213,3 +264,6 @@ function isoDate(value?: string): string | undefined {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
 }
+
+export interface ProfileRead { name: string; headline?: string; location?: string; about?: string; company?: string; linkedinUrl: string }
+export interface CompanyRead { name: string; domain: string; description?: string; industry?: string; employees?: number; linkedinUrl?: string }

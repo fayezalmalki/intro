@@ -4,7 +4,7 @@ import type { Database } from "./index";
 import { db as defaultDb } from "./index";
 import {
   accounts, auditEvents, creditOrders, leads, ledger, listMembers, outreach, people, pipelineItems,
-  pipelines, requests, searchCache, searchLog, sendAttempts, signups,
+  criteria, pipelines, requests, searchCache, searchLog, sendAttempts, signups,
 } from "./schema";
 import { canSend, poolFor, type SendRequest } from "../gate";
 import { generateDraft } from "../sourcing";
@@ -652,9 +652,9 @@ export async function completeOnboarding(input: OnboardingInput, database: Datab
     database.update(accounts).set({
       displayName: name,
       initial: (name[0] ?? "?").toUpperCase(),
-      company: input.company.trim(),
+      company: input.company.trim() || null,
       companyWebsite: input.companyWebsite?.trim() || null,
-      jobTitle: input.jobTitle.trim(),
+      jobTitle: input.jobTitle.trim() || null,
       useCase: input.useCase || null,
       linkedinUrl: input.linkedinUrl?.trim() || null,
       locale: input.locale,
@@ -1058,4 +1058,45 @@ export type SignupRow = typeof signups.$inferSelect;
 
 export async function listSignups(limit = 200, database: Database = defaultDb): Promise<SignupRow[]> {
   return database.select().from(signups).orderBy(sql`${signups.createdAt} DESC`).limit(limit);
+}
+
+// ── Onboarding reads ──────────────────────────────────────────
+
+/** How many profile/website reads this account has used (they cost us, not them). */
+export async function profileReadsUsed(accountId: string, database: Database = defaultDb): Promise<number> {
+  const [r] = await database.select({ n: sql<number>`count(*)` }).from(auditEvents)
+    .where(and(eq(auditEvents.entity, `account:${accountId}`), eq(auditEvents.action, "profile_read")));
+  return Number(r?.n ?? 0);
+}
+
+export async function recordProfileRead(accountId: string, detail: string, database: Database = defaultDb): Promise<void> {
+  await audit(database, accountId, `account:${accountId}`, "profile_read", detail.slice(0, 300));
+}
+
+// ── Saved criteria ────────────────────────────────────────────
+
+export type Criteria = typeof criteria.$inferSelect;
+const MAX_CRITERIA = 30;
+
+export async function listCriteria(accountId: string, database: Database = defaultDb): Promise<Criteria[]> {
+  return database.select().from(criteria).where(eq(criteria.accountId, accountId)).orderBy(sql`${criteria.createdAt} DESC`);
+}
+
+/** Saves a criteria set; null when the account already keeps the maximum. */
+export async function saveCriteria(
+  input: { accountId: string; name: string; market: string; sector?: string; keywords?: string; role?: string; signal?: string },
+  database: Database = defaultDb,
+): Promise<string | null> {
+  const [n] = await database.select({ n: sql<number>`count(*)` }).from(criteria).where(eq(criteria.accountId, input.accountId));
+  if (Number(n?.n ?? 0) >= MAX_CRITERIA) return null;
+  const id = crypto.randomUUID();
+  await database.insert(criteria).values({
+    id, accountId: input.accountId, name: input.name.slice(0, 80), market: input.market,
+    sector: input.sector || null, keywords: input.keywords?.slice(0, 200) || null, role: input.role?.slice(0, 60) || null, signal: input.signal?.slice(0, 40) || null,
+  });
+  return id;
+}
+
+export async function deleteCriteria(accountId: string, id: string, database: Database = defaultDb): Promise<void> {
+  await database.delete(criteria).where(and(eq(criteria.id, id), eq(criteria.accountId, accountId)));
 }

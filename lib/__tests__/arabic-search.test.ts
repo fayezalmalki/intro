@@ -28,3 +28,14 @@ describe("Arabic search words", () => {
     expect(t.untranslated).toEqual(["تمور"]);
   });
 });
+
+describe("sector dictionary in Arabic search", () => {
+  it("maps «صناديق استثمار» to investors with nothing left over", () => {
+    const t = toProviderTerms("صناديق استثمار");
+    expect(t.industry).toBe("Venture Capital & Private Equity");
+    expect(t.untranslated).toEqual([]);
+  });
+  it("maps colloquial plurals («مستوصفات» aside) like «وزارات» to government", () => {
+    expect(toProviderTerms("وزارات").industry).toBe("Government Administration");
+  });
+});

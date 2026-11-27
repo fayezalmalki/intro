@@ -340,6 +340,24 @@ export const leads = sqliteTable("leads", {
   index("leads_account_idx").on(t.accountId),
 ]);
 
+// ── Saved criteria ────────────────────────────────────────────
+
+/**
+ * A search someone shaped from a sector starter (lib/search/dictionary.ts)
+ * and kept, to run again in one click. Company searches only for now.
+ */
+export const criteria = sqliteTable("criteria", {
+  id: id(),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  market: text("market").notNull(),
+  sector: text("sector"),
+  keywords: text("keywords"),
+  role: text("role"),
+  signal: text("signal"),
+  createdAt: isoNow("created_at"),
+}, (t) => [index("criteria_account_idx").on(t.accountId)]);
+
 // ── Sign-ups ──────────────────────────────────────────────────
 
 /**

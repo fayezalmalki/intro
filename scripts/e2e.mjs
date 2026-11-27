@@ -66,10 +66,17 @@ const manager = await identity("reem@example.sa");
 async function onboard(page, who, name) {
   await page.goto(`${BASE}/new`, { waitUntil: "networkidle" });
   if (!page.url().includes("/welcome")) throw new Error(`${who} was not sent to /welcome on first visit (${page.url()})`);
+  // Guided onboarding: read a website, check the details, three one-tap answers.
+  await page.locator('input[inputmode="url"]').fill("lumenpay.sa");
+  await page.getByTestId("onboarding-read").click();
+  await page.locator("input[name=name]").waitFor();
   await page.fill("input[name=name]", name);
   await page.fill("input[name=jobTitle]", "Head of Product");
-  await page.fill("input[name=company]", "Example Co");
-  await Promise.all([page.waitForURL((u) => !u.pathname.startsWith("/welcome")), page.click("button[type=submit]")]);
+  await page.getByTestId("onboarding-looks-right").click();
+  await page.getByTestId("goal-sell").click();
+  await page.getByTestId("sector-Insurance").click();
+  await page.getByTestId("who-exec").click();
+  await Promise.all([page.waitForURL((u) => !u.pathname.startsWith("/welcome")), page.getByTestId("onboarding-finish").click()]);
   step(`${who} onboarded`, new URL(page.url()).pathname);
 }
 await onboard(requester, "requester", "فيصل");
