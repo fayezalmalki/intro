@@ -652,9 +652,9 @@ export async function completeOnboarding(input: OnboardingInput, database: Datab
     database.update(accounts).set({
       displayName: name,
       initial: (name[0] ?? "?").toUpperCase(),
-      company: input.company.trim(),
+      company: input.company.trim() || null,
       companyWebsite: input.companyWebsite?.trim() || null,
-      jobTitle: input.jobTitle.trim(),
+      jobTitle: input.jobTitle.trim() || null,
       useCase: input.useCase || null,
       linkedinUrl: input.linkedinUrl?.trim() || null,
       locale: input.locale,
@@ -1058,4 +1058,17 @@ export type SignupRow = typeof signups.$inferSelect;
 
 export async function listSignups(limit = 200, database: Database = defaultDb): Promise<SignupRow[]> {
   return database.select().from(signups).orderBy(sql`${signups.createdAt} DESC`).limit(limit);
+}
+
+// ── Onboarding reads ──────────────────────────────────────────
+
+/** How many profile/website reads this account has used (they cost us, not them). */
+export async function profileReadsUsed(accountId: string, database: Database = defaultDb): Promise<number> {
+  const [r] = await database.select({ n: sql<number>`count(*)` }).from(auditEvents)
+    .where(and(eq(auditEvents.entity, `account:${accountId}`), eq(auditEvents.action, "profile_read")));
+  return Number(r?.n ?? 0);
+}
+
+export async function recordProfileRead(accountId: string, detail: string, database: Database = defaultDb): Promise<void> {
+  await audit(database, accountId, `account:${accountId}`, "profile_read", detail.slice(0, 300));
 }

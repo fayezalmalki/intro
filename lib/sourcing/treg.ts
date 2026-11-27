@@ -33,7 +33,7 @@ export class TregProvider implements SourcingProvider {
   private async call<T>(
     tool: string, body: Record<string, unknown>, options: CallOptions,
     extra: Record<string, string> = {},
-  ): Promise<{ output: T; costMicro: number; servedBy: string; verification?: { verdict?: string } }> {
+  ): Promise<{ output: T; raw?: unknown; costMicro: number; servedBy: string; verification?: { verdict?: string } }> {
     const response = await this.fetcher(`${BASE}/${tool}`, {
       method: "POST",
       headers: {
@@ -47,12 +47,52 @@ export class TregProvider implements SourcingProvider {
     });
     const costMicro = Number(response.headers.get("x-treg-cost-micro") ?? 0) || 0;
     if (!response.ok) throw new TregError(response.status, tool, await response.text());
-    const json = (await response.json()) as { output?: T; _treg?: { served_by?: string; verification?: { verdict?: string } } };
+    const json = (await response.json()) as { output?: T; raw?: unknown; _treg?: { served_by?: string; verification?: { verdict?: string } } };
     return {
       output: (json.output ?? {}) as T,
+      raw: json.raw,
       costMicro,
       verification: json._treg?.verification,
       servedBy: json._treg?.served_by ?? response.headers.get("x-treg-served-by") ?? "treg",
+    };
+  }
+
+  /**
+   * A member's public LinkedIn profile, for onboarding. The routed contract
+   * gives name, headline, location and about; the current employer is only in
+   * some providers' raw answers, so it is read best-effort.
+   */
+  async readProfile(linkedinUrl: string, options: CallOptions): Promise<Priced<ProfileRead | null>> {
+    const r = await this.call<{ full_name?: string; first_name?: string; headline?: string | null; location?: string; about?: string; linkedin_url?: string }>(
+      "treg.linkedin.user.profile", { linkedin_url: linkedinUrl }, options, { "x-treg-route-waterfall": "1" },
+    );
+    const raw = (Array.isArray(r.raw) ? r.raw[0] : r.raw) as Record<string, unknown> | undefined;
+    const pick = (...keys: string[]) => { for (const k of keys) { const v = k.split(".").reduce<unknown>((o, x) => (o as Record<string, unknown> | undefined)?.[x], raw); if (typeof v === "string" && v.trim()) return v.trim(); } return undefined; };
+    const o = r.output;
+    if (!o.full_name) return { value: null, costMicro: r.costMicro };
+    return {
+      value: {
+        name: o.full_name,
+        headline: o.headline ?? pick("position", "headline", "occupation"),
+        location: o.location,
+        about: o.about?.slice(0, 400),
+        company: pick("current_company_name", "current_company.name", "company", "companyName"),
+        linkedinUrl: o.linkedin_url ?? linkedinUrl,
+      },
+      costMicro: r.costMicro,
+    };
+  }
+
+  /** A company from its website, for onboarding: what it does, its industry and size. */
+  async enrichCompany(domain: string, options: CallOptions): Promise<Priced<CompanyRead | null>> {
+    const r = await this.call<{ name?: string; domain?: string; description?: string; industry?: string; employees?: number; linkedin_url?: string }>(
+      "treg.companies.enrich", { domain }, options,
+    );
+    const o = r.output;
+    if (!o.name) return { value: null, costMicro: r.costMicro };
+    return {
+      value: { name: o.name, domain: o.domain ?? domain, description: o.description?.slice(0, 400), industry: o.industry, employees: o.employees, linkedinUrl: o.linkedin_url },
+      costMicro: r.costMicro,
     };
   }
 
@@ -213,3 +253,6 @@ function isoDate(value?: string): string | undefined {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
 }
+
+export interface ProfileRead { name: string; headline?: string; location?: string; about?: string; company?: string; linkedinUrl: string }
+export interface CompanyRead { name: string; domain: string; description?: string; industry?: string; employees?: number; linkedinUrl?: string }

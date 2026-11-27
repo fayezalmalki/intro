@@ -285,7 +285,8 @@ export async function completeOnboarding(formData: FormData): Promise<void> {
   const jobTitle = String(formData.get("jobTitle") ?? "").trim();
   const locale = formData.get("locale") === "en" ? "en" : "ar";
   const next = safeNext(formData.get("next"), "/new");
-  if (!name || !company || !jobTitle) {
+  // Name is what introduces them; a job seeker between roles may have no company.
+  if (!name || !jobTitle) {
     redirect(`/welcome?next=${encodeURIComponent(next)}&missing=1${locale === "en" ? "&lang=en" : ""}`);
   }
   const useCase = String(formData.get("useCase") ?? "");
