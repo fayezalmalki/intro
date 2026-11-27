@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "New request · intro" };
 const C = {
   en: {
     title: "What do you want to make happen?",
-    sub: "Pick your goal, the sectors and who you want to reach. We show you the brief before we look for anyone.",
+    sub: "A full list: pick your goal, sectors and who to reach — we rank the best people and explain each, with why now and a first line. Just browsing? Search is instant.",
     sendSentence: "Send the sentence", sentence: "Rather describe it in a sentence?", sentenceSub: "We'll turn it into picks you can check and edit.",
     editing: "Edit your request", needSector: "Pick at least one sector so we know where to look.",
     label: "Your goal",
@@ -35,7 +35,7 @@ const C = {
   },
   ar: {
     title: "وش تبي تحقق؟",
-    sub: "اختر هدفك والقطاعات ومين تبي توصل له. نعرض عليك الملخص قبل ما نبحث عن أي أحد.",
+    sub: "قائمة كاملة: اختر هدفك والقطاعات ومين تبي توصل له، ونرتّب لك أنسب الأشخاص ونشرح كل واحد، مع ليش الحين وأول سطر. تبي تتصفح بس؟ البحث فوري.",
     sendSentence: "أرسل الجملة", sentence: "تفضّل تكتبه في جملة؟", sentenceSub: "نحوّله لاختيارات تراجعها وتعدّلها.",
     editing: "عدّل طلبك", needSector: "اختر قطاعًا واحدًا على الأقل عشان نعرف وين نبحث.",
     label: "هدفك",
