@@ -22,8 +22,12 @@ import { titleMatches, LEADERSHIP, seniorityOf, planSearch, type SearchPlan } fr
 
 export const BUDGET_MICRO = 250_000; // $0.25 per request
 const PER_CALL_CAP_MICRO = 50_000; // $0.05: no single call may take the whole budget
-const COMPANIES = 6;
+const COMPANIES = 12;
 const PEOPLE_PER_COMPANY = 4;
+/** Enough people: stop looking (and spending). */
+const TARGET = 15;
+/** Fewer than this after the company pass: search the role across the sector. */
+const SECTOR_FALLBACK_BELOW = 8;
 const COUNTRY = "SA";
 
 export type Step = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
@@ -112,24 +116,37 @@ export async function runSourcing(
   if (companies.length === 0) notes.push("ما لقينا شركات تطابق القطاع.");
 
   // 2 — the right people at each company, and 3 — dated signals for it
+  const leadersOnly = input.brief.seniority.includes("قيادي");
+  // A brief that asks for leadership gets leaders: "Product Analyst" matches
+  // the title fragment but is not who a senior job seeker should write to.
+  const fits = (p: FoundPerson) => {
+    if (!p.profileUrl) return false;
+    const level = seniorityOf(p.title);
+    const lead = LEADERSHIP.includes(level);
+    // A title match must carry some seniority: "Outside Sales Representative"
+    // contains "Sales" but is not the head of sales a seller asked for.
+    return leadersOnly ? lead : lead || (level !== "other" && titleMatches(p.title, plan.titles));
+  };
   const candidates: Candidate[] = [];
+  const add = (person: FoundPerson, company: Company, signals: Signal[]) => {
+    const key = person.profileUrl ?? `${person.name}@${company.domain}`;
+    // One company can be listed under two domains (tawuniya.com, tawuniya.com.sa),
+    // and a provider can list one person twice: one row per person.
+    if (!candidates.some((c) => c.key === key || compact(c.person.name) === compact(person.name))) candidates.push({ key, person, company, signals });
+  };
+
   for (const company of companies) {
-    const people = await stage(`people-${company.domain}`, [] as FoundPerson[], () =>
-      deps.provider.findPeople(
-        { companyDomain: company.domain, title: plan.titles[0], country: COUNTRY,
-          limit: input.brief.seniority.includes("قيادي") ? 25 : 10 },
-        options(`people-${company.domain}`),
-      ));
-    // A brief that asks for leadership gets leaders: "Product Analyst" matches
-    // the title fragment but is not who a senior job seeker should write to.
-    const leadersOnly = input.brief.seniority.includes("قيادي");
-    const relevant = people
-      .filter((p) => p.profileUrl)
-      .filter((p) => {
-        const lead = LEADERSHIP.includes(seniorityOf(p.title));
-        return leadersOnly ? lead : lead || titleMatches(p.title, plan.titles);
-      })
-      .slice(0, PEOPLE_PER_COMPANY);
+    if (candidates.length >= TARGET) break;
+    // Ask for the picked roles, one at a time, until someone fits. A search
+    // with no title returns front-line staff at a large company, not leaders.
+    let people: FoundPerson[] = [];
+    for (const [i, title] of plan.titles.slice(0, 2).entries()) {
+      const key = i === 0 ? `people-${company.domain}` : `people-${company.domain}-${i}`;
+      people = await stage(key, [] as FoundPerson[], () =>
+        deps.provider.findPeople({ companyDomain: company.domain, title, country: COUNTRY, limit: leadersOnly ? 25 : 10 }, options(key)));
+      if (people.some(fits)) break;
+    }
+    const relevant = people.filter(fits).slice(0, PEOPLE_PER_COMPANY);
     if (relevant.length === 0) continue;
 
     const signals = await stage(`signals-${company.domain}`, [] as Signal[], () =>
@@ -143,12 +160,27 @@ export async function runSourcing(
       .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
       .slice(0, 3);
 
-    for (const person of relevant) {
-      const key = person.profileUrl ?? `${person.name}@${company.domain}`;
-      // One company can be listed under two domains (tawuniya.com, tawuniya.com.sa),
-      // and a provider can list one person twice: one row per person.
-      const dupe = candidates.some((c) => c.key === key || compact(c.person.name) === compact(person.name));
-      if (!dupe) candidates.push({ key, person, company, signals: recent });
+    for (const person of relevant) add(person, company, recent);
+  }
+
+  // 2b — too few: each picked role across the sector, not company by company.
+  if (candidates.length < SECTOR_FALLBACK_BELOW && deps.provider.findPeopleInSector) {
+    const sectorsToTry = plan.industries.length ? plan.industries : plan.fallbackQuery ? [plan.fallbackQuery] : [];
+    for (const industry of sectorsToTry.slice(0, 2)) {
+      for (const title of plan.titles.slice(0, 3)) {
+        if (candidates.length >= TARGET) break;
+        const found = await stage(`sector-${industry}-${title}`, [] as FoundPerson[], () =>
+          deps.provider.findPeopleInSector!({ title, industry, country: COUNTRY, limit: 15 }, options(`sector-${industry}-${title}`)));
+        // Semantic search drifts abroad: keep people placed in Saudi Arabia, or unplaced.
+        for (const person of found.filter((p) => fits(p) && inMarket(p.location))) {
+          if (candidates.length >= TARGET) break;
+          // Sector search often has no company website. Leave it empty rather
+          // than invent one: email finding then works from the LinkedIn profile.
+          if (!person.company && !person.companyDomain) continue;
+          const name = person.company.split("|")[0].trim() || person.companyDomain;
+          add(person, { name, domain: person.companyDomain ?? "", industry }, []);
+        }
+      }
     }
   }
 
@@ -171,6 +203,8 @@ export async function runSourcing(
 const NOT_NEWS_TITLE =
   /stock (price|analysis|quote)|share price|press releases|market news|markets data|company profile|financials|\((sase|tadawul):|^news\b|- tadawul|\| tadawul/i;
 const NOT_NEWS_HOST = /simplywall\.st|marketscreener\.com|investing\.com|stockanalysis\.com|tradingview\.com|wsj\.com\/market-data|saudiexchange\.sa|linkedin\.com|wikipedia\.org/;
+
+const inMarket = (location?: string) => !location || /saudi|ksa|riyadh|jeddah|dammam|khobar|mecca|makkah|medina|السعود|الرياض|جدة|الدمام|الخبر/i.test(location);
 
 const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9؀-ۿ]/g, "");
 

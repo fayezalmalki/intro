@@ -123,10 +123,20 @@ export class TregProvider implements SourcingProvider {
   }
 
   async findPeople(
-    query: { companyDomain: string; title: string; country: string; limit: number },
+    query: { companyDomain: string; title?: string; country: string; limit: number },
     options: CallOptions,
   ): Promise<Priced<FoundPerson[]>> {
     return this.searchPeople(query, options);
+  }
+
+  /** A role across a sector: semantic, with the market in the text and the location. */
+  async findPeopleInSector(
+    query: { title: string; industry: string; country: string; limit: number },
+    options: CallOptions,
+  ): Promise<Priced<FoundPerson[]>> {
+    const where = query.country === "SA" ? "Saudi Arabia" : query.country;
+    // Semantic search can drift abroad; run.ts keeps only people in the market.
+    return this.searchPeople({ q: `${query.title} at ${query.industry} companies in ${where}`, location: where, limit: query.limit }, options);
   }
 
   /**

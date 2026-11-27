@@ -115,7 +115,7 @@ export function rulesScore(brief: Brief, plan: SearchPlan, candidates: Candidate
     .filter((x) => x.match || x.lead)
     .sort((a, b) => b.score - a.score)
     // At most two per company, so one large employer cannot fill the list.
-    .filter((x, _i, all) => all.filter((y) => y.c.company.domain === x.c.company.domain).indexOf(x) < PER_COMPANY)
+    .filter((x, _i, all) => all.filter((y) => companyKey(y.c.company) === companyKey(x.c.company)).indexOf(x) < PER_COMPANY)
     .slice(0, MAX_ITEMS);
 
   return ranked.map(({ c, match, lead, timing }, i) => {
@@ -247,4 +247,9 @@ export async function score(
     }
   }
   return { items: rulesScore(input.brief, input.plan, input.candidates), scoredBy: "rules" };
+}
+
+/** One company, whether or not the provider gave its website (sector search often doesn't). */
+function companyKey(c: { domain: string; name: string }): string {
+  return c.domain || `name:${c.name.toLowerCase().replace(/\s+/g, " ").trim()}`;
 }
