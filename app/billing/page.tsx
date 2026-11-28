@@ -6,7 +6,7 @@ import { pickLang } from "@/components/site/AuthShell";
 import { Icon, cx } from "@/components/site/ui";
 import { buyCredits } from "@/lib/actions";
 import { moyasarIsLive, moyasarKey } from "@/lib/billing/moyasar";
-import { PACKAGES } from "@/lib/billing/packages";
+import { LIVE_TEST_PACK, PACKAGES } from "@/lib/billing/packages";
 import * as repo from "@/lib/db/repo";
 import { pageAccount } from "@/lib/session";
 
@@ -160,6 +160,16 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
               </li>
             ))}
           </ul>
+          {account.role === "admin" && live && (
+            <form action={buyCredits} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] bg-sand px-4 py-3" data-testid="live-test-pack">
+              <span className="text-[13.5px] text-ink-2">
+                <strong className="text-ink">{LIVE_TEST_PACK[lang]}</strong> · {LIVE_TEST_PACK.sar} {lang === "ar" ? "ريال" : "SAR"} · {t.per(LIVE_TEST_PACK.credits)} — {lang === "ar" ? "للمشرفين فقط، لتجربة الدفع الحقيقي." : "admins only, to try a real payment."}
+              </span>
+              <input type="hidden" name="package" value={LIVE_TEST_PACK.id} />
+              <input type="hidden" name="lang" value={lang} />
+              <SubmitButton pending={t.buying} testId="buy-live-test">{t.buy}</SubmitButton>
+            </form>
+          )}
           <p className="flex items-center gap-2 text-[12.5px] text-subtle"><Icon name="lock" size={12} />{t.secure}</p>
         </section>
 

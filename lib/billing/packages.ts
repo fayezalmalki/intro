@@ -9,5 +9,12 @@ export const PACKAGES = [
   { id: "scale", credits: 1000, sar: 699, en: "Scale", ar: "التوسّع" },
 ] as const;
 
-export type PackageId = (typeof PACKAGES)[number]["id"];
-export const packageById = (id: string) => PACKAGES.find((p) => p.id === id);
+/**
+ * A 1 SAR pack for checking live payments end to end (Moyasar's minimum).
+ * Admins only: never listed to customers, and refused server-side for them.
+ */
+export const LIVE_TEST_PACK = { id: "live-test", credits: 1, sar: 1, en: "Live payment test", ar: "اختبار الدفع الحي" } as const;
+
+export type PackageId = (typeof PACKAGES)[number]["id"] | typeof LIVE_TEST_PACK.id;
+export const packageById = (id: string, opts: { admin?: boolean } = {}) =>
+  PACKAGES.find((p) => p.id === id) ?? (opts.admin && id === LIVE_TEST_PACK.id ? LIVE_TEST_PACK : undefined);
