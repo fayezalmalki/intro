@@ -401,7 +401,7 @@ function siteOrigin(): string {
  */
 export async function buyCredits(formData: FormData): Promise<void> {
   const account = await currentAccount();
-  const pack = packageById(String(formData.get("package") ?? ""));
+  const pack = packageById(String(formData.get("package") ?? ""), { admin: account.role === "admin" });
   const lang = formData.get("lang") === "en" ? "en" : "ar";
   if (!pack) redirect(`/billing?lang=${lang}`);
 
